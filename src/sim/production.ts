@@ -128,6 +128,7 @@ function spawn(game: Game, b: Building, type: UnitType): boolean {
     ? spots.reduce((a, c) => (Math.hypot(c.x + 0.5 - r.x, c.y + 0.5 - r.y) < Math.hypot(a.x + 0.5 - r.x, a.y + 0.5 - r.y) ? c : a))
     : spots[0];
   const u = game.addUnit(type, b.owner, spot.x + 0.5, spot.y + 0.5);
+  game.player(b.owner).stats.unitsTrained++;
   game.emit({ type: 'unitTrained', player: b.owner, id: u.id, x: u.x, y: u.y });
   if (r) {
     const node = r.targetId >= 0 ? game.resource(r.targetId) : undefined;

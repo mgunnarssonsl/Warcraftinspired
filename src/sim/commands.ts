@@ -6,6 +6,7 @@ import { cancelConstruction, checkPlacement, resumeBuild, shortfall, startBuild 
 import type { Game } from './game';
 import { cancelTraining, enqueue, setRally } from './production';
 import { canAttack, isEnemy, targetable } from './combat';
+import { defeat } from './outcome';
 import { releaseFromNode, startGather, startReturnCargo } from './gathering';
 import type { Unit } from './types';
 
@@ -17,6 +18,7 @@ export type Command =
   | { type: 'attack'; player: number; units: number[]; targetId: number }
   | { type: 'attackMove'; player: number; units: number[]; x: number; y: number }
   | { type: 'hold'; player: number; units: number[] }
+  | { type: 'surrender'; player: number }
   | { type: 'build'; player: number; units: number[]; buildingType: BuildingType; tx: number; ty: number }
   | { type: 'resumeBuild'; player: number; units: number[]; buildingId: number }
   | { type: 'cancelBuild'; player: number; buildingId: number }
@@ -49,7 +51,11 @@ export function applyCommand(game: Game, cmd: Command): void {
       return cancelTraining(game, cmd.player, cmd.buildingId, cmd.index);
     case 'setRally':
       return setRally(game, cmd.player, cmd.buildingId, cmd.x, cmd.y, cmd.targetId);
+    case 'surrender':
+      return defeat(game, cmd.player, 'surrendered');
   }
+  // A decided match accepts no further orders from defeated players.
+  if (game.state.players[cmd.player]?.defeated) return;
   const units = ownUnits(game, cmd.player, cmd.units);
   if (!units.length) return;
   switch (cmd.type) {

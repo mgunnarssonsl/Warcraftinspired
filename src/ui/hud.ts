@@ -182,6 +182,8 @@ export class Hud {
   private lastAlert = { t: -1e9, x: 0, y: 0 };
 
   handleEvents(events: GameEvent[]): void {
+    // Once the viewer is defeated, the end screen tells the story; no more notices.
+    if (this.game.player(this.client.player).defeated) return;
     for (const e of events) {
       if (e.type === 'hit' && e.owner === this.client.player && e.attackerOwner !== this.client.player) {
         // At most one alert per 10 s, unless the attack is somewhere else.

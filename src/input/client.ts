@@ -17,6 +17,8 @@ export interface ClientState {
   placing: BuildingType | null;
   debug: boolean;
   paused: boolean;
+  /** A full-screen panel is open: world input is ignored. */
+  modalOpen: boolean;
   groups: Record<number, number[]>;
 }
 
@@ -30,6 +32,7 @@ export function createClientState(player: number): ClientState {
     placing: null,
     debug: false,
     paused: false,
+    modalOpen: false,
     groups: {},
   };
 }

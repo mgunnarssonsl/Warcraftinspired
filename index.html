@@ -8,7 +8,7 @@
   <body>
     <div id="app">
       <header id="topbar">
-        <div class="brand">Ironvale <span class="sub">combat foundation</span></div>
+        <div class="brand">Ironvale <span class="sub" id="subtitle">skirmish</span></div>
         <div class="resources">
           <div class="res" title="Gold: spent on workers, soldiers, buildings and upgrades">
             <span class="icon gold"></span><span id="gold">0</span>
@@ -20,15 +20,18 @@
             <span class="icon pop"></span><span id="pop">0/0</span>
           </div>
           <div class="res clock" title="Match time"><span id="clock">0:00</span></div>
+          <button id="menu-btn" title="Menu (F10)">Menu</button>
           <button id="help-btn" title="Controls (F1)">?</button>
         </div>
       </header>
       <main id="stage">
         <canvas id="view"></canvas>
         <canvas id="overlay"></canvas>
+        <div id="objectives"></div>
         <div id="notices"></div>
+        <div id="modal" class="hidden"></div>
         <div id="paused" class="hidden">Paused (P)</div>
-        <div id="help" class="panel">
+        <div id="help" class="panel hidden">
           <h2>Controls</h2>
           <ul>
             <li><b>Left-click</b> select · <b>drag</b> box-select · <b>Shift</b> add/remove</li>
@@ -40,7 +43,7 @@
             <li><b>.</b> next idle worker · <b>Space</b> jump to last alert / selection</li>
             <li><b>Ctrl+1–9</b> set group · <b>1–9</b> recall (twice to center)</li>
             <li><b>Arrows</b>, screen edges or <b>middle-drag</b> to scroll · <b>wheel</b> zoom</li>
-            <li><b>P</b> pause · <b>`</b> debug overlay · <b>F1</b> this panel</li>
+            <li><b>P</b> pause · <b>F10</b> menu (surrender, restart) · <b>`</b> debug overlay · <b>F1</b> this panel</li>
           </ul>
           <p class="goal">Put your Laborers to work: gold from mines (two miners fit inside at once), wood from trees. Resources count only when delivered. Train more Laborers at the Keep, build Farms for population, a Lumber Mill near the forest for shorter wood trips, and a Barracks for soldiers. Brigand camps guard the richer mines: clear them to expand.</p>
           <button id="help-close">Got it</button>

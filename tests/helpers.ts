@@ -1,5 +1,5 @@
 import { Game } from '../src/sim/game';
-import { TERRAIN, type GameState } from '../src/sim/types';
+import { emptyStats, TERRAIN, type GameState } from '../src/sim/types';
 
 /** An open grass field with no entities, for focused rule tests. */
 export function emptyGame(width = 32, height = 24): Game {
@@ -19,9 +19,13 @@ export function emptyGame(width = 32, height = 24): Game {
       goldGathered: 0,
       woodGathered: 0,
       neutral: false,
+      defeated: false,
+      stats: emptyStats(),
     })),
     entities: {},
     projectiles: [],
+    outcome: null,
+    victoryRules: false,
   };
   return new Game(state);
 }

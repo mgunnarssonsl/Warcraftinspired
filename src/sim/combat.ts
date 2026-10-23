@@ -61,17 +61,23 @@ export function damageAfterArmor(raw: number, armor: number): number {
 export function findTarget(game: Game, u: Unit, range: number): Target | undefined {
   let best: Target | undefined;
   let bestKey = Infinity;
-  for (const e of Object.values(game.state.entities)) {
-    if (e.kind === 'resource' || !isEnemy(game, u.owner, e.owner) || !targetable(e)) continue;
+  const scan = (list: readonly Target[]) => {
+    for (const e of list) consider(e);
+  };
+  const consider = (e: Target) => {
+    if (!isEnemy(game, u.owner, e.owner) || !targetable(e)) return;
     const d = gap(u, e);
-    if (d > range) continue;
+    if (d > range) return;
     const tier = e.kind === 'unit' ? (canAttack(e) ? 0 : 1) : 2;
     const key = tier * 1000 + d;
     if (key < bestKey) {
       bestKey = key;
       best = e;
     }
-  }
+  };
+  // Units before buildings keeps the same id-ordered tie-breaking per tier.
+  scan(game.units());
+  scan(game.buildings());
   return best;
 }
 
@@ -204,7 +210,7 @@ export function dealDamage(game: Game, attackerId: number, attackerOwner: number
   t.hp -= dmg;
   game.emit({ type: 'hit', id: t.id, attacker: attackerId, attackerOwner, owner: t.owner, damage: dmg, x: t.x, y: t.y });
   if (t.hp <= 0) {
-    kill(game, t);
+    kill(game, t, attackerOwner);
     return;
   }
   // Idle fighters strike back at whoever hit them.
@@ -214,7 +220,11 @@ export function dealDamage(game: Game, attackerId: number, attackerOwner: number
   }
 }
 
-export function kill(game: Game, t: Target): void {
+export function kill(game: Game, t: Target, attackerOwner: number): void {
+  const victim = game.state.players[t.owner];
+  const killer = game.state.players[attackerOwner];
+  if (killer) killer.stats.kills++;
+  if (victim) victim.stats[t.kind === 'building' ? 'buildingsLost' : 'unitsLost']++;
   if (t.kind === 'building') {
     destroyBuilding(game, t.id);
     return;

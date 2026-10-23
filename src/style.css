@@ -389,3 +389,200 @@ body {
   height: 4px;
   background: #f0b030;
 }
+
+#menu-btn {
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 13px;
+  border: 1px solid var(--edge);
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+}
+
+/* ---- objectives ---------------------------------------------------------- */
+#objectives {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  width: 270px;
+  background: rgba(24, 20, 14, 0.88);
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+#objectives .obj-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #e8cf8f;
+}
+#objectives .obj-head button {
+  background: none;
+  border: 1px solid var(--edge);
+  color: var(--text);
+  border-radius: 3px;
+  width: 22px;
+  cursor: pointer;
+}
+#objectives.collapsed .obj-body {
+  display: none;
+}
+.obj-goal {
+  margin: 4px 0 6px;
+  color: var(--text);
+}
+.obj-steps {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+}
+.obj-steps li.done {
+  color: #7dbf6a;
+  text-decoration: line-through;
+}
+.obj-steps li.next {
+  color: var(--text);
+  font-weight: 600;
+}
+.obj-hint {
+  margin-top: 6px;
+  color: #f0d68a;
+  font-style: italic;
+}
+
+/* ---- modal screens --------------------------------------------------------- */
+#modal {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 8, 5, 0.6);
+  z-index: 10;
+}
+.modal-card {
+  width: min(760px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
+  overflow: auto;
+  background: linear-gradient(#2e271d, #211b14);
+  border: 2px solid var(--edge);
+  border-radius: 8px;
+  padding: 20px 26px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+.modal-card.menu {
+  width: min(380px, calc(100% - 32px));
+}
+.modal-card h1 {
+  margin: 0 0 6px;
+  font-size: 30px;
+  letter-spacing: 0.06em;
+  color: #e8cf8f;
+}
+.modal-card h1.victory {
+  color: #8fe07a;
+}
+.modal-card h1.defeat {
+  color: #ff7a5c;
+}
+.modal-card h2 {
+  margin: 0 0 6px;
+  color: #e8cf8f;
+}
+.modal-card h3 {
+  margin: 12px 0 4px;
+  color: #e8cf8f;
+  font-size: 14px;
+}
+.modal-card p {
+  margin: 4px 0;
+}
+.modal-card .lead {
+  font-size: 15px;
+}
+.modal-card .fine {
+  color: var(--muted);
+  font-size: 12px;
+}
+.modal-card ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.intro {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+@media (max-width: 640px) {
+  .intro {
+    grid-template-columns: 1fr;
+  }
+}
+.difficulty {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.difficulty button,
+.modal-card .stack button,
+.modal-card .actions button {
+  background: var(--panel-2);
+  border: 1px solid var(--edge);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 8px 12px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.difficulty button span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+.difficulty button.picked {
+  border-color: #e8cf8f;
+  box-shadow: inset 0 0 0 1px #e8cf8f;
+}
+.modal-card .actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+.modal-card .stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.modal-card button.primary {
+  background: linear-gradient(#6b5a2c, #4d401f);
+  border-color: #e8cf8f;
+  font-weight: 700;
+}
+.modal-card button.danger {
+  border-color: #b5503a;
+  color: #ffb5a0;
+}
+.modal-card button:hover {
+  filter: brightness(1.15);
+}
+table.stats {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+}
+table.stats th,
+table.stats td {
+  padding: 4px 8px;
+  border-bottom: 1px solid rgba(107, 86, 52, 0.4);
+  text-align: right;
+}
+table.stats td:first-child {
+  text-align: left;
+  color: var(--muted);
+}

@@ -13,6 +13,7 @@ computer opponents. No campaign or story.
 - 1.5: 3D foundation
 - 2: base construction and production
 - 3: combat foundation
+- 4: complete skirmish against a computer opponent
 
 See [Roadmap](#roadmap).
 
@@ -22,7 +23,8 @@ Requires Node 20+.
 
 ```sh
 npm install
-npm run dev        # http://localhost:5173  (add ?seed=N for another noise seed)
+npm run dev        # http://localhost:5173
+                   # optional: ?difficulty=easy|normal|hard&seed=N&start=1 (skip the start screen)
 npm test           # simulation tests (vitest)
 npm run build      # typecheck + production bundle in dist/
 ```
@@ -49,6 +51,7 @@ npm run build      # typecheck + production bundle in dist/
 | Minimap | Left-click jumps the camera there. Right-click moves the selected units there. |
 | Space | Jump to the latest alert, or to the current selection |
 | P | Pause |
+| F10 or the Menu button | Menu: resume, restart, new match, surrender (pauses the game) |
 | `` ` `` / F3 | Debug overlay: blocked tiles (red) and the selected units' paths |
 | F1 / ? | Controls panel |
 
@@ -78,8 +81,67 @@ These are the rules as implemented. All numbers live in `src/sim/config.ts`.
   goes idle, and you get a notice.
 - **Population:** Laborers use 1 population, and Guards and Archers use 2. A
   completed Keep provides 10 and a completed Farm 6, up to a cap of 100.
-- **Rival:** Placeholder only. It keeps its five workers harvesting through the
-  same command interface you use. The real opponent comes in Milestone 4.
+
+## Match rules
+
+- **Defeat:** you lose when you own no buildings at all; unfinished ones still
+  count. Surrendering (F10 → Surrender) also loses at once. A defeated
+  player's remaining units leave the field.
+- **Victory:** you win when you are the last player not defeated.
+- **Draw:** if the last players are all defeated in the same simulation tick,
+  the match is a draw.
+- **Neutrals:** the Brigand camps never win or lose.
+- **After the outcome:** the result is final. The game keeps running behind
+  the end screen, so you can choose "Keep watching".
+- **End screen:** compares gold and wood gathered, units trained and lost,
+  enemies destroyed, and buildings built and lost.
+
+## Computer opponent
+
+`src/ai/computer.ts`; profiles in `CONFIG.ai`.
+
+- **Same rules as you.** It acts only through the same commands you use. It
+  pays the same costs, has the same population limits and build times, and
+  gets no extra resources. There is no fog of war yet, so it sees what you
+  see on screen and on the minimap. All of its information comes through one
+  method (`visible()`), which fog of war will restrict.
+- **Economy:**
+  - About 5 Laborers per mine next to one of its Keeps, plus a small wood
+    crew that shrinks when wood is plentiful.
+  - Rally points send new Laborers straight to work, and idle ones are put
+    back to work.
+- **Building:** it plans one building at a time, in this priority order:
+  1. Farms, kept ahead of its population needs
+  2. Barracks
+  3. Lumber Mill, next to the nearest forest
+  4. Watch Tower
+  5. A second Barracks
+  6. An expansion Keep at the nearest unguarded mine
+- **Placing buildings:** it keeps the lanes between Keeps and mines clear. It
+  sets aside money for builders still walking to their sites, and puts a new
+  builder on any foundation that was left unfinished.
+- **Army:** a mix of Guards and Archers gathers at a staging point in front of
+  its base.
+  - **Defending:** it attack-moves its army toward any enemy near its
+    buildings, recalling an attack wave if the threat is large. On Normal and
+    Hard, nearby Laborers fight back when no soldiers are close.
+  - **Attacking:** once its army reaches the wave size, it attack-moves on
+    your nearest building. On Normal and Hard it first checks that it is
+    stronger than your army; it attacks regardless once its army reaches 24
+    units. A wave falls back at 35% strength, and the next wave is larger.
+- **Difficulty** changes only decisions, never rules:
+
+  | | Easy | Normal | Hard |
+  | --- | --- | --- | --- |
+  | Thinks every | 2 s | 1 s | 0.5 s |
+  | Laborers per Keep (max) | 11 | 12 | 13 |
+  | Barracks | 1 | 2 | 2 |
+  | First attack / wave size | 9:00, 4 | 6:40, 6 | 5:00, 7 |
+  | Expands at | 15:00 | 10:00 | 7:00 |
+  | Checks strength before attacking | no | yes | yes |
+
+  It also expands early if gold is the bottleneck, or if its home mine runs
+  low.
 
 ## Construction rules (current)
 
@@ -216,6 +278,7 @@ src/sim/      deterministic simulation (no DOM access)
   construction.ts placement checks, construction model, cancel/refund
   production.ts training queues, population reservation, rally, refunds
   combat.ts     targeting, attack orders, wind-up/cooldown, projectiles, armor, death
+  outcome.ts    defeat, victory, draw, surrender
 src/render3d/ three.js view (reads state, never writes it)
   cameraRig.ts  angled RTS camera; screen <-> ground conversion
   world.ts      scene, terrain props, entity views and animation, picking, previews
@@ -223,8 +286,8 @@ src/render3d/ three.js view (reads state, never writes it)
   overlay.ts    2D overlay: health/progress bars, mine pips, floating numbers
   groundTexture.ts  procedurally painted ground texture
 src/input/    mouse/keyboard → selection, camera, placement, Commands
-src/ui/       DOM HUD, command card, minimap
-src/ai/       computer players (currently the placeholder rival)
+src/ui/       DOM HUD, command card, minimap, objectives checklist, start/menu/end screens
+src/ai/       computer opponent (computer.ts) and its building placement (placement.ts)
 tests/        vitest suites for simulation rules
 ```
 
@@ -322,6 +385,15 @@ which are never shipped to players.
     - A 10-vs-10 brawl resolves with no stuck units.
     - Camps are symmetric, stay idle, and return home after their leash.
     - Determinism and save/load hold mid-fight.
+  - **Match rules:** elimination, unfinished buildings still counting,
+    same-tick draw, surrender, final outcomes, neutrals, statistics.
+  - **Computer opponent:**
+    - Builds a working base in 6 minutes: Keep, Farms, Barracks, Lumber
+      Mill, 10+ Laborers and 5+ soldiers, with at most 2 idle workers.
+    - Beats a passive player, and wipes out a raid on its Keep.
+    - A full Hard-vs-Easy match ends decisively, and resources never go
+      negative.
+    - Deterministic.
   - **Growth (integration):** a scripted build order on the real map, using
     only player commands, goes from 5 to 21 Laborers, builds a Farm, and
     expands with a second Keep at the nearby expansion mine, which then
@@ -350,6 +422,26 @@ which are never shipped to players.
   - A typical scene draws in about 110 draw calls and 154k triangles.
   - The same flows were checked in 2D during Milestone 1: control groups,
     the idle-worker hotkey, and the depletion notice and idle count.
+- **AI-vs-AI matches (headless, 12 games, outside the test suite):** every
+  game ended decisively, at 10–20 minutes of game time and 1–2 s of real
+  time per game. The stronger difficulty won most matchups:
+  - Hard beat Easy 2 of 2.
+  - Hard beat Normal 3 of 4.
+  - Normal beat Easy 3 of 4.
+
+  Both mirror matches went to player 0, which may be a slight seat bias to
+  investigate in Phase E.
+- **Scripted browser checks for Milestone 4:**
+  - The start screen pauses the game, and choosing a difficulty starts that
+    match.
+  - The objectives checklist ticks off as you play.
+  - F10 opens the menu and pauses.
+  - Surrendering shows the defeat screen with the right reason and
+    statistics, and "Play again" starts a new match.
+  - Destroying the enemy shows the victory screen.
+  - A Normal AI beat a passive player at 7:40 and showed the elimination
+    screen, and "Keep watching" works.
+  - No console errors.
 - **Not yet done:** human playtesting of feel and pacing, and frame-rate
   measurement on real GPUs. Software WebGL only manages ~2–3 fps, which says
   nothing about real hardware.
@@ -361,7 +453,6 @@ which are never shipped to players.
    preview. The simulation, commands and tests carried over unchanged.
 2. ~~Base construction and production~~ (done)
 3. ~~Combat foundation~~ (done)
-4. Complete skirmish: computer opponent, expansion, victory, defeat,
-   surrender, restart
+4. ~~Complete skirmish~~ (done)
 5. Strategic depth: hero, experience, abilities, neutral camps, fog of war,
    upgrades

@@ -5,12 +5,14 @@
 import { CONFIG, type BuildingType, type UnitType } from './config';
 import { applyCommand, type Command } from './commands';
 import { updateCombat, updateCombatOrder } from './combat';
+import { checkOutcome } from './outcome';
 import { updateBuilder } from './construction';
 import { updateProduction } from './production';
 import { updateGatherer } from './gathering';
 import { generateMap } from './mapgen';
 import { planPath, updateMovement } from './movement';
 import { NavGrid } from './nav';
+import { emptyStats } from './types';
 import type {
   Building,
   Entity,
@@ -63,10 +65,14 @@ export class Game {
           goldGathered: 0,
           woodGathered: 0,
           neutral: false,
+          defeated: false,
+          stats: emptyStats(),
         }),
       ),
       entities: {},
       projectiles: [],
+      outcome: null,
+      victoryRules: true,
     };
     const game = new Game(state);
     for (const i of layout.trees) {
@@ -91,6 +97,8 @@ export class Game {
       goldGathered: 0,
       woodGathered: 0,
       neutral: true,
+      defeated: false,
+      stats: emptyStats(),
     });
     for (let i = 0; i < layout.mines.length; i += 2) {
       const guards = CAMPS[layout.mines[i].role];
@@ -139,22 +147,36 @@ export class Game {
     return e && e.kind === 'building' ? e : undefined;
   }
 
-  units(): Unit[] {
-    const out: Unit[] = [];
-    for (const e of Object.values(this.state.entities)) if (e.kind === 'unit') out.push(e);
-    return out;
+  // Per-kind lists in ascending id order, cached until an entity is added or
+  // removed. Callers must treat them as read-only; a rebuild makes new arrays,
+  // so iterating a list while entities die is safe.
+  private lists: { units: Unit[]; buildings: Building[]; resources: ResourceNode[] } | null = null;
+
+  private kindLists() {
+    if (!this.lists) {
+      const units: Unit[] = [];
+      const buildings: Building[] = [];
+      const resources: ResourceNode[] = [];
+      for (const e of Object.values(this.state.entities)) {
+        if (e.kind === 'unit') units.push(e);
+        else if (e.kind === 'building') buildings.push(e);
+        else resources.push(e);
+      }
+      this.lists = { units, buildings, resources };
+    }
+    return this.lists;
   }
 
-  buildings(): Building[] {
-    const out: Building[] = [];
-    for (const e of Object.values(this.state.entities)) if (e.kind === 'building') out.push(e);
-    return out;
+  units(): readonly Unit[] {
+    return this.kindLists().units;
   }
 
-  resources(): ResourceNode[] {
-    const out: ResourceNode[] = [];
-    for (const e of Object.values(this.state.entities)) if (e.kind === 'resource') out.push(e);
-    return out;
+  buildings(): readonly Building[] {
+    return this.kindLists().buildings;
+  }
+
+  resources(): readonly ResourceNode[] {
+    return this.kindLists().resources;
   }
 
   player(id: number): Player {
@@ -206,6 +228,7 @@ export class Game {
       maxAmount: amount,
     };
     this.state.entities[node.id] = node;
+    this.lists = null;
     this.nav.addFootprint(node.id, node);
     this.state.navVersion = this.nav.version;
     return node;
@@ -234,6 +257,7 @@ export class Game {
       targetId: -1,
     };
     this.state.entities[b.id] = b;
+    this.lists = null;
     this.nav.addFootprint(b.id, b);
     this.state.navVersion = this.nav.version;
     return b;
@@ -264,6 +288,7 @@ export class Game {
       home: null,
     };
     this.state.entities[u.id] = u;
+    this.lists = null;
     return u;
   }
 
@@ -304,6 +329,7 @@ export class Game {
       this.state.navVersion = this.nav.version;
     }
     delete this.state.entities[id];
+    this.lists = null;
   }
 
   // ---- commands, events, stepping -----------------------------------------
@@ -355,6 +381,7 @@ export class Game {
     const alive = units.filter((u) => this.state.entities[u.id]);
     updateMovement(this, alive);
     updateCombat(this, alive);
+    checkOutcome(this);
     this.state.tick++;
   }
 

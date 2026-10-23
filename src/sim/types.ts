@@ -43,6 +43,27 @@ export interface Player {
   woodGathered: number;
   /** Hostile neutral creeps: enemies of everyone, never win or lose. */
   neutral: boolean;
+  defeated: boolean;
+  stats: PlayerStats;
+}
+
+export interface PlayerStats {
+  unitsTrained: number;
+  unitsLost: number;
+  /** Enemy units and buildings destroyed. */
+  kills: number;
+  buildingsBuilt: number;
+  buildingsLost: number;
+}
+
+export function emptyStats(): PlayerStats {
+  return { unitsTrained: 0, unitsLost: 0, kills: 0, buildingsBuilt: 0, buildingsLost: 0 };
+}
+
+export interface Outcome {
+  /** Winning player, or null for a draw. */
+  winner: number | null;
+  tick: number;
 }
 
 export interface Carry {
@@ -218,6 +239,10 @@ export interface GameState {
   entities: Record<number, Entity>;
   /** Ranged attacks in flight; damage lands on arrival. */
   projectiles: Projectile[];
+  /** Set once the match is decided; play may continue for spectating. */
+  outcome: Outcome | null;
+  /** Elimination rules active (skirmishes); off in rule-test sandboxes. */
+  victoryRules: boolean;
 }
 
 export type GameEvent =
@@ -235,4 +260,6 @@ export type GameEvent =
   | { type: 'buildingDestroyed'; player: number; building: BuildingType; refundGold: number; refundWood: number; x: number; y: number }
   | { type: 'attack'; id: number }
   | { type: 'hit'; id: number; attacker: number; attackerOwner: number; owner: number; damage: number; x: number; y: number }
-  | { type: 'death'; id: number; owner: number; unit: UnitType; x: number; y: number };
+  | { type: 'death'; id: number; owner: number; unit: UnitType; x: number; y: number }
+  | { type: 'playerDefeated'; player: number; reason: 'eliminated' | 'surrendered' }
+  | { type: 'matchOver'; winner: number | null };

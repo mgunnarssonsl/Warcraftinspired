@@ -195,6 +195,7 @@ export function updateBuilder(game: Game, u: Unit, o: BuildOrder): void {
     site.progress = 1;
     site.hp = Math.min(site.maxHp, Math.round(site.hp));
     game.emit({ type: 'buildingComplete', player: site.owner, id: site.id, x: site.x, y: site.y });
+    game.player(site.owner).stats.buildingsBuilt++;
     finish(game, u, o);
   }
 }

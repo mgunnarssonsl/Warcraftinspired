@@ -438,7 +438,7 @@ export class InputController {
   // ---- keyboard ---------------------------------------------------------------
 
   private keyDown(e: KeyboardEvent): void {
-    if (e.target instanceof HTMLInputElement) return;
+    if (e.target instanceof HTMLInputElement || this.client.modalOpen) return;
     this.keys.add(e.key);
     const k = e.key.toLowerCase();
     if (e.key.startsWith('Arrow')) {

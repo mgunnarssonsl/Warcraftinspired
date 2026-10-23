@@ -1,8 +1,8 @@
-// Entry point: wires simulation, 3D view, overlay, input, HUD and the
-// placeholder rival together and runs a fixed-timestep loop with render
+// Entry point: wires simulation, 3D view, overlay, input, HUD, screens and
+// the computer opponent together and runs a fixed-timestep loop with render
 // interpolation.
 
-import { RivalEconomy } from './ai/rival';
+import { ComputerPlayer, type Difficulty } from './ai/computer';
 import { createClientState } from './input/client';
 import { InputController } from './input/input';
 import { Overlay } from './render3d/overlay';
@@ -11,10 +11,14 @@ import { TICK_SECONDS } from './sim/config';
 import { Game } from './sim/game';
 import { Hud } from './ui/hud';
 import { Minimap } from './ui/minimap';
+import { Objectives } from './ui/objectives';
+import { newSeed, Screens } from './ui/screens';
 import './style.css';
 
 const params = new URLSearchParams(location.search);
-const seed = Number(params.get('seed') ?? 1) | 0;
+const seed = params.has('seed') ? Number(params.get('seed')) | 0 : newSeed();
+const difficultyParam = params.get('difficulty');
+const difficulty: Difficulty = difficultyParam === 'easy' || difficultyParam === 'hard' ? difficultyParam : 'normal';
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const overlayCanvas = document.getElementById('overlay') as HTMLCanvasElement;
@@ -28,8 +32,30 @@ const minimap = new Minimap(minimapCanvas, game);
 const now = () => performance.now() / 1000;
 const input = new InputController(canvas, game, world, client, minimap, now);
 const hud = new Hud(game, client, input);
-const rival = new RivalEconomy(1);
+const computer = new ComputerPlayer(1, difficulty);
+game.player(1).name = `Computer (${difficulty})`;
 hud.onAlert = (x, y) => minimap.ping(x, y, '#ff4a3a', now());
+const objectives = new Objectives(game, client.player);
+const screens = new Screens(game, { seed, difficulty }, client.player);
+screens.onClose = () => (client.modalOpen = false);
+screens.onSurrender = () => game.issue({ type: 'surrender', player: client.player });
+document.getElementById('subtitle')!.textContent = `skirmish vs ${difficulty} computer`;
+const openMenu = () => {
+  screens.showMenu();
+  client.modalOpen = screens.current !== null;
+};
+document.getElementById('menu-btn')!.addEventListener('click', openMenu);
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'F10' || (e.key === 'Escape' && screens.current === 'menu')) {
+    e.preventDefault();
+    if (screens.current === 'menu') screens.close();
+    else openMenu();
+  }
+});
+if (params.get('start') !== '1') {
+  screens.showStart();
+  client.modalOpen = true;
+}
 
 function resize(): void {
   const r = canvas.getBoundingClientRect();
@@ -65,11 +91,13 @@ function frame(t: number): void {
   // Clamp large gaps (tab switching) so we never fast-forward wildly.
   const dt = Math.min(0.25, (t - last) / 1000);
   last = t;
-  if (!client.paused) acc += dt;
+  // The start screen and the in-game menu pause the match; the end screen does not.
+  const running = !client.paused && screens.current !== 'start' && screens.current !== 'menu';
+  if (running) acc += dt;
   let steps = 0;
   while (acc >= TICK_SECONDS && steps < MAX_STEPS_PER_FRAME) {
     game.step();
-    rival.update(game);
+    computer.update(game);
     acc -= TICK_SECONDS;
     steps++;
   }
@@ -80,6 +108,14 @@ function frame(t: number): void {
   overlay.handleEvents(events, secs, client.player);
   minimap.handleEvents(events, secs, client.player);
   hud.handleEvents(events);
+  for (const e of events) {
+    if (e.type === 'playerDefeated' && e.player === client.player) screens.defeatReason = e.reason;
+    if (e.type === 'matchOver') {
+      screens.showEnd();
+      client.modalOpen = true;
+    }
+  }
+  objectives.update();
   input.update(dt);
   const alpha = client.paused ? 1 : acc / TICK_SECONDS;
   world.render(client, alpha, secs);
@@ -91,4 +127,4 @@ function frame(t: number): void {
 requestAnimationFrame(frame);
 
 // Debug/testing handle (used by automated browser checks).
-(window as unknown as { __rts: unknown }).__rts = { game, client, world, input };
+(window as unknown as { __rts: unknown }).__rts = { game, client, world, input, computer, screens };

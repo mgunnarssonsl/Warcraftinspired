@@ -191,6 +191,73 @@ export const CONFIG = {
     },
   },
 
+  /**
+   * Computer opponent profiles. Difficulty changes decision quality, timing
+   * and aggression only: every profile pays the same costs, obeys the same
+   * rules and receives no extra resources or information.
+   */
+  ai: {
+    profiles: {
+      easy: {
+        thinkSeconds: 2.0,
+        workerTarget: 11,
+        barracksAtWorkers: 9,
+        maxBarracks: 1,
+        towers: 0,
+        archerShare: 0.25,
+        firstAttackSeconds: 540,
+        waveSize: 4,
+        waveGrowth: 2,
+        expandSeconds: 900,
+        /** Compare its army with the enemy's before launching a wave. */
+        assessStrength: false,
+        /** Simultaneous constructions it will manage. */
+        builders: 1,
+      },
+      normal: {
+        thinkSeconds: 1.0,
+        workerTarget: 12,
+        barracksAtWorkers: 8,
+        maxBarracks: 2,
+        towers: 1,
+        archerShare: 0.4,
+        firstAttackSeconds: 400,
+        waveSize: 6,
+        waveGrowth: 3,
+        expandSeconds: 600,
+        assessStrength: true,
+        builders: 1,
+      },
+      hard: {
+        thinkSeconds: 0.5,
+        workerTarget: 13,
+        barracksAtWorkers: 7,
+        maxBarracks: 2,
+        towers: 1,
+        archerShare: 0.4,
+        firstAttackSeconds: 300,
+        waveSize: 7,
+        waveGrowth: 3,
+        expandSeconds: 420,
+        assessStrength: true,
+        builders: 2,
+      },
+    },
+    /** Enemies this close to any of its buildings trigger defence. */
+    defendRadius: 14,
+    goldWorkersPerMine: 5,
+    /** A wave falls back when reduced to this share of its launch size. */
+    retreatShare: 0.35,
+    /** Spare population it keeps ahead of demand before adding a Farm. */
+    popBuffer: 4,
+    /** Wood banked beyond this while gold-starved means: expand now. */
+    woodSurplus: 600,
+    /** Assessing players attack only with this strength advantage... */
+    attackAdvantage: 1.15,
+    /** ...unless the army is already this large (prevents endless turtling). */
+    attackAnyway: 24,
+  },
+
   construction: {
     /**
      * One construction model: a worker walks to the site; on arrival the cost
