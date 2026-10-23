@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ironvale</title>
+  </head>
+  <body>
+    <div id="app">
+      <header id="topbar">
+        <div class="brand">Ironvale <span class="sub">economic sandbox</span></div>
+        <div class="resources">
+          <div class="res" title="Gold: spent on workers, soldiers, buildings and upgrades">
+            <span class="icon gold"></span><span id="gold">0</span>
+          </div>
+          <div class="res" title="Wood: spent on buildings and technology">
+            <span class="icon wood"></span><span id="wood">0</span>
+          </div>
+          <div class="res" title="Population used / capacity">
+            <span class="icon pop"></span><span id="pop">0/0</span>
+          </div>
+          <div class="res clock" title="Match time"><span id="clock">0:00</span></div>
+          <button id="help-btn" title="Controls (F1)">?</button>
+        </div>
+      </header>
+      <main id="stage">
+        <canvas id="view"></canvas>
+        <div id="notices"></div>
+        <div id="paused" class="hidden">Paused (P)</div>
+        <div id="help" class="panel">
+          <h2>Controls</h2>
+          <ul>
+            <li><b>Left-click</b> select · <b>drag</b> box-select · <b>Shift</b> add/remove</li>
+            <li><b>Double-click</b> a unit: select all of that type on screen</li>
+            <li><b>Right-click</b> ground: move · mine/tree: gather · Keep: return cargo</li>
+            <li><b>M</b> move · <b>S</b> stop · <b>G</b> gather · <b>R</b> return cargo</li>
+            <li><b>.</b> next idle worker · <b>Space</b> jump to last alert / selection</li>
+            <li><b>Ctrl+1–9</b> set group · <b>1–9</b> recall (twice to center)</li>
+            <li><b>Arrows</b>, screen edges or <b>middle-drag</b> to scroll · <b>wheel</b> zoom</li>
+            <li><b>P</b> pause · <b>`</b> debug overlay · <b>F1</b> this panel</li>
+          </ul>
+          <p class="goal">Goal for now: put your five Laborers to work. Gold comes from mines (two miners fit inside at once); wood from trees. Resources count only when delivered to your Keep.</p>
+          <button id="help-close">Got it</button>
+        </div>
+      </main>
+      <footer id="bottom">
+        <div class="mini-wrap">
+          <canvas id="minimap" width="160" height="120"></canvas>
+          <button id="idle-btn" title="Select next idle worker (.)">Idle workers: <b id="idle-count">0</b></button>
+        </div>
+        <div id="selection"></div>
+        <div id="commands"></div>
+      </footer>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

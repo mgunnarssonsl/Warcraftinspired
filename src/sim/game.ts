@@ -1,0 +1,318 @@
+// Game owns the serializable GameState plus derived caches (navigation grid)
+// and advances the simulation one fixed tick at a time. Rendering, input and
+// AI never mutate state directly; they submit Commands.
+
+import { CONFIG, type BuildingType, type UnitType } from './config';
+import { applyCommand, type Command } from './commands';
+import { updateGatherer } from './gathering';
+import { generateMap } from './mapgen';
+import { planPath, updateMovement } from './movement';
+import { NavGrid } from './nav';
+import type {
+  Building,
+  Entity,
+  Footprint,
+  GameEvent,
+  GameState,
+  MoveGoal,
+  Player,
+  ResourceNode,
+  Unit,
+} from './types';
+
+export const PLAYER_COLORS = ['#3a7bd5', '#c0392b', '#27ae60', '#8e44ad'];
+
+export class Game {
+  state: GameState;
+  nav: NavGrid;
+  private pending: Command[] = [];
+  private events: GameEvent[] = [];
+
+  constructor(state: GameState) {
+    this.state = state;
+    this.nav = new NavGrid(state);
+  }
+
+  /** Build the standard skirmish starting state for a seed. */
+  static create(seed: number): Game {
+    const layout = generateMap(seed);
+    const state: GameState = {
+      seed,
+      tick: 0,
+      nextId: 1,
+      rng: seed | 0,
+      navVersion: 0,
+      map: { width: layout.width, height: layout.height, terrain: layout.terrain },
+      players: layout.starts.map(
+        (_, i): Player => ({
+          id: i,
+          name: i === 0 ? 'You' : 'Rival',
+          color: PLAYER_COLORS[i],
+          gold: CONFIG.match.startGold,
+          wood: CONFIG.match.startWood,
+          goldGathered: 0,
+          woodGathered: 0,
+        }),
+      ),
+      entities: {},
+    };
+    const game = new Game(state);
+    for (const i of layout.trees) {
+      const x = i % layout.width;
+      const y = (i - x) / layout.width;
+      game.addResource('tree', x, y, CONFIG.resources.tree.wood);
+    }
+    for (const m of layout.mines) game.addResource('goldmine', m.tx, m.ty, m.amount);
+    layout.starts.forEach((s, p) => {
+      const hq = game.addBuilding('hq', p, s.hq.tx, s.hq.ty);
+      game.spawnUnitsNear('worker', p, hq, CONFIG.match.startWorkers);
+    });
+    return game;
+  }
+
+  static fromJSON(json: string): Game {
+    return new Game(JSON.parse(json) as GameState);
+  }
+
+  toJSON(): string {
+    return JSON.stringify(this.state);
+  }
+
+  // ---- entity access -------------------------------------------------------
+
+  get(id: number): Entity | undefined {
+    return this.state.entities[id];
+  }
+
+  unit(id: number): Unit | undefined {
+    const e = this.state.entities[id];
+    return e && e.kind === 'unit' ? e : undefined;
+  }
+
+  resource(id: number): ResourceNode | undefined {
+    const e = this.state.entities[id];
+    return e && e.kind === 'resource' ? e : undefined;
+  }
+
+  building(id: number): Building | undefined {
+    const e = this.state.entities[id];
+    return e && e.kind === 'building' ? e : undefined;
+  }
+
+  units(): Unit[] {
+    const out: Unit[] = [];
+    for (const e of Object.values(this.state.entities)) if (e.kind === 'unit') out.push(e);
+    return out;
+  }
+
+  buildings(): Building[] {
+    const out: Building[] = [];
+    for (const e of Object.values(this.state.entities)) if (e.kind === 'building') out.push(e);
+    return out;
+  }
+
+  resources(): ResourceNode[] {
+    const out: ResourceNode[] = [];
+    for (const e of Object.values(this.state.entities)) if (e.kind === 'resource') out.push(e);
+    return out;
+  }
+
+  player(id: number): Player {
+    return this.state.players[id];
+  }
+
+  popUsed(player: number): number {
+    let n = 0;
+    for (const u of this.units()) if (u.owner === player) n += CONFIG.units[u.type].pop;
+    return n;
+  }
+
+  popCap(player: number): number {
+    let n = 0;
+    for (const b of this.buildings()) if (b.owner === player) n += CONFIG.buildings[b.type].popProvided;
+    return n;
+  }
+
+  idleWorkers(player: number): Unit[] {
+    return this.units().filter((u) => u.owner === player && u.type === 'worker' && u.order === null);
+  }
+
+  // ---- entity creation / removal ------------------------------------------
+
+  private newId(): number {
+    return this.state.nextId++;
+  }
+
+  addResource(type: ResourceNode['type'], tx: number, ty: number, amount: number): ResourceNode {
+    const size = type === 'goldmine' ? CONFIG.resources.goldmine.size : 1;
+    const node: ResourceNode = {
+      id: this.newId(),
+      kind: 'resource',
+      type,
+      owner: -1,
+      tx,
+      ty,
+      w: size,
+      h: size,
+      x: tx + size / 2,
+      y: ty + size / 2,
+      amount,
+      maxAmount: amount,
+    };
+    this.state.entities[node.id] = node;
+    this.nav.addFootprint(node.id, node);
+    this.state.navVersion = this.nav.version;
+    return node;
+  }
+
+  addBuilding(type: BuildingType, owner: number, tx: number, ty: number): Building {
+    const def = CONFIG.buildings[type];
+    const b: Building = {
+      id: this.newId(),
+      kind: 'building',
+      type,
+      owner,
+      tx,
+      ty,
+      w: def.size,
+      h: def.size,
+      x: tx + def.size / 2,
+      y: ty + def.size / 2,
+      hp: def.hp,
+      maxHp: def.hp,
+    };
+    this.state.entities[b.id] = b;
+    this.nav.addFootprint(b.id, b);
+    this.state.navVersion = this.nav.version;
+    return b;
+  }
+
+  addUnit(type: UnitType, owner: number, x: number, y: number): Unit {
+    const def = CONFIG.units[type];
+    const u: Unit = {
+      id: this.newId(),
+      kind: 'unit',
+      type,
+      owner,
+      x,
+      y,
+      px: x,
+      py: y,
+      hp: def.hp,
+      maxHp: def.hp,
+      radius: def.radius,
+      facing: Math.PI / 2,
+      order: null,
+      move: null,
+      carry: { res: null, amount: 0 },
+      hidden: false,
+    };
+    this.state.entities[u.id] = u;
+    return u;
+  }
+
+  /** Place units on free tiles around a footprint, nearest first. */
+  spawnUnitsNear(type: UnitType, owner: number, f: Footprint, count: number): Unit[] {
+    const spots = this.freeTilesAround(f, count);
+    return spots.map((s) => this.addUnit(type, owner, s.x + 0.5, s.y + 0.5));
+  }
+
+  /** Free passable tiles in rings around a footprint, skipping occupied ones. */
+  freeTilesAround(f: Footprint, count: number): Array<{ x: number; y: number }> {
+    const out: Array<{ x: number; y: number }> = [];
+    const taken = new Set<number>();
+    for (const u of this.units()) taken.add(Math.floor(u.y) * this.nav.w + Math.floor(u.x));
+    for (let ring = 1; ring < 12 && out.length < count; ring++) {
+      // Walk the ring clockwise starting below the footprint (toward the viewer).
+      const cand: Array<{ x: number; y: number }> = [];
+      for (let x = f.tx - ring; x < f.tx + f.w + ring; x++) cand.push({ x, y: f.ty + f.h - 1 + ring });
+      for (let y = f.ty + f.h - 1 + ring; y >= f.ty - ring; y--) cand.push({ x: f.tx + f.w - 1 + ring, y });
+      for (let x = f.tx + f.w - 1 + ring; x >= f.tx - ring; x--) cand.push({ x, y: f.ty - ring });
+      for (let y = f.ty - ring; y <= f.ty + f.h - 1 + ring; y++) cand.push({ x: f.tx - ring, y });
+      for (const c of cand) {
+        const key = c.y * this.nav.w + c.x;
+        if (out.length >= count) break;
+        if (!this.nav.passable(c.x, c.y) || taken.has(key)) continue;
+        taken.add(key);
+        out.push(c);
+      }
+    }
+    return out;
+  }
+
+  removeEntity(id: number): void {
+    const e = this.state.entities[id];
+    if (!e) return;
+    if (e.kind !== 'unit') {
+      this.nav.removeFootprint(e);
+      this.state.navVersion = this.nav.version;
+    }
+    delete this.state.entities[id];
+  }
+
+  // ---- commands, events, stepping -----------------------------------------
+
+  /** Queue a command; it is applied at the start of the next tick. */
+  issue(cmd: Command): void {
+    this.pending.push(cmd);
+  }
+
+  emit(e: GameEvent): void {
+    this.events.push(e);
+  }
+
+  /** Events since the last drain (for renderer/UI feedback; not game state). */
+  drainEvents(): GameEvent[] {
+    const e = this.events;
+    this.events = [];
+    return e;
+  }
+
+  step(): void {
+    const cmds = this.pending;
+    this.pending = [];
+    for (const c of cmds) applyCommand(this, c);
+
+    const units = this.units();
+    for (const u of units) {
+      u.px = u.x;
+      u.py = u.y;
+    }
+    for (const u of units) {
+      if (!this.state.entities[u.id]) continue;
+      if (u.order?.type === 'move') {
+        if (!u.move) this.moveTo(u, { kind: 'point', x: u.order.x, y: u.order.y });
+        else if (u.move.state !== 'moving') {
+          u.order = null;
+          u.move = null;
+        }
+      } else if (u.order?.type === 'gather') {
+        updateGatherer(this, u, u.order);
+      }
+    }
+    updateMovement(this, units);
+    this.state.tick++;
+  }
+
+  /** Start (or keep) moving toward a goal. Re-plans only if the goal changed. */
+  moveTo(u: Unit, goal: MoveGoal): void {
+    if (u.move && sameGoal(u.move.goal, goal) && u.move.state === 'moving') return;
+    u.move = {
+      goal,
+      path: [],
+      state: 'moving',
+      checkX: u.x,
+      checkY: u.y,
+      checkTick: this.state.tick,
+      repaths: 0,
+      navVersion: -1,
+    };
+    planPath(this, u);
+  }
+}
+
+function sameGoal(a: MoveGoal, b: MoveGoal): boolean {
+  if (a.kind === 'point' && b.kind === 'point') return a.x === b.x && a.y === b.y;
+  if (a.kind === 'rect' && b.kind === 'rect') return a.tx === b.tx && a.ty === b.ty && a.w === b.w && a.h === b.h;
+  return false;
+}

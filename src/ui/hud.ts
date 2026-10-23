@@ -1,0 +1,220 @@
+// DOM interface: resource bar, selection panel, command card, idle-worker
+// button, notifications and the controls overlay. Reads state; issues actions
+// through the InputController.
+
+import type { ClientState } from '../input/client';
+import type { InputController } from '../input/input';
+import { CONFIG, TICK_RATE } from '../sim/config';
+import type { Game } from '../sim/game';
+import type { Entity, GameEvent, Unit } from '../sim/types';
+
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function setText(e: HTMLElement, t: string): void {
+  if (e.textContent !== t) e.textContent = t;
+}
+
+export function unitStatus(game: Game, u: Unit): string {
+  const o = u.order;
+  if (!o) return u.carry.amount > 0 ? `Idle, holding ${u.carry.amount} ${u.carry.res}` : 'Idle';
+  if (o.type === 'move') return 'Moving';
+  const node = game.resource(o.nodeId);
+  switch (o.phase) {
+    case 'toNode':
+      return node?.type === 'goldmine' ? 'Heading to the gold mine' : 'Heading to a tree';
+    case 'waiting':
+      return node?.type === 'goldmine' ? 'Waiting: mine is full' : 'Waiting for a free tree';
+    case 'working':
+      return o.res === 'gold' ? 'Mining gold (inside)' : `Chopping wood (${u.carry.amount}/${CONFIG.units.worker.carryWood})`;
+    case 'toDropoff':
+      return `Returning ${u.carry.amount} ${u.carry.res ?? ''}`.trim();
+  }
+}
+
+const ACTIONS = [
+  { id: 'move', label: 'Move', key: 'M', tip: 'Move to a location. (Right-click ground also moves.)' },
+  { id: 'stop', label: 'Stop', key: 'S', tip: 'Stop the current order.' },
+  { id: 'gather', label: 'Gather', key: 'G', tip: 'Harvest gold from a mine or wood from trees. (Right-click a resource.)' },
+  { id: 'return', label: 'Return', key: 'R', tip: 'Deliver carried resources to the nearest Keep, then resume.' },
+] as const;
+
+export class Hud {
+  private gold = document.getElementById('gold')!;
+  private wood = document.getElementById('wood')!;
+  private pop = document.getElementById('pop')!;
+  private clock = document.getElementById('clock')!;
+  private idleBtn = document.getElementById('idle-btn') as HTMLButtonElement;
+  private idleCount = document.getElementById('idle-count')!;
+  private panel = document.getElementById('selection')!;
+  private card = document.getElementById('commands')!;
+  private notices = document.getElementById('notices')!;
+  private help = document.getElementById('help')!;
+  private pausedBanner = document.getElementById('paused')!;
+  private buttons = new Map<string, HTMLButtonElement>();
+  private lastPanel = 0;
+  private panelDirty = true;
+
+  constructor(
+    private game: Game,
+    private client: ClientState,
+    private input: InputController,
+  ) {
+    this.idleBtn.addEventListener('click', () => input.selectIdleWorker());
+    for (const a of ACTIONS) {
+      const b = el('button', 'cmd');
+      b.innerHTML = `<span class="cmd-label">${a.label}</span><span class="cmd-key">${a.key}</span>`;
+      b.title = `${a.tip} [${a.key}]`;
+      b.addEventListener('click', () => input.action(a.id));
+      this.buttons.set(a.id, b);
+      this.card.appendChild(b);
+    }
+    input.onSelectionChanged = () => (this.panelDirty = true);
+    input.onMessage = (t) => this.notify(t);
+    document.getElementById('help-btn')!.addEventListener('click', () => this.toggleHelp());
+    document.getElementById('help-close')!.addEventListener('click', () => this.toggleHelp(false));
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'F1' || e.key === '?') {
+        e.preventDefault();
+        this.toggleHelp();
+      }
+    });
+  }
+
+  setGame(game: Game): void {
+    this.game = game;
+    this.panelDirty = true;
+  }
+
+  toggleHelp(show?: boolean): void {
+    this.help.classList.toggle('hidden', show === undefined ? undefined : !show);
+  }
+
+  notify(text: string, cls = ''): void {
+    const n = el('div', `notice ${cls}`, text);
+    this.notices.appendChild(n);
+    setTimeout(() => n.classList.add('fade'), 4000);
+    setTimeout(() => n.remove(), 5000);
+    while (this.notices.children.length > 4) this.notices.firstChild!.remove();
+  }
+
+  handleEvents(events: GameEvent[]): void {
+    for (const e of events) {
+      if (e.type === 'mineDepleted' && e.player === this.client.player) {
+        this.notify('A gold mine has collapsed. Its workers are now idle. (Space: jump to it)', 'alert');
+      } else if (e.type === 'noDropoff' && e.player === this.client.player) {
+        this.notify('No Keep to deliver resources to.', 'alert');
+      }
+    }
+  }
+
+  update(nowMs: number): void {
+    const p = this.game.player(this.client.player);
+    setText(this.gold, String(p.gold));
+    setText(this.wood, String(p.wood));
+    const used = this.game.popUsed(p.id);
+    const cap = this.game.popCap(p.id);
+    setText(this.pop, `${used}/${cap}`);
+    this.pop.classList.toggle('full', used >= cap);
+    const secs = Math.floor(this.game.state.tick / TICK_RATE);
+    setText(this.clock, `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`);
+    this.pausedBanner.classList.toggle('hidden', !this.client.paused);
+    const idle = this.game.idleWorkers(p.id).length;
+    setText(this.idleCount, String(idle));
+    this.idleBtn.classList.toggle('none', idle === 0);
+
+    // Prune dead entities from the selection.
+    const alive = this.client.selected.filter((id) => this.game.get(id));
+    if (alive.length !== this.client.selected.length) {
+      this.client.selected = alive;
+      this.panelDirty = true;
+    }
+    if (this.panelDirty || nowMs - this.lastPanel > 200) {
+      this.renderPanel();
+      this.lastPanel = nowMs;
+      this.panelDirty = false;
+    }
+    const own = this.client.selected.map((id) => this.game.unit(id)).filter((u): u is Unit => !!u && u.owner === p.id);
+    const workers = own.some((u) => u.type === 'worker');
+    this.card.classList.toggle('hidden', own.length === 0);
+    this.buttons.get('gather')!.disabled = !workers;
+    this.buttons.get('return')!.disabled = !own.some((u) => u.carry.amount > 0);
+    for (const [id, b] of this.buttons) b.classList.toggle('active', this.client.targetMode === id);
+  }
+
+  private renderPanel(): void {
+    const sel = this.client.selected.map((id) => this.game.get(id)).filter((e): e is Entity => !!e);
+    const panel = this.panel;
+    panel.replaceChildren();
+    if (!sel.length) {
+      panel.appendChild(el('div', 'hint', 'Left-click or drag to select workers. Right-click a gold mine or tree to gather.'));
+      return;
+    }
+    if (sel.length === 1) {
+      panel.appendChild(this.detail(sel[0]));
+      return;
+    }
+    panel.appendChild(el('div', 'sel-title', `${sel.length} units selected`));
+    const grid = el('div', 'portraits');
+    for (const e of sel) {
+      if (e.kind !== 'unit') continue;
+      const pt = el('button', 'portrait');
+      pt.title = `${CONFIG.units[e.type].name}: ${unitStatus(this.game, e)}`;
+      pt.style.setProperty('--team', this.game.player(e.owner).color);
+      const hp = el('div', 'hp');
+      hp.style.width = `${(e.hp / e.maxHp) * 100}%`;
+      pt.appendChild(el('span', 'portrait-icon', e.carry.amount ? (e.carry.res === 'gold' ? '●' : '≡') : ''));
+      pt.appendChild(hp);
+      pt.addEventListener('click', (ev) => {
+        if (ev.shiftKey) this.input.setSelection(this.client.selected.filter((id) => id !== e.id));
+        else this.input.setSelection([e.id]);
+      });
+      grid.appendChild(pt);
+    }
+    panel.appendChild(grid);
+  }
+
+  private detail(e: Entity): HTMLElement {
+    const box = el('div', 'detail');
+    const row = (k: string, v: string) => {
+      const r = el('div', 'row');
+      r.appendChild(el('span', 'k', k));
+      r.appendChild(el('span', 'v', v));
+      box.appendChild(r);
+    };
+    if (e.kind === 'unit') {
+      box.appendChild(el('div', 'sel-title', CONFIG.units[e.type].name));
+      row('Health', `${e.hp} / ${e.maxHp}`);
+      row('Status', unitStatus(this.game, e));
+      row('Carrying', e.carry.amount ? `${e.carry.amount} ${e.carry.res}` : 'nothing');
+      if (e.owner !== this.client.player) row('Owner', this.game.player(e.owner).name);
+    } else if (e.kind === 'building') {
+      const def = CONFIG.buildings[e.type];
+      box.appendChild(el('div', 'sel-title', def.name));
+      row('Health', `${e.hp} / ${e.maxHp}`);
+      row('Accepts', 'gold and wood deliveries');
+      row('Population', `+${def.popProvided}`);
+      if (e.owner !== this.client.player) row('Owner', this.game.player(e.owner).name);
+    } else if (e.type === 'goldmine') {
+      box.appendChild(el('div', 'sel-title', CONFIG.resources.goldmine.name));
+      row('Gold left', `${e.amount} / ${e.maxAmount}`);
+      let inside = 0;
+      let waiting = 0;
+      for (const u of this.game.units()) {
+        const o = u.order;
+        if (o?.type !== 'gather' || o.nodeId !== e.id) continue;
+        if (o.phase === 'working') inside++;
+        if (o.phase === 'waiting') waiting++;
+      }
+      row('Miners inside', `${inside} / ${CONFIG.resources.goldmine.maxMiners}${waiting ? ` (+${waiting} waiting)` : ''}`);
+    } else {
+      box.appendChild(el('div', 'sel-title', CONFIG.resources.tree.name));
+      row('Wood left', `${e.amount} / ${e.maxAmount}`);
+    }
+    return box;
+  }
+}
