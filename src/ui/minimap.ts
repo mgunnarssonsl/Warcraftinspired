@@ -30,6 +30,10 @@ export class Minimap {
     }
   }
 
+  ping(x: number, y: number, color: string, now: number): void {
+    this.pings.push({ x, y, t0: now, color });
+  }
+
   /** Latest alert location, for the "jump to alert" key. */
   lastAlert(): { x: number; y: number } | null {
     return this.pings.length ? this.pings[this.pings.length - 1] : null;

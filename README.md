@@ -7,8 +7,14 @@ computer opponents. No campaign or story.
 
 ![3D view: a growing base with Keep, Barracks, Lumber Mill and Farm; Guards and an Archer at the rally point](docs/screenshot.png)
 
-**Status:** Milestones 1 (economic sandbox), 1.5 (3D foundation) and 2 (base
-construction and production) are done. See [Roadmap](#roadmap).
+**Status:** These milestones are done:
+
+- 1: economic sandbox
+- 1.5: 3D foundation
+- 2: base construction and production
+- 3: combat foundation
+
+See [Roadmap](#roadmap).
 
 ## Run it
 
@@ -28,9 +34,11 @@ npm run build      # typecheck + production bundle in dist/
 | Left-click / drag | Select / box-select your units |
 | Shift + click / drag | Add or remove from the selection |
 | Double-click a unit | Select every unit of that type on screen |
-| Right-click | Context command: ground = move, mine or tree = gather, Keep = return cargo, unfinished building = resume construction |
+| Right-click | Context command: ground = move, enemy = attack, mine or tree = gather, Keep = return cargo, unfinished building = resume construction |
 | M, S, G, R | Move, Stop, Gather, Return cargo (also on the command card) |
-| F, L, B, K (Laborer selected) | Place a Farm, Lumber Mill, Barracks or Keep. Click to place, Shift+click to keep placing, right-click or Esc to cancel. |
+| A, then click | Click an enemy to attack it, or the ground to attack-move: walk there and fight anything on the way |
+| H | Hold position: never move, and fight whatever comes within weapon range |
+| F, L, B, T, K (Laborer selected) | Place a Farm, Lumber Mill, Barracks, Watch Tower or Keep. Click to place, Shift+click to keep placing, right-click or Esc to cancel. |
 | Q, W (Keep or Barracks selected) | Train a Laborer (Keep), or a Guard or Archer (Barracks) |
 | Right-click (Keep or Barracks selected) | Set the rally point. On a mine or tree, newly trained Laborers start gathering there. |
 | Click a queue slot | Cancel that unit (full refund) |
@@ -139,8 +147,54 @@ All numbers are in `CONFIG.units` and `CONFIG.production`.
   point. If the rally point is a resource, a new Laborer gathers from it.
   If the building is completely boxed in, the finished unit waits at 100%
   until a tile frees up.
-- **Combat comes in Milestone 3.** Guards and Archers can be trained and moved
-  now, but they can't fight yet.
+
+## Combat rules (current)
+
+All numbers are in `CONFIG.units[*].attack`, `CONFIG.combat` and
+`CONFIG.buildings.tower`.
+
+| | HP | Armor | Damage | Every | Range | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| Laborer | 220 | 0 | 6 | 1.6 s | melee | Fights only when ordered |
+| Guard | 420 | 2 | 14 | 1.3 s | melee | |
+| Archer | 260 | 0 | 13 | 1.5 s | 5.5 | Projectile |
+| Watch Tower | 500 | 5 | 16 | 1.2 s | 7 | 110 gold, 80 wood. Fires only once finished. |
+| Brigand (neutral) | 300 | 1 | 11 | 1.4 s | melee | |
+| Poacher (neutral) | 200 | 0 | 10 | 1.7 s | 5 | Projectile |
+
+- **Damage** is `damage / (1 + 0.06 × armor)`, rounded and at least 1.
+  Buildings have 5 armor. Melee hits land at the end of a short wind-up.
+  Ranged attacks launch a homing projectile, which is part of the
+  simulation state. It deals damage when it arrives and fizzles if the
+  target dies or goes into a mine first.
+- **Orders:**
+  - **Attack** chases its target until it dies.
+  - **Attack-move** walks to a point, fights anything met on the way, then
+    carries on.
+  - **Hold position** never moves, and held units can't be pushed aside.
+  - **Move** ignores enemies, which is how you retreat.
+  - **Stop** clears the current order.
+- **Automatic behavior:**
+  - Idle soldiers attack enemies that come within their acquire range:
+    6 tiles for Guards, 7 for Archers.
+  - Units that are shot from out of sight fight back.
+  - Units that engaged on their own give up and walk back after chasing
+    8 tiles from where they started. Camp guards give up after 6.
+  - Targets are prioritized in this order: units that can fight, then other
+    units, then buildings. Within a tier, the nearest is chosen.
+- **Death and destruction:** a unit at 0 HP dies, and its cargo is lost.
+  A building at 0 HP collapses and frees its tiles, and its training queue
+  is refunded. If it was unfinished, its construction cost is lost. Units
+  inside a gold mine can't be targeted.
+- **Neutral camps:** hostile Brigands guard each contested mine (2 Brigands
+  and a Poacher) and each far expansion (a Brigand and a Poacher). The camps
+  are mirror-symmetric. They stay home until you come near, so expanding
+  there means clearing them first. The nearby natural expansion is
+  unguarded.
+- **Alerts:** when any of your units or buildings is hit, you get "under
+  attack" notices with a red minimap ping. They are throttled to one per
+  10 s unless the attack is somewhere else. Space jumps to the latest alert.
+  In fights, health bars show on every wounded unit.
 
 ## Architecture
 
@@ -161,6 +215,7 @@ src/sim/      deterministic simulation (no DOM access)
   rng.ts        seeded PRNG + hash/value noise
   construction.ts placement checks, construction model, cancel/refund
   production.ts training queues, population reservation, rally, refunds
+  combat.ts     targeting, attack orders, wind-up/cooldown, projectiles, armor, death
 src/render3d/ three.js view (reads state, never writes it)
   cameraRig.ts  angled RTS camera; screen <-> ground conversion
   world.ts      scene, terrain props, entity views and animation, picking, previews
@@ -252,6 +307,21 @@ which are never shipped to players.
     - Destroyed-building refunds.
     - Rally onto a mine.
     - Ownership checks.
+  - **Combat:**
+    - Armor math.
+    - Chase and kill, with the hit count matching damage and HP.
+    - Attack rate matching the cooldown.
+    - Projectiles that land on arrival, and that fizzle when their target dies.
+    - Units in mines can't be targeted.
+    - Building destruction frees tiles and refunds the queue.
+    - Auto-acquire, leash and return, and fighting back.
+    - Move ignoring enemies, attack-move resuming, hold never moving or
+      being pushed.
+    - Workers don't auto-attack, and nothing can attack allies or resources.
+    - The tower fires only when finished, and melee units route around walls.
+    - A 10-vs-10 brawl resolves with no stuck units.
+    - Camps are symmetric, stay idle, and return home after their leash.
+    - Determinism and save/load hold mid-fight.
   - **Growth (integration):** a scripted build order on the real map, using
     only player commands, goes from 5 to 21 Laborers, builds a Farm, and
     expands with a second Keep at the nearby expansion mine, which then
@@ -269,6 +339,14 @@ which are never shipped to players.
     by right-click, Barracks placement, the Archer locked until a Lumber Mill
     is finished, the population-blocked notice, and Guards and Archers
     walking to the rally flag.
+  - Combat:
+    - Box-selecting an army, hovering an enemy, and A+click attack.
+    - A 10-unit army clearing a Brigand camp with no losses.
+    - Wounded health bars, toppling deaths, and hit sparks.
+    - Arrows in flight from Archers and the tower.
+    - Building a tower with the T hotkey, and a held Archer defending
+      beside it.
+    - The "base under attack" alert, with no console errors.
   - A typical scene draws in about 110 draw calls and 154k triangles.
   - The same flows were checked in 2D during Milestone 1: control groups,
     the idle-worker hotkey, and the depletion notice and idle count.
@@ -282,8 +360,7 @@ which are never shipped to players.
 1.5. ~~3D foundation~~ (done): angled camera, 3D models, picking, placement
    preview. The simulation, commands and tests carried over unchanged.
 2. ~~Base construction and production~~ (done)
-3. Combat foundation: melee and ranged units, attack and attack-move,
-   auto-targeting, destruction
+3. ~~Combat foundation~~ (done)
 4. Complete skirmish: computer opponent, expansion, victory, defeat,
    surrender, restart
 5. Strategic depth: hero, experience, abilities, neutral camps, fog of war,

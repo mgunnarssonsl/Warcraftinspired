@@ -18,8 +18,10 @@ export function emptyGame(width = 32, height = 24): Game {
       wood: 0,
       goldGathered: 0,
       woodGathered: 0,
+      neutral: false,
     })),
     entities: {},
+    projectiles: [],
   };
   return new Game(state);
 }

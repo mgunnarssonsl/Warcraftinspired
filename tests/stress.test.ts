@@ -35,7 +35,7 @@ describe('crowded economy', () => {
     const ms = performance.now() - t0;
     // No travelling worker may stand still for more than 3 seconds.
     expect(worstStall).toBeLessThan(60);
-    for (const p of g.state.players) {
+    for (const p of g.state.players.filter((pl) => !pl.neutral)) {
       expect(p.goldGathered).toBeGreaterThan(1500);
       expect(p.woodGathered).toBeGreaterThan(800);
     }

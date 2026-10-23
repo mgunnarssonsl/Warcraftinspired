@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { ClientState } from '../input/client';
-import { CONFIG, type BuildingType } from '../sim/config';
+import { CONFIG, secondsToTicks, type BuildingType } from '../sim/config';
 import type { PlacementCheck } from '../sim/construction';
 import type { Game } from '../sim/game';
 import { hash2 } from '../sim/rng';
@@ -18,6 +18,7 @@ import {
   makeGhost,
   makeMine,
   makeTreeGeometries,
+  makeArrowGeometry,
   makeUnit,
   type BuildingParts,
   type MineParts,
@@ -69,6 +70,9 @@ export class World3D {
   private flashes = new Map<number, number>();
   private particles: Particle[] = [];
   private particleMesh: THREE.InstancedMesh;
+  private arrows: THREE.InstancedMesh;
+  /** Views of units/buildings that just died, animated out before removal. */
+  private dying: Array<{ root: THREE.Object3D; t0: number; building: boolean }> = [];
   private ghosts = new Map<BuildingType, THREE.Group>();
   private ghostOk = new THREE.MeshStandardMaterial({ color: '#7dff8a', emissive: '#1f6a28', transparent: true, opacity: 0.6, depthWrite: false });
   private ghostBad = new THREE.MeshStandardMaterial({ color: '#ff5a4a', emissive: '#6a1f1f', transparent: true, opacity: 0.6, depthWrite: false });
@@ -129,6 +133,11 @@ export class World3D {
     this.particleMesh.frustumCulled = false;
     this.particleMesh.count = 0;
     this.scene.add(this.particleMesh);
+
+    this.arrows = new THREE.InstancedMesh(makeArrowGeometry(), new THREE.MeshStandardMaterial({ color: '#5b4126' }), 200);
+    this.arrows.frustumCulled = false;
+    this.arrows.count = 0;
+    this.scene.add(this.arrows);
 
     this.rallyFlag.add(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.3, 5).translate(0, 0.65, 0), new THREE.MeshStandardMaterial({ color: '#5b4126' })));
     this.rallyCloth = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.28, 0.03).translate(0.24, 1.12, 0), new THREE.MeshStandardMaterial({ color: '#ffffff' }));
@@ -293,6 +302,15 @@ export class World3D {
         this.burst(e.x, 0.8, e.y, 10, '#2e6b3a', 2.2, now);
       } else if (e.type === 'mineDepleted') {
         this.burst(e.x, 0.6, e.y, 24, '#8a7c68', 3, now);
+      } else if (e.type === 'hit') {
+        const t = this.game.get(e.id);
+        const unit = !t || t.kind === 'unit';
+        this.burst(e.x, unit ? 0.6 : 1.0, e.y, unit ? 4 : 3, unit ? '#d8423a' : '#9a8e7a', 1.4, now);
+      } else if (e.type === 'death') {
+        this.burst(e.x, 0.5, e.y, 10, '#8a2a22', 1.8, now);
+      } else if (e.type === 'buildingDestroyed') {
+        this.burst(e.x, 1.0, e.y, 40, '#8d8272', 3.5, now);
+        this.burst(e.x, 1.4, e.y, 16, '#3a3028', 2.5, now);
       } else if (e.type === 'buildingComplete') {
         this.burst(e.x, 1.2, e.y, 14, '#ffe9a8', 2.5, now);
       } else if (e.type === 'deliver') {
@@ -310,8 +328,8 @@ export class World3D {
     }
   }
 
-  addMarker(x: number, y: number, now: number): void {
-    const m = new THREE.Mesh(this.ringGeo, this.ringMat(RING_COLORS.own, 0.9).clone());
+  addMarker(x: number, y: number, now: number, color: string = RING_COLORS.own): void {
+    const m = new THREE.Mesh(this.ringGeo, this.ringMat(color, 0.9).clone());
     m.position.set(x, 0.04, y);
     this.scene.add(m);
     this.markers.push({ mesh: m, t0: now });
@@ -382,8 +400,21 @@ export class World3D {
         this.syncMine(e, now);
       }
     }
-    for (const [id, v] of this.units) if (!seen.has(id)) (this.scene.remove(v.root), this.units.delete(id));
-    for (const [id, v] of this.buildings) if (!seen.has(id)) (this.removePickable(v.root), this.buildings.delete(id));
+    for (const [id, v] of this.units) {
+      if (seen.has(id)) continue;
+      // Keep the body around briefly so deaths read clearly.
+      if (v.root.visible) this.dying.push({ root: v.root, t0: now, building: false });
+      else this.scene.remove(v.root);
+      this.units.delete(id);
+    }
+    for (const [id, v] of this.buildings) {
+      if (seen.has(id)) continue;
+      this.pickables = this.pickables.filter((p) => p !== v.root);
+      this.dying.push({ root: v.root, t0: now, building: true });
+      this.buildings.delete(id);
+    }
+    this.updateDying(now);
+    this.updateArrows(alpha);
     for (const [id, v] of this.mines) if (!seen.has(id)) (this.removePickable(v.root), this.mines.delete(id));
     this.updateTrees(now);
     this.updateRings(client, alpha, now);
@@ -445,6 +476,40 @@ export class World3D {
     if (!this.debugPaths.parent) this.scene.add(this.debugPaths);
   }
 
+  private updateDying(now: number): void {
+    this.dying = this.dying.filter((d) => {
+      const t = now - d.t0;
+      if (d.building) {
+        // Collapse: sink and squash over a second.
+        d.root.scale.y = Math.max(0.05, 1 - t);
+        d.root.position.y = -t * 0.4;
+        if (t > 1.2) this.scene.remove(d.root);
+        return t <= 1.2;
+      }
+      // Topple, then sink into the ground.
+      d.root.rotation.z = Math.min(1, t / 0.35) * (Math.PI / 2) * 0.9;
+      d.root.position.y = t > 0.9 ? -(t - 0.9) * 0.5 : 0;
+      if (t > 1.8) this.scene.remove(d.root);
+      return t <= 1.8;
+    });
+  }
+
+  private updateArrows(alpha: number): void {
+    const ps = this.game.state.projectiles;
+    let i = 0;
+    for (const p of ps) {
+      if (i >= 200) break;
+      const x = p.px + (p.x - p.px) * alpha;
+      const y = p.py + (p.y - p.py) * alpha;
+      this.p.set(x, 0.85, y);
+      this.q.setFromEuler(this.e.set(0, Math.atan2(p.x - p.px, p.y - p.py), 0));
+      this.s.set(1, 1, 1);
+      this.arrows.setMatrixAt(i++, this.m4.compose(this.p, this.q, this.s));
+    }
+    this.arrows.count = i;
+    this.arrows.instanceMatrix.needsUpdate = true;
+  }
+
   private removePickable(o: THREE.Object3D): void {
     this.scene.remove(o);
     this.pickables = this.pickables.filter((p) => p !== o);
@@ -471,6 +536,7 @@ export class World3D {
     const o = u.order;
     const moving = u.move?.state === 'moving' && (u.x !== u.px || u.y !== u.py);
     const working = (o?.type === 'gather' && o.phase === 'working') || (o?.type === 'build' && o.phase === 'building');
+    const windup = secondsToTicks(CONFIG.units[u.type].attack.windup);
     const ph = now * 11 + u.id;
     v.body.position.y = moving ? Math.abs(Math.sin(ph)) * 0.04 : 0;
     v.legL.rotation.x = moving ? Math.sin(ph) * 0.6 : 0;
@@ -479,7 +545,15 @@ export class World3D {
     v.pickHead.visible = mode === 'pick';
     v.axeHead.visible = mode === 'axe';
     v.hammerHead.visible = mode === 'hammer';
-    v.tool.rotation.x = working ? -1.7 + (0.5 + 0.5 * Math.sin(now * 10 + u.id)) * 2.0 : 0.35;
+    if (u.swing > 0) {
+      // Attack: raise the weapon through the wind-up, strike as it lands.
+      const p = 1 - (u.swing - alpha) / windup;
+      v.tool.rotation.x = p < 0.75 ? 0.35 - (p / 0.75) * 2.1 : -1.75 + ((p - 0.75) / 0.25) * 2.3;
+    } else if (u.cooldown > 0 && attacking(u)) {
+      v.tool.rotation.x = 0.55; // follow-through
+    } else {
+      v.tool.rotation.x = working ? -1.7 + (0.5 + 0.5 * Math.sin(now * 10 + u.id)) * 2.0 : 0.35;
+    }
     v.goldSack.visible = u.carry.res === 'gold' && u.carry.amount > 0;
     const logs = u.carry.res === 'wood' ? Math.ceil((u.carry.amount / CONFIG.units.worker.carryWood) * 3) : 0;
     v.logs.forEach((l, i) => (l.visible = i < logs));
@@ -646,4 +720,9 @@ export class World3D {
     }
     return undefined;
   }
+}
+
+function attacking(u: Unit): boolean {
+  const t = u.order?.type;
+  return t === 'attack' || t === 'attackMove' || t === 'hold';
 }

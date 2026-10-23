@@ -156,9 +156,18 @@ function makeArcher(team: string): WorkerParts {
 }
 
 export function makeUnit(type: UnitType, team: string): WorkerParts {
-  if (type === 'guard') return makeGuard(team);
-  if (type === 'archer') return makeArcher(team);
+  // Camp creeps reuse the soldier silhouettes in their own drab colours.
+  if (type === 'guard' || type === 'brigand') return makeGuard(team);
+  if (type === 'archer' || type === 'poacher') return makeArcher(team);
   return makeWorker(team);
+}
+
+/** Arrow mesh for projectiles, pointing along +Z. */
+export function makeArrowGeometry(): THREE.BufferGeometry {
+  return mergeGeometries([
+    new THREE.CylinderGeometry(0.015, 0.015, 0.55, 4).rotateX(Math.PI / 2),
+    new THREE.ConeGeometry(0.04, 0.12, 4).rotateX(Math.PI / 2).translate(0, 0, 0.32),
+  ])!;
 }
 
 // ---- resources -----------------------------------------------------------------
@@ -322,7 +331,25 @@ function barracks(team: string): THREE.Group {
   return g;
 }
 
-const BUILDERS: Record<BuildingType, (team: string) => THREE.Group> = { hq: keep, farm, lumbermill, barracks };
+function tower(team: string): THREE.Group {
+  const g = new THREE.Group();
+  const stone = mat('#a69a86');
+  g.add(mesh(new THREE.CylinderGeometry(0.85, 0.95, 0.3, 8), mat('#7d715f'), 0, 0.15, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.58, 0.7, 2.4, 8), stone, 0, 1.4, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.75, 0.75, 0.25, 8), mat('#b8ad98'), 0, 2.7, 0));
+  // Crenellations
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    g.add(mesh(box(0.2, 0.22, 0.14), stone, Math.cos(a) * 0.66, 2.92, Math.sin(a) * 0.66));
+  }
+  const roof = mesh(new THREE.ConeGeometry(0.62, 0.9, 8), mat(team), 0, 3.35, 0);
+  g.add(roof);
+  g.add(mesh(box(0.18, 0.28, 0.06), mat('#2a1d12'), 0, 1.9, 0.62)); // arrow slit
+  g.add(mesh(box(0.34, 0.5, 0.06), mat('#3b2a1c'), 0, 0.55, 0.68)); // door
+  return g;
+}
+
+const BUILDERS: Record<BuildingType, (team: string) => THREE.Group> = { hq: keep, farm, lumbermill, barracks, tower };
 
 export function makeBuilding(type: BuildingType, team: string, size: number): BuildingParts {
   const root = new THREE.Group();

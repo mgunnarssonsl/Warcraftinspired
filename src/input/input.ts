@@ -9,6 +9,7 @@ import { canAfford, checkPlacement, shortfall, snapFootprint } from '../sim/cons
 import type { Game } from '../sim/game';
 import { acceptsResource } from '../sim/gathering';
 import { trainableAt } from '../sim/production';
+import { canAttack, isEnemy, targetable } from '../sim/combat';
 import type { Entity, Unit } from '../sim/types';
 import type { Minimap } from '../ui/minimap';
 import type { ClientState, TargetMode } from './client';
@@ -17,7 +18,7 @@ const EDGE = 10; // px from the view edge that triggers scrolling
 const PAN_SPEED = 900; // px per second
 const DRAG_THRESHOLD = 5;
 
-export type Action = 'move' | 'stop' | 'gather' | 'return' | 'cancel' | `build:${BuildingType}` | `train:${UnitType}`;
+export type Action = 'move' | 'stop' | 'attack' | 'hold' | 'gather' | 'return' | 'cancel' | `build:${BuildingType}` | `train:${UnitType}`;
 
 export class InputController {
   private mouse = { x: -1, y: -1, inside: false, moved: true };
@@ -273,6 +274,12 @@ export class InputController {
     const moveRest = (rest: Unit[]) => {
       if (rest.length && g) this.game.issue({ type: 'move', player, units: rest.map((u) => u.id), x: g.x, y: g.y });
     };
+    if (target && target.kind !== 'resource' && isEnemy(this.game, player, target.owner) && targetable(target)) {
+      const fighters = units.filter(canAttack);
+      this.game.issue({ type: 'attack', player, units: fighters.map((u) => u.id), targetId: target.id });
+      this.world.flashEntity(target.id, now);
+      return;
+    }
     if (target?.kind === 'resource' && workers.length) {
       this.game.issue({ type: 'gather', player, units: workers.map((u) => u.id), nodeId: target.id });
       this.world.flashEntity(target.id, now);
@@ -325,7 +332,20 @@ export class InputController {
     const units = this.ownSelectedUnits();
     const player = this.client.player;
     const now = this.now();
-    if (mode === 'move') {
+    if (mode === 'attack') {
+      // Enemy under the cursor: attack it. Otherwise attack-move to the point.
+      const target = this.world.pick(sx, sy);
+      const fighters = units.filter(canAttack).map((u) => u.id);
+      if (target && target.kind !== 'resource' && isEnemy(this.game, player, target.owner) && targetable(target)) {
+        this.game.issue({ type: 'attack', player, units: fighters, targetId: target.id });
+        this.world.flashEntity(target.id, now);
+      } else {
+        const g = this.rig.screenToGround(sx, sy);
+        if (!g) return;
+        this.game.issue({ type: 'attackMove', player, units: fighters, x: g.x, y: g.y });
+        this.world.addMarker(g.x, g.y, now, '#ff5a4a');
+      }
+    } else if (mode === 'move') {
       const g = this.rig.screenToGround(sx, sy);
       if (!g) return;
       this.game.issue({ type: 'move', player, units: units.map((u) => u.id), x: g.x, y: g.y });
@@ -387,6 +407,10 @@ export class InputController {
     }
     this.client.placing = null;
     if (name === 'stop') this.game.issue({ type: 'stop', player, units: units.map((u) => u.id) });
+    else if (name === 'hold') this.game.issue({ type: 'hold', player, units: units.map((u) => u.id) });
+    else if (name === 'attack') {
+      if (units.some(canAttack)) this.client.targetMode = 'attack';
+    }
     else if (name === 'return') {
       const carriers = units.filter((u) => u.carry.amount > 0);
       if (carriers.length) this.game.issue({ type: 'returnCargo', player, units: carriers.map((u) => u.id) });
@@ -453,6 +477,12 @@ export class InputController {
         break;
       case 'm':
         this.action('move');
+        break;
+      case 'a':
+        this.action('attack');
+        break;
+      case 'h':
+        this.action('hold');
         break;
       case 'g':
         this.action('gather');

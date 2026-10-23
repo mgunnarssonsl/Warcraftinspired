@@ -72,16 +72,17 @@ export class Overlay {
 
     for (const e of Object.values(game.state.entities)) {
       if (e.kind === 'unit') {
-        if (!selected.has(e.id) || e.hidden) continue;
+        // Selected or wounded units show health, so fights stay readable.
+        if (e.hidden || (!selected.has(e.id) && e.hp >= e.maxHp)) continue;
         const x = e.px + (e.x - e.px) * alpha;
         const y = e.py + (e.y - e.py) * alpha;
-        this.bar(x, y, 1.25, 30, e.hp / e.maxHp, '#4cd964');
+        this.bar(x, y, 1.25, 30, e.hp / e.maxHp, hpColor(e.hp / e.maxHp));
       } else if (e.kind === 'building') {
         const top = e.w * 0.75 + 0.6;
         if (e.progress < 1 && e.owner === client.player) {
           this.bar(e.x, e.y, top * (0.3 + 0.7 * e.progress), 60, e.progress, '#f0b030', `${Math.floor(e.progress * 100)}%`);
-        } else if (selected.has(e.id)) {
-          this.bar(e.x, e.y, top, 70, e.hp / e.maxHp, '#4cd964');
+        } else if (selected.has(e.id) || e.hp < e.maxHp) {
+          this.bar(e.x, e.y, top, 70, e.hp / e.maxHp, hpColor(e.hp / e.maxHp));
         }
         const q = e.queue[0];
         if (q && e.owner === client.player) {
@@ -139,4 +140,8 @@ export class Overlay {
       ctx.strokeRect(x, y, Math.abs(x1 - x0), Math.abs(y1 - y0));
     }
   }
+}
+
+function hpColor(f: number): string {
+  return f > 0.6 ? '#4cd964' : f > 0.3 ? '#f0c030' : '#ff4a3a';
 }

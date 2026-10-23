@@ -41,6 +41,8 @@ export interface Player {
   /** Totals delivered over the match, for summaries and tests. */
   goldGathered: number;
   woodGathered: number;
+  /** Hostile neutral creeps: enemies of everyone, never win or lose. */
+  neutral: boolean;
 }
 
 export interface Carry {
@@ -93,7 +95,23 @@ export type Order =
       phase: 'toSite' | 'building' | 'standby';
       /** Resource node to go back to afterwards (the previous job), or -1. */
       resumeNodeId: number;
-    };
+    }
+  | {
+      type: 'attack';
+      targetId: number;
+      /** Engaged automatically (not ordered): leashed to the anchor point. */
+      auto: boolean;
+      anchorX: number;
+      anchorY: number;
+    }
+  | {
+      type: 'attackMove';
+      x: number;
+      y: number;
+      /** Enemy currently engaged on the way, or -1. */
+      targetId: number;
+    }
+  | { type: 'hold'; targetId: number };
 
 interface EntityBase {
   id: number;
@@ -117,6 +135,26 @@ export interface Unit extends EntityBase {
   carry: Carry;
   /** True while inside a gold mine (not drawn, not clickable). */
   hidden: boolean;
+  /** Ticks until the next attack may start. */
+  cooldown: number;
+  /** Ticks left in the current attack wind-up (0 = not swinging). */
+  swing: number;
+  swingTarget: number;
+  /** Home position for camp guards (neutral hostiles), else null. */
+  home: Vec | null;
+}
+
+export interface Projectile {
+  id: number;
+  owner: number;
+  sourceId: number;
+  targetId: number;
+  x: number;
+  y: number;
+  px: number;
+  py: number;
+  speed: number;
+  damage: number;
 }
 
 export interface Building extends EntityBase, Footprint {
@@ -130,6 +168,9 @@ export interface Building extends EntityBase, Footprint {
   queue: QueueItem[];
   /** Where newly trained units go (and what they gather, if a resource). */
   rally: Rally | null;
+  /** Defensive buildings: ticks until the next shot, and current target. */
+  cooldown: number;
+  targetId: number;
 }
 
 export interface QueueItem {
@@ -175,6 +216,8 @@ export interface GameState {
   players: Player[];
   /** Keyed by id; integer keys iterate in ascending order (deterministic). */
   entities: Record<number, Entity>;
+  /** Ranged attacks in flight; damage lands on arrival. */
+  projectiles: Projectile[];
 }
 
 export type GameEvent =
@@ -189,4 +232,7 @@ export type GameEvent =
   | { type: 'unitTrained'; player: number; id: number; x: number; y: number }
   | { type: 'popBlocked'; player: number; buildingId: number }
   | { type: 'cantTrain'; player: number; reason: string }
-  | { type: 'buildingDestroyed'; player: number; building: BuildingType; refundGold: number; refundWood: number; x: number; y: number };
+  | { type: 'buildingDestroyed'; player: number; building: BuildingType; refundGold: number; refundWood: number; x: number; y: number }
+  | { type: 'attack'; id: number }
+  | { type: 'hit'; id: number; attacker: number; attackerOwner: number; owner: number; damage: number; x: number; y: number }
+  | { type: 'death'; id: number; owner: number; unit: UnitType; x: number; y: number };

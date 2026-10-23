@@ -23,8 +23,18 @@ function setText(e: HTMLElement, t: string): void {
 
 export function unitStatus(game: Game, u: Unit): string {
   const o = u.order;
-  if (!o) return u.carry.amount > 0 ? `Idle, holding ${u.carry.amount} ${u.carry.res}` : 'Idle';
+  if (!o) {
+    if (u.home) return 'Guarding its camp';
+    return u.carry.amount > 0 ? `Idle, holding ${u.carry.amount} ${u.carry.res}` : 'Idle';
+  }
   if (o.type === 'move') return 'Moving';
+  if (o.type === 'hold') return o.targetId >= 0 ? 'Holding position, fighting' : 'Holding position';
+  if (o.type === 'attackMove') return o.targetId >= 0 ? 'Attack-moving, fighting' : 'Attack-moving';
+  if (o.type === 'attack') {
+    const t = game.get(o.targetId);
+    const name = t?.kind === 'unit' ? CONFIG.units[t.type].name : t?.kind === 'building' ? CONFIG.buildings[t.type].name : 'target';
+    return `Attacking ${name}`;
+  }
   if (o.type === 'build') {
     const name = CONFIG.buildings[o.buildingType].name;
     if (o.phase === 'building') return `Building ${name}`;
@@ -58,17 +68,22 @@ const BUILD_TIPS: Record<BuildingType, string> = {
   farm: 'Farm: +6 population.',
   lumbermill: 'Lumber Mill: accepts wood. Build it beside a forest to shorten wood trips. Enables Archers.',
   barracks: 'Barracks: trains Guards and Archers.',
+  tower: 'Watch Tower: shoots enemies within 7 tiles.',
 };
 
 const TRAIN_TIPS: Record<UnitType, string> = {
   worker: 'Laborer: gathers, builds.',
   guard: 'Guard: sturdy melee soldier.',
   archer: 'Archer: fragile ranged soldier.',
+  brigand: '',
+  poacher: '',
 };
 
 const ACTIONS: ActionDef[] = [
   { id: 'move', label: 'Move', key: 'M', tip: 'Move to a location. (Right-click ground also moves.)' },
   { id: 'stop', label: 'Stop', key: 'S', tip: 'Stop the current order.' },
+  { id: 'attack', label: 'Attack', key: 'A', tip: 'Click an enemy to attack it, or the ground to attack-move: walk there, fighting anything met on the way. (Right-click an enemy also attacks.)' },
+  { id: 'hold', label: 'Hold', key: 'H', tip: 'Hold position: never move, attack enemies in weapon range.' },
   { id: 'gather', label: 'Gather', key: 'G', tip: 'Harvest gold from a mine or wood from trees. (Right-click a resource.)' },
   { id: 'return', label: 'Return', key: 'R', tip: 'Deliver carried resources to the nearest drop-off, then resume.' },
   ...(Object.keys(CONFIG.buildings) as BuildingType[]).map((t) => {
@@ -81,7 +96,7 @@ const ACTIONS: ActionDef[] = [
       tip: `${BUILD_TIPS[t]} Cost: ${d.cost.gold} gold, ${d.cost.wood} wood. Build time ${d.buildSeconds}s. Requires a Laborer.`,
     };
   }),
-  ...(Object.keys(CONFIG.units) as UnitType[]).map((t) => {
+  ...(Object.keys(CONFIG.units) as UnitType[]).filter((t) => CONFIG.units[t].trainedAt).map((t) => {
     const d = CONFIG.units[t];
     const req = d.requires ? ` Requires a ${CONFIG.buildings[d.requires].name}.` : '';
     return {
@@ -162,8 +177,25 @@ export class Hud {
     while (this.notices.children.length > 4) this.notices.firstChild!.remove();
   }
 
+  /** Called when an attack alert fires (e.g. to ping the minimap). */
+  onAlert: (x: number, y: number) => void = () => {};
+  private lastAlert = { t: -1e9, x: 0, y: 0 };
+
   handleEvents(events: GameEvent[]): void {
     for (const e of events) {
+      if (e.type === 'hit' && e.owner === this.client.player && e.attackerOwner !== this.client.player) {
+        // At most one alert per 10 s, unless the attack is somewhere else.
+        const now = performance.now();
+        const far = Math.hypot(e.x - this.lastAlert.x, e.y - this.lastAlert.y) > 15;
+        if (now - this.lastAlert.t > 10000 || (far && now - this.lastAlert.t > 3000)) {
+          this.lastAlert = { t: now, x: e.x, y: e.y };
+          const victim = this.game.get(e.id);
+          const civil = !victim || victim.kind === 'building' || victim.type === 'worker';
+          this.notify(civil ? 'Your base is under attack! (Space: jump there)' : 'Your forces are under attack! (Space: jump there)', 'alert');
+          this.onAlert(e.x, e.y);
+        }
+        continue;
+      }
       if (e.type === 'mineDepleted' && e.player === this.client.player) {
         this.notify('A gold mine has collapsed. Its workers are now idle. (Space: jump to it)', 'alert');
       } else if (e.type === 'noDropoff' && e.player === this.client.player) {
@@ -229,7 +261,8 @@ export class Hud {
         btn.disabled = !!missingRequirement(this.game, p.id, a.train);
         continue;
       }
-      btn.classList.toggle('hidden', own.length === 0 || (!!a.build && !workers));
+      const workerOnly = !!a.build || a.id === 'gather' || a.id === 'return';
+      btn.classList.toggle('hidden', own.length === 0 || (workerOnly && !workers));
       if (a.build) btn.classList.toggle('poor', !canAfford(this.game, p.id, a.build));
       btn.classList.toggle('active', this.client.targetMode === a.id || (!!a.build && this.client.placing === a.build));
     }
@@ -288,6 +321,10 @@ export class Hud {
       row('Health', `${e.hp} / ${e.maxHp}`);
       row('Status', unitStatus(this.game, e));
       if (e.type === 'worker') row('Carrying', e.carry.amount ? `${e.carry.amount} ${e.carry.res}` : 'nothing');
+      const def = CONFIG.units[e.type];
+      const at = def.attack;
+      row('Attack', `${at.damage} ${at.projectileSpeed ? 'ranged' : 'melee'}, every ${at.cooldown}s${at.projectileSpeed ? `, range ${at.range}` : ''}`);
+      row('Armor', String(def.armor));
       if (e.owner !== this.client.player) row('Owner', this.game.player(e.owner).name);
     } else if (e.kind === 'building') {
       const def = CONFIG.buildings[e.type];
@@ -299,6 +336,7 @@ export class Hud {
       }
       const acc = def.accepts as readonly string[];
       if (acc.length) row('Accepts', `${acc.join(' and ')} deliveries`);
+      if (def.attack) row('Attack', `${def.attack.damage}, every ${def.attack.cooldown}s, range ${def.attack.range}`);
       if (def.popProvided) row('Population', `+${def.popProvided}`);
       if (e.owner !== this.client.player) row('Owner', this.game.player(e.owner).name);
       else if (e.progress >= 1 && trainableAt(e.type).length) this.production(box, e, row);

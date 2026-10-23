@@ -29,6 +29,7 @@ const now = () => performance.now() / 1000;
 const input = new InputController(canvas, game, world, client, minimap, now);
 const hud = new Hud(game, client, input);
 const rival = new RivalEconomy(1);
+hud.onAlert = (x, y) => minimap.ping(x, y, '#ff4a3a', now());
 
 function resize(): void {
   const r = canvas.getBoundingClientRect();

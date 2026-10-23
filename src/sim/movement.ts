@@ -196,7 +196,10 @@ function separate(game: Game, units: Unit[]): void {
           const aMoving = a.move?.state === 'moving';
           const bMoving = b.move?.state === 'moving';
           // Movers mostly shove idle units aside rather than being blocked.
-          const wa = aMoving === bMoving ? 0.5 : aMoving ? 0.2 : 0.8;
+          let wa = aMoving === bMoving ? 0.5 : aMoving ? 0.2 : 0.8;
+          // Units holding position are never shoved.
+          if (a.order?.type === 'hold') wa = b.order?.type === 'hold' ? 0.5 : 0;
+          else if (b.order?.type === 'hold') wa = 1;
           tryShift(game, a, -dx * overlap * wa, -dy * overlap * wa);
           tryShift(game, b, dx * overlap * (1 - wa), dy * overlap * (1 - wa));
         }

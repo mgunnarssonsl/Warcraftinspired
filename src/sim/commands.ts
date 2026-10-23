@@ -5,6 +5,7 @@ import { CONFIG, type BuildingType, type UnitType } from './config';
 import { cancelConstruction, checkPlacement, resumeBuild, shortfall, startBuild } from './construction';
 import type { Game } from './game';
 import { cancelTraining, enqueue, setRally } from './production';
+import { canAttack, isEnemy, targetable } from './combat';
 import { releaseFromNode, startGather, startReturnCargo } from './gathering';
 import type { Unit } from './types';
 
@@ -13,6 +14,9 @@ export type Command =
   | { type: 'gather'; player: number; units: number[]; nodeId: number }
   | { type: 'returnCargo'; player: number; units: number[]; dropoffId?: number }
   | { type: 'stop'; player: number; units: number[] }
+  | { type: 'attack'; player: number; units: number[]; targetId: number }
+  | { type: 'attackMove'; player: number; units: number[]; x: number; y: number }
+  | { type: 'hold'; player: number; units: number[] }
   | { type: 'build'; player: number; units: number[]; buildingType: BuildingType; tx: number; ty: number }
   | { type: 'resumeBuild'; player: number; units: number[]; buildingId: number }
   | { type: 'cancelBuild'; player: number; buildingId: number }
@@ -90,6 +94,35 @@ export function applyCommand(game: Game, cmd: Command): void {
       const site = game.building(cmd.buildingId);
       if (!site) return;
       for (const u of units) if (u.type === 'worker') resumeBuild(game, u, site);
+      return;
+    }
+    case 'attack': {
+      const t = game.get(cmd.targetId);
+      if (!targetable(t) || !isEnemy(game, cmd.player, t.owner)) return;
+      for (const u of units) {
+        if (!canAttack(u)) continue;
+        releaseFromNode(game, u);
+        u.order = { type: 'attack', targetId: t.id, auto: false, anchorX: u.x, anchorY: u.y };
+        u.move = null;
+      }
+      return;
+    }
+    case 'attackMove': {
+      const fighters = units.filter(canAttack);
+      const slots = formationSlots(game, fighters, cmd.x, cmd.y);
+      fighters.forEach((u, i) => {
+        releaseFromNode(game, u);
+        u.order = { type: 'attackMove', x: slots[i].x, y: slots[i].y, targetId: -1 };
+        u.move = null;
+      });
+      return;
+    }
+    case 'hold': {
+      for (const u of units) {
+        releaseFromNode(game, u);
+        u.order = { type: 'hold', targetId: -1 };
+        u.move = null;
+      }
       return;
     }
     case 'stop': {

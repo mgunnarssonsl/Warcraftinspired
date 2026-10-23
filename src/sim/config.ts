@@ -37,6 +37,9 @@ export const CONFIG = {
       trainedAt: 'hq',
       requires: null,
       hotkey: 'Q',
+      armor: 0,
+      // Laborers fight only when ordered to (acquire 0: no auto-targeting).
+      attack: { damage: 6, range: 0.4, cooldown: 1.6, windup: 0.45, acquire: 0, projectileSpeed: 0 },
     },
     guard: {
       name: 'Guard',
@@ -49,6 +52,8 @@ export const CONFIG = {
       trainedAt: 'barracks',
       requires: null,
       hotkey: 'Q',
+      armor: 2,
+      attack: { damage: 14, range: 0.45, cooldown: 1.3, windup: 0.4, acquire: 6, projectileSpeed: 0 },
     },
     archer: {
       name: 'Archer',
@@ -62,7 +67,52 @@ export const CONFIG = {
       /** Needs a completed Lumber Mill (bows need seasoned wood). */
       requires: 'lumbermill',
       hotkey: 'W',
+      armor: 0,
+      attack: { damage: 13, range: 5.5, cooldown: 1.5, windup: 0.45, acquire: 7, projectileSpeed: 12 },
     },
+    // Hostile neutrals that guard expansions. Not trainable by anyone.
+    brigand: {
+      name: 'Brigand',
+      hp: 300,
+      speed: 2.6,
+      radius: 0.35,
+      pop: 0,
+      cost: { gold: 0, wood: 0 },
+      trainSeconds: 0,
+      trainedAt: null,
+      requires: null,
+      hotkey: '',
+      armor: 1,
+      attack: { damage: 11, range: 0.45, cooldown: 1.4, windup: 0.4, acquire: 5, projectileSpeed: 0 },
+    },
+    poacher: {
+      name: 'Poacher',
+      hp: 200,
+      speed: 2.6,
+      radius: 0.3,
+      pop: 0,
+      cost: { gold: 0, wood: 0 },
+      trainSeconds: 0,
+      trainedAt: null,
+      requires: null,
+      hotkey: '',
+      armor: 0,
+      attack: { damage: 10, range: 5, cooldown: 1.7, windup: 0.5, acquire: 6, projectileSpeed: 11 },
+    },
+  },
+
+  combat: {
+    /** Damage multiplier is 1 / (1 + armor * armorFactor). */
+    armorFactor: 0.06,
+    /** Units that auto-engaged give up past this distance from where they started. */
+    leash: 8,
+    /** Neutral camp guards return home sooner. */
+    campLeash: 6,
+    /** Ticks between auto-acquire scans for idle units (staggered by id). */
+    scanTicks: 5,
+    /** Extra reach allowed when a swing lands, so a step back doesn't whiff. */
+    swingSlack: 0.5,
+    buildingArmor: 5,
   },
 
   production: {
@@ -93,6 +143,7 @@ export const CONFIG = {
       cost: { gold: 385, wood: 205 },
       buildSeconds: 60,
       hotkey: 'K',
+      attack: null,
     },
     farm: {
       name: 'Farm',
@@ -103,6 +154,7 @@ export const CONFIG = {
       cost: { gold: 80, wood: 20 },
       buildSeconds: 20,
       hotkey: 'F',
+      attack: null,
     },
     barracks: {
       name: 'Barracks',
@@ -113,6 +165,7 @@ export const CONFIG = {
       cost: { gold: 160, wood: 60 },
       buildSeconds: 45,
       hotkey: 'B',
+      attack: null,
     },
     lumbermill: {
       name: 'Lumber Mill',
@@ -123,6 +176,18 @@ export const CONFIG = {
       cost: { gold: 120, wood: 0 },
       buildSeconds: 30,
       hotkey: 'L',
+      attack: null,
+    },
+    tower: {
+      name: 'Watch Tower',
+      hp: 500,
+      size: 2,
+      popProvided: 0,
+      accepts: [] as const,
+      cost: { gold: 110, wood: 80 },
+      buildSeconds: 35,
+      hotkey: 'T',
+      attack: { damage: 16, range: 7, cooldown: 1.2, windup: 0, acquire: 7, projectileSpeed: 14 },
     },
   },
 

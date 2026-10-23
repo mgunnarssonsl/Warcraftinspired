@@ -4,6 +4,7 @@
 
 import { CONFIG, type BuildingType, type UnitType } from './config';
 import { applyCommand, type Command } from './commands';
+import { updateCombat, updateCombatOrder } from './combat';
 import { updateBuilder } from './construction';
 import { updateProduction } from './production';
 import { updateGatherer } from './gathering';
@@ -23,6 +24,13 @@ import type {
 } from './types';
 
 export const PLAYER_COLORS = ['#3a7bd5', '#c0392b', '#27ae60', '#8e44ad'];
+export const NEUTRAL_COLOR = '#8a5a2b';
+
+/** Guards per camp, by the role of the mine they protect. */
+const CAMPS: Partial<Record<keyof typeof CONFIG.mines, UnitType[]>> = {
+  center: ['brigand', 'brigand', 'poacher'],
+  far: ['brigand', 'poacher'],
+};
 
 export class Game {
   state: GameState;
@@ -54,9 +62,11 @@ export class Game {
           wood: CONFIG.match.startWood,
           goldGathered: 0,
           woodGathered: 0,
+          neutral: false,
         }),
       ),
       entities: {},
+      projectiles: [],
     };
     const game = new Game(state);
     for (const i of layout.trees) {
@@ -69,6 +79,34 @@ export class Game {
       const hq = game.addBuilding('hq', p, s.hq.tx, s.hq.ty);
       game.spawnUnitsNear('worker', p, hq, CONFIG.match.startWorkers);
     });
+    // Hostile camps guard the contested mines. Mines come in mirrored pairs;
+    // the second camp of each pair is the exact mirror of the first.
+    const neutral = state.players.length;
+    state.players.push({
+      id: neutral,
+      name: 'Brigands',
+      color: NEUTRAL_COLOR,
+      gold: 0,
+      wood: 0,
+      goldGathered: 0,
+      woodGathered: 0,
+      neutral: true,
+    });
+    for (let i = 0; i < layout.mines.length; i += 2) {
+      const guards = CAMPS[layout.mines[i].role];
+      if (!guards) continue;
+      const m = layout.mines[i];
+      const size = CONFIG.resources.goldmine.size;
+      const spots = game.freeTilesAround({ tx: m.tx, ty: m.ty, w: size, h: size }, guards.length);
+      guards.forEach((type, k) => {
+        const s = spots[k];
+        if (!s) return;
+        for (const [x, y] of [[s.x + 0.5, s.y + 0.5], [layout.width - s.x - 0.5, layout.height - s.y - 0.5]]) {
+          const u = game.addUnit(type, neutral, x, y);
+          u.home = { x, y };
+        }
+      });
+    }
     return game;
   }
 
@@ -192,6 +230,8 @@ export class Game {
       progress,
       queue: [],
       rally: null,
+      cooldown: 0,
+      targetId: -1,
     };
     this.state.entities[b.id] = b;
     this.nav.addFootprint(b.id, b);
@@ -218,6 +258,10 @@ export class Game {
       move: null,
       carry: { res: null, amount: 0 },
       hidden: false,
+      cooldown: 0,
+      swing: 0,
+      swingTarget: -1,
+      home: null,
     };
     this.state.entities[u.id] = u;
     return u;
@@ -303,9 +347,14 @@ export class Game {
         updateGatherer(this, u, u.order);
       } else if (u.order?.type === 'build') {
         updateBuilder(this, u, u.order);
+      } else {
+        // Idle units (auto-acquire) and attack / attack-move / hold orders.
+        updateCombatOrder(this, u);
       }
     }
-    updateMovement(this, units);
+    const alive = units.filter((u) => this.state.entities[u.id]);
+    updateMovement(this, alive);
+    updateCombat(this, alive);
     this.state.tick++;
   }
 
