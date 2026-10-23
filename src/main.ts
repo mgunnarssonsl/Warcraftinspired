@@ -1,59 +1,60 @@
-// Entry point: wires simulation, renderer, input, HUD and the placeholder
-// rival together and runs a fixed-timestep loop with render interpolation.
+// Entry point: wires simulation, 3D view, overlay, input, HUD and the
+// placeholder rival together and runs a fixed-timestep loop with render
+// interpolation.
 
 import { RivalEconomy } from './ai/rival';
 import { createClientState } from './input/client';
 import { InputController } from './input/input';
-import { Camera } from './render/camera';
-import { Renderer } from './render/renderer';
+import { Overlay } from './render3d/overlay';
+import { World3D } from './render3d/world';
 import { TICK_SECONDS } from './sim/config';
 import { Game } from './sim/game';
 import { Hud } from './ui/hud';
+import { Minimap } from './ui/minimap';
 import './style.css';
 
 const params = new URLSearchParams(location.search);
 const seed = Number(params.get('seed') ?? 1) | 0;
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
-const minimap = document.getElementById('minimap') as HTMLCanvasElement;
+const overlayCanvas = document.getElementById('overlay') as HTMLCanvasElement;
+const minimapCanvas = document.getElementById('minimap') as HTMLCanvasElement;
 
 const game = Game.create(seed);
 const client = createClientState(0);
-const cam = new Camera(game.state.map.width, game.state.map.height);
-const renderer = new Renderer(canvas, game);
+const world = new World3D(canvas, game);
+const overlay = new Overlay(overlayCanvas, game, world.rig);
+const minimap = new Minimap(minimapCanvas, game);
 const now = () => performance.now() / 1000;
-const input = new InputController(canvas, game, cam, client, renderer, now);
+const input = new InputController(canvas, game, world, client, minimap, now);
 const hud = new Hud(game, client, input);
 const rival = new RivalEconomy(1);
 
 function resize(): void {
   const r = canvas.getBoundingClientRect();
-  canvas.width = Math.round(r.width);
-  canvas.height = Math.round(r.height);
-  cam.viewW = canvas.width;
-  cam.viewH = canvas.height;
-  cam.clamp();
+  const w = Math.max(1, Math.round(r.width));
+  const h = Math.max(1, Math.round(r.height));
+  world.resize(w, h);
+  overlay.resize(w, h);
 }
 window.addEventListener('resize', resize);
 resize();
 
 const home = game.buildings().find((b) => b.owner === client.player)!;
-cam.centerOn(home.x + 4, home.y - 1);
+world.rig.centerOn(home.x + 4, home.y);
 
-minimap.addEventListener('mousedown', (e) => {
-  const r = minimap.getBoundingClientRect();
-  const wx = ((e.clientX - r.left) / r.width) * game.state.map.width;
-  const wy = ((e.clientY - r.top) / r.height) * game.state.map.height;
-  if (e.button === 0) cam.centerOn(wx, wy);
+minimapCanvas.addEventListener('mousedown', (e) => {
+  const p = minimap.toMap(e.clientX, e.clientY);
+  if (e.button === 0) world.rig.centerOn(p.x, p.y);
   else if (e.button === 2) {
     const ids = client.selected.filter((id) => game.unit(id)?.owner === client.player);
     if (ids.length) {
-      game.issue({ type: 'move', player: client.player, units: ids, x: wx, y: wy });
-      renderer.addMarker(wx, wy, '#5dff6a', now());
+      game.issue({ type: 'move', player: client.player, units: ids, x: p.x, y: p.y });
+      world.addMarker(p.x, p.y, now());
     }
   }
 });
-minimap.addEventListener('contextmenu', (e) => e.preventDefault());
+minimapCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 let acc = 0;
 let last = performance.now();
@@ -74,15 +75,19 @@ function frame(t: number): void {
   if (steps === MAX_STEPS_PER_FRAME) acc = 0;
   const events = game.drainEvents();
   const secs = t / 1000;
-  renderer.handleEvents(events, secs, client.player);
+  world.handleEvents(events, secs);
+  overlay.handleEvents(events, secs, client.player);
+  minimap.handleEvents(events, secs, client.player);
   hud.handleEvents(events);
   input.update(dt);
-  renderer.draw(cam, client, client.paused ? 1 : acc / TICK_SECONDS, secs);
-  renderer.drawMinimap(minimap, cam, client, secs);
+  const alpha = client.paused ? 1 : acc / TICK_SECONDS;
+  world.render(client, alpha, secs);
+  overlay.draw(client, alpha, secs);
+  minimap.draw(world.rig, client, secs);
   hud.update(t);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 
 // Debug/testing handle (used by automated browser checks).
-(window as unknown as { __rts: unknown }).__rts = { game, client, cam, input };
+(window as unknown as { __rts: unknown }).__rts = { game, client, world, input };

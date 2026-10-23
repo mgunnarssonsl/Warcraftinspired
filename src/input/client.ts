@@ -2,6 +2,8 @@
 // they are hovering, and transient interface modes. Never serialized with the
 // match and never read by the simulation.
 
+import type { BuildingType } from '../sim/config';
+
 export type TargetMode = null | 'move' | 'gather';
 
 export interface ClientState {
@@ -11,6 +13,8 @@ export interface ClientState {
   /** Screen-space drag rectangle while box-selecting. */
   drag: { x0: number; y0: number; x1: number; y1: number } | null;
   targetMode: TargetMode;
+  /** Building being placed (placement preview active), if any. */
+  placing: BuildingType | null;
   debug: boolean;
   paused: boolean;
   groups: Record<number, number[]>;
@@ -23,6 +27,7 @@ export function createClientState(player: number): ClientState {
     hoverId: 0,
     drag: null,
     targetMode: null,
+    placing: null,
     debug: false,
     paused: false,
     groups: {},

@@ -83,8 +83,9 @@ export function startReturnCargo(game: Game, u: Unit, dropoffId: number): void {
   u.move = null;
 }
 
+/** Complete buildings only: foundations accept no deliveries. */
 export function acceptsResource(b: Building, res: ResourceKind): boolean {
-  return (CONFIG.buildings[b.type].accepts as readonly string[]).includes(res);
+  return b.progress >= 1 && (CONFIG.buildings[b.type].accepts as readonly string[]).includes(res);
 }
 
 export function nearestDropoff(game: Game, u: Unit, res: ResourceKind): Building | undefined {

@@ -3,8 +3,9 @@
 // through the InputController.
 
 import type { ClientState } from '../input/client';
-import type { InputController } from '../input/input';
-import { CONFIG, TICK_RATE } from '../sim/config';
+import type { Action, InputController } from '../input/input';
+import { CONFIG, TICK_RATE, type BuildingType } from '../sim/config';
+import { canAfford } from '../sim/construction';
 import type { Game } from '../sim/game';
 import type { Entity, GameEvent, Unit } from '../sim/types';
 
@@ -23,6 +24,12 @@ export function unitStatus(game: Game, u: Unit): string {
   const o = u.order;
   if (!o) return u.carry.amount > 0 ? `Idle, holding ${u.carry.amount} ${u.carry.res}` : 'Idle';
   if (o.type === 'move') return 'Moving';
+  if (o.type === 'build') {
+    const name = CONFIG.buildings[o.buildingType].name;
+    if (o.phase === 'building') return `Building ${name}`;
+    if (o.phase === 'standby') return `Standing by at ${name}`;
+    return `Heading to build ${name}`;
+  }
   const node = game.resource(o.nodeId);
   switch (o.phase) {
     case 'toNode':
@@ -36,12 +43,36 @@ export function unitStatus(game: Game, u: Unit): string {
   }
 }
 
-const ACTIONS = [
+interface ActionDef {
+  id: Action;
+  label: string;
+  key: string;
+  tip: string;
+  build?: BuildingType;
+}
+
+const BUILD_TIPS: Record<BuildingType, string> = {
+  hq: 'Keep: accepts gold and wood, +10 population. Build one near a distant mine to expand.',
+  farm: 'Farm: +6 population.',
+  lumbermill: 'Lumber Mill: accepts wood. Build it beside a forest to shorten wood trips.',
+};
+
+const ACTIONS: ActionDef[] = [
   { id: 'move', label: 'Move', key: 'M', tip: 'Move to a location. (Right-click ground also moves.)' },
   { id: 'stop', label: 'Stop', key: 'S', tip: 'Stop the current order.' },
   { id: 'gather', label: 'Gather', key: 'G', tip: 'Harvest gold from a mine or wood from trees. (Right-click a resource.)' },
-  { id: 'return', label: 'Return', key: 'R', tip: 'Deliver carried resources to the nearest Keep, then resume.' },
-] as const;
+  { id: 'return', label: 'Return', key: 'R', tip: 'Deliver carried resources to the nearest drop-off, then resume.' },
+  ...(Object.keys(CONFIG.buildings) as BuildingType[]).map((t) => {
+    const d = CONFIG.buildings[t];
+    return {
+      id: `build:${t}` as Action,
+      label: d.name,
+      key: d.hotkey,
+      build: t,
+      tip: `${BUILD_TIPS[t]} Cost: ${d.cost.gold} gold, ${d.cost.wood} wood. Build time ${d.buildSeconds}s. Requires a Laborer.`,
+    };
+  }),
+];
 
 export class Hud {
   private gold = document.getElementById('gold')!;
@@ -56,6 +87,7 @@ export class Hud {
   private help = document.getElementById('help')!;
   private pausedBanner = document.getElementById('paused')!;
   private buttons = new Map<string, HTMLButtonElement>();
+  private cancelBtn = el('button', 'cmd');
   private lastPanel = 0;
   private panelDirty = true;
 
@@ -65,9 +97,17 @@ export class Hud {
     private input: InputController,
   ) {
     this.idleBtn.addEventListener('click', () => input.selectIdleWorker());
+    this.cancelBtn.innerHTML = '<span class="cmd-label">Cancel</span><span class="cmd-key">X</span>';
+    this.cancelBtn.title = `Cancel construction and refund ${CONFIG.construction.cancelRefund * 100}% of the cost. [X]`;
+    this.cancelBtn.addEventListener('click', () => input.action('cancel'));
+    this.card.appendChild(this.cancelBtn);
     for (const a of ACTIONS) {
       const b = el('button', 'cmd');
-      b.innerHTML = `<span class="cmd-label">${a.label}</span><span class="cmd-key">${a.key}</span>`;
+      const cost = a.build ? CONFIG.buildings[a.build].cost : null;
+      b.innerHTML =
+        `<span class="cmd-label">${a.label}</span><span class="cmd-key">${a.key}</span>` +
+        (cost ? `<span class="cmd-cost"><i class="g">${cost.gold}</i> <i class="w">${cost.wood}</i></span>` : '');
+      if (a.build) b.classList.add('build');
       b.title = `${a.tip} [${a.key}]`;
       b.addEventListener('click', () => input.action(a.id));
       this.buttons.set(a.id, b);
@@ -107,7 +147,14 @@ export class Hud {
       if (e.type === 'mineDepleted' && e.player === this.client.player) {
         this.notify('A gold mine has collapsed. Its workers are now idle. (Space: jump to it)', 'alert');
       } else if (e.type === 'noDropoff' && e.player === this.client.player) {
-        this.notify('No Keep to deliver resources to.', 'alert');
+        this.notify('No building to deliver resources to.', 'alert');
+      } else if (e.type === 'cantBuild' && e.player === this.client.player) {
+        this.notify(`Cannot build: ${e.reason}`, 'alert');
+      } else if (e.type === 'buildingComplete' && e.player === this.client.player) {
+        const b = this.game.building(e.id);
+        if (b) this.notify(`${CONFIG.buildings[b.type].name} complete.`);
+      } else if (e.type === 'constructionCancelled' && e.player === this.client.player) {
+        this.notify('Construction cancelled; resources partly refunded.');
       }
     }
   }
@@ -140,10 +187,18 @@ export class Hud {
     }
     const own = this.client.selected.map((id) => this.game.unit(id)).filter((u): u is Unit => !!u && u.owner === p.id);
     const workers = own.some((u) => u.type === 'worker');
-    this.card.classList.toggle('hidden', own.length === 0);
+    const site = this.client.selected.length === 1 ? this.game.building(this.client.selected[0]) : undefined;
+    const showCancel = !!site && site.owner === p.id && site.progress < 1;
+    this.card.classList.toggle('hidden', own.length === 0 && !showCancel);
+    this.cancelBtn.classList.toggle('hidden', !showCancel);
+    for (const a of ACTIONS) {
+      const b = this.buttons.get(a.id)!;
+      b.classList.toggle('hidden', own.length === 0 || (!!a.build && !workers));
+      if (a.build) b.classList.toggle('poor', !canAfford(this.game, p.id, a.build));
+      b.classList.toggle('active', this.client.targetMode === a.id || (!!a.build && this.client.placing === a.build));
+    }
     this.buttons.get('gather')!.disabled = !workers;
     this.buttons.get('return')!.disabled = !own.some((u) => u.carry.amount > 0);
-    for (const [id, b] of this.buttons) b.classList.toggle('active', this.client.targetMode === id);
   }
 
   private renderPanel(): void {
@@ -151,7 +206,7 @@ export class Hud {
     const panel = this.panel;
     panel.replaceChildren();
     if (!sel.length) {
-      panel.appendChild(el('div', 'hint', 'Left-click or drag to select workers. Right-click a gold mine or tree to gather.'));
+      panel.appendChild(el('div', 'hint', 'Left-click or drag to select workers. Right-click a gold mine or tree to gather. Select a Laborer to build.'));
       return;
     }
     if (sel.length === 1) {
@@ -195,9 +250,14 @@ export class Hud {
     } else if (e.kind === 'building') {
       const def = CONFIG.buildings[e.type];
       box.appendChild(el('div', 'sel-title', def.name));
-      row('Health', `${e.hp} / ${e.maxHp}`);
-      row('Accepts', 'gold and wood deliveries');
-      row('Population', `+${def.popProvided}`);
+      row('Health', `${Math.round(e.hp)} / ${e.maxHp}`);
+      if (e.progress < 1) {
+        const builder = this.game.units().some((u) => u.order?.type === 'build' && u.order.siteId === e.id && u.order.phase === 'building');
+        row('Construction', `${Math.floor(e.progress * 100)}%${builder ? '' : ' (paused: right-click with a Laborer to resume)'}`);
+      }
+      const acc = def.accepts as readonly string[];
+      if (acc.length) row('Accepts', `${acc.join(' and ')} deliveries`);
+      if (def.popProvided) row('Population', `+${def.popProvided}`);
       if (e.owner !== this.client.player) row('Owner', this.game.player(e.owner).name);
     } else if (e.type === 'goldmine') {
       box.appendChild(el('div', 'sel-title', CONFIG.resources.goldmine.name));

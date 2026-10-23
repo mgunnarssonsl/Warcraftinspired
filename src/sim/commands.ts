@@ -1,6 +1,8 @@
 // Commands are the only way players (human or AI) affect the simulation.
 // They are validated here: a player can only command their own living units.
 
+import { CONFIG, type BuildingType } from './config';
+import { cancelConstruction, checkPlacement, resumeBuild, shortfall, startBuild } from './construction';
 import type { Game } from './game';
 import { releaseFromNode, startGather, startReturnCargo } from './gathering';
 import type { Unit } from './types';
@@ -9,7 +11,10 @@ export type Command =
   | { type: 'move'; player: number; units: number[]; x: number; y: number }
   | { type: 'gather'; player: number; units: number[]; nodeId: number }
   | { type: 'returnCargo'; player: number; units: number[]; dropoffId?: number }
-  | { type: 'stop'; player: number; units: number[] };
+  | { type: 'stop'; player: number; units: number[] }
+  | { type: 'build'; player: number; units: number[]; buildingType: BuildingType; tx: number; ty: number }
+  | { type: 'resumeBuild'; player: number; units: number[]; buildingId: number }
+  | { type: 'cancelBuild'; player: number; buildingId: number };
 
 function ownUnits(game: Game, player: number, ids: number[]): Unit[] {
   const out: Unit[] = [];
@@ -25,6 +30,10 @@ function ownUnits(game: Game, player: number, ids: number[]): Unit[] {
 }
 
 export function applyCommand(game: Game, cmd: Command): void {
+  if (cmd.type === 'cancelBuild') {
+    cancelConstruction(game, cmd.player, cmd.buildingId);
+    return;
+  }
   const units = ownUnits(game, cmd.player, cmd.units);
   if (!units.length) return;
   switch (cmd.type) {
@@ -45,6 +54,30 @@ export function applyCommand(game: Game, cmd: Command): void {
     }
     case 'returnCargo': {
       for (const u of units) if (u.type === 'worker') startReturnCargo(game, u, cmd.dropoffId ?? -1);
+      return;
+    }
+    case 'build': {
+      if (!(cmd.buildingType in CONFIG.buildings)) return;
+      const workers = units.filter((u) => u.type === 'worker');
+      if (!workers.length) return;
+      const size = CONFIG.buildings[cmd.buildingType].size;
+      const cx = cmd.tx + size / 2;
+      const cy = cmd.ty + size / 2;
+      // Reject obviously invalid orders immediately, for clear feedback.
+      const problem = checkPlacement(game, cmd.buildingType, cmd.tx, cmd.ty).reason ?? shortfall(game, cmd.player, cmd.buildingType);
+      if (problem) {
+        game.emit({ type: 'cantBuild', player: cmd.player, reason: problem, x: cx, y: cy });
+        return;
+      }
+      // The nearest selected worker goes; the rest keep their orders.
+      const builder = workers.reduce((a, b) => (Math.hypot(a.x - cx, a.y - cy) <= Math.hypot(b.x - cx, b.y - cy) ? a : b));
+      startBuild(game, builder, cmd.buildingType, cmd.tx, cmd.ty);
+      return;
+    }
+    case 'resumeBuild': {
+      const site = game.building(cmd.buildingId);
+      if (!site) return;
+      for (const u of units) if (u.type === 'worker') resumeBuild(game, u, site);
       return;
     }
     case 'stop': {

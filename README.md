@@ -5,9 +5,11 @@ economy: workers walk to resources, gather, carry, and deliver them, and base
 layout and worker allocation decide how fast you earn. Skirmish only, against
 computer opponents. No campaign or story.
 
-![Milestone 1: workers mining and chopping around the Keep](docs/milestone1.png)
+![3D view: Laborers mining and chopping while a Lumber Mill goes up beside the Keep](docs/screenshot.png)
 
-**Status:** Milestone 1 (economic sandbox) is done. See [Roadmap](#roadmap).
+**Status:** Milestone 1 (economic sandbox) is done, and the game now renders
+in 3D (milestone 1.5). The first part of Milestone 2, placing and
+constructing buildings, is in. See [Roadmap](#roadmap).
 
 ## Run it
 
@@ -27,15 +29,17 @@ npm run build      # typecheck + production bundle in dist/
 | Left-click / drag | Select / box-select your units |
 | Shift + click / drag | Add or remove from the selection |
 | Double-click a unit | Select every unit of that type on screen |
-| Right-click | Context command: ground = move, mine or tree = gather, Keep = return cargo |
+| Right-click | Context command: ground = move, mine or tree = gather, Keep = return cargo, unfinished building = resume construction |
 | M, S, G, R | Move, Stop, Gather, Return cargo (also on the command card) |
+| F, L, K (Laborer selected) | Place a Farm, Lumber Mill or Keep. Click to place, Shift+click to keep placing, right-click or Esc to cancel. |
+| X (unfinished building selected) | Cancel construction (75% refund) |
 | `.` or the *Idle workers* button | Cycle through idle workers |
 | Ctrl+1–9 / 1–9 | Set / recall a control group (press twice to center the camera) |
-| Arrows, screen edge, middle-drag | Scroll the camera. Mouse wheel zooms. |
+| Arrows, screen edge, middle-drag | Pan the camera. The mouse wheel zooms toward the cursor, and the camera tilts flatter as you zoom in. |
 | Minimap | Left-click jumps the camera there. Right-click moves the selected units there. |
 | Space | Jump to the latest alert, or to the current selection |
 | P | Pause |
-| `` ` `` / F3 | Debug overlay: blocked tiles and the selected units' paths |
+| `` ` `` / F3 | Debug overlay: blocked tiles (red) and the selected units' paths |
 | F1 / ? | Controls panel |
 
 ## Economy rules (current)
@@ -62,14 +66,48 @@ These are the rules as implemented. All numbers live in `src/sim/config.ts`.
   cancels that trip and yields no gold.
 - **No drop-off:** If a worker has nowhere to deliver, it keeps its cargo,
   goes idle, and you get a notice.
-- **Population:** Each Laborer uses 1 population, and the Keep provides 10.
-  Production arrives in Milestone 2.
+- **Population:** Each Laborer uses 1 population. A Keep provides 10 and a
+  Farm 6, but only once construction is complete. Unit production arrives in
+  the rest of Milestone 2.
 - **Rival:** Placeholder only. It keeps its five workers harvesting through the
   same command interface you use. The real opponent comes in Milestone 4.
 
+## Construction rules (current)
+
+One construction model applies throughout:
+
+1. **Placement.** The footprint snaps to the tiles centered under the cursor.
+   It is valid only if every tile is inside the map and free of terrain,
+   buildings, mines and trees. Units do not block placement. The preview shows
+   a ghost of the building plus a green or red marker on each tile, and the
+   ghost turns red if you can't afford the building.
+2. **Ordering.** The nearest selected Laborer walks to the site. Nothing is
+   paid yet. An order that is invalid when given is rejected immediately, with
+   a reason.
+3. **Foundation.** When the Laborer arrives, placement and cost are checked
+   again. If both pass, the cost is paid and the foundation appears at 10% HP.
+   Any units on the footprint are pushed to the nearest free ground, so a
+   building can never trap a unit inside it. If either check fails, the order
+   ends and you're told why.
+4. **Building.** One active builder raises the building, and both HP and
+   progress grow over the build time. Extra Laborers sent to the site stand
+   by and take over if the builder leaves, so they don't speed it up. If the
+   builder is given another order, construction pauses. To resume, right-click
+   the foundation with any Laborer.
+5. **Completion.** The building starts working: it adds population and starts
+   accepting deliveries. The builder goes back to whatever it was gathering
+   before.
+6. **Cancel.** Cancelling an unfinished building refunds 75% of its cost and
+   frees its tiles.
+
+Unfinished buildings provide no population and accept no deliveries. A
+Lumber Mill built next to a forest shortens wood trips; in the tests it
+raises one woodcutter's output by more than 50% on a distant tree line.
+
 ## Architecture
 
-TypeScript, Vite, and Canvas 2D. There are no runtime dependencies.
+TypeScript and Vite, with three.js for 3D rendering. three.js is the only
+runtime dependency.
 
 ```
 src/sim/      deterministic simulation (no DOM access)
@@ -83,9 +121,15 @@ src/sim/      deterministic simulation (no DOM access)
   nav.ts        derived passability grid, footprints, connected components
   mapgen.ts     "Twin Vales": point-symmetric 96×72 skirmish map
   rng.ts        seeded PRNG + hash/value noise
-src/render/   camera, procedurally drawn placeholder art, renderer, minimap
-src/input/    mouse/keyboard → selection, camera, Commands
-src/ui/       DOM HUD: resources, selection panel, command card, notices
+  construction.ts placement checks, construction model, cancel/refund
+src/render3d/ three.js view (reads state, never writes it)
+  cameraRig.ts  angled RTS camera; screen <-> ground conversion
+  world.ts      scene, terrain props, entity views and animation, picking, previews
+  models.ts     low-poly primitive models (Laborer, Keep, Farm, Mill, mine, trees)
+  overlay.ts    2D overlay: health/progress bars, mine pips, floating numbers
+  groundTexture.ts  procedurally painted ground texture
+src/input/    mouse/keyboard → selection, camera, placement, Commands
+src/ui/       DOM HUD, command card, minimap
 src/ai/       computer players (currently the placeholder rival)
 tests/        vitest suites for simulation rules
 ```
@@ -103,6 +147,16 @@ Key decisions:
   (the nav grid) is rebuilt on load. The tests check that the same seed and the
   same commands produce identical state, and that a save/load mid-match then
   continues identically. This is the foundation for saves and replays.
+- **3D sits on a 2D simulation.** Gameplay stays on a ground plane. A
+  simulation point `(x, y)` in tiles maps to world `(X = x, Y = height,
+  Z = y)`, with one world unit per tile. The renderer is a pure view:
+  - **Picking** projects unit bodies to the screen and ray-casts
+    buildings, mines and instanced trees. It falls back to the tile under the
+    cursor.
+  - **Box selection** projects each unit to the screen and tests it against
+    the rectangle.
+  - **Placement** converts the cursor to the ground with a ray-plane
+    intersection.
 - **Movement.** Paths are planned on the tile grid and smoothed with
   clearance-aware line-of-sight checks. Units push each other apart, with
   moving units displacing idle ones. Harvesting workers pass through other
@@ -124,15 +178,18 @@ data were excluded.
 | [OpenFrontIO](https://github.com/unique-coder-124/OpenFrontIO) | TypeScript browser RTS | (not adopted) | Territory-control design with no worker economy. Not relevant. |
 | SC_Js | Canvas StarCraft clone | Relies on copyrighted assets (removed) | **Excluded.** |
 | [Recast/Detour](https://salsa.debian.org/games-team/recastnavigation/-/blob/master/License.txt) | Navmesh library | zlib | Permissive, but it's a C++ 3D navmesh tool and too heavy for a tile RTS. **Not needed.** |
-| PixiJS | WebGL 2D renderer | MIT | A candidate for **later adoption** if Canvas 2D becomes a bottleneck with large armies. Not needed yet. |
+| [three.js](https://github.com/mrdoob/three.js) | WebGL 3D library | MIT | **Adopted** (pinned to 0.179.1) for the 3D view. The MIT license only asks that its copyright notice stays with copies of the library. The bundled build keeps that notice. |
+| Babylon.js | WebGL 3D engine | Apache-2.0 | A viable alternative. three.js won because it is lighter and we only need rendering, not physics or engine services. |
 
 Decision: write our own small foundation. The whole simulation is
 under 2,000 lines of focused code. Owning it keeps determinism,
 serialization, and the separation of simulation, rendering, input and AI
 under our control. No third-party code or assets are included, so there are
-no attribution or copyleft obligations. Everything visual is drawn
-procedurally in `src/render/art.ts`. Dev dependencies (Vite, Vitest,
-TypeScript) are MIT or Apache-2.0 and don't ship in the bundle.
+no copyleft obligations. Every model is built from primitives in
+`src/render3d/models.ts`, and the ground texture is painted in code. Dev
+dependencies (Vite, Vitest, TypeScript) are MIT or Apache-2.0 and don't ship
+in the bundle. `npm audit` flags advisories in Vitest's dev-only internals,
+which are never shipped to players.
 
 ## Verification
 
@@ -143,19 +200,36 @@ TypeScript) are MIT or Apache-2.0 and don't ship in the bundle.
   skipped; command ownership; map symmetry and reachability; determinism;
   save/load continuity; a 4-minute, 40-worker stress run that checks for
   stalled workers.
-- **Scripted browser checks (Playwright, headless Chromium):** box and click
-  selection, double-click, control groups, right-click gather, M-targeted
-  move, the idle-worker hotkey, the depletion notice and idle count,
-  delivery pop-ups, the debug overlay, and no console errors.
+  - **Construction:** placement validity, pay-on-arrival, failure reasons,
+    pushing units off the site, pause and resume, cancel refunds, Lumber Mill
+    trip shortening, and builders returning to their job.
+  - **Camera math:** the ground→screen→ground round trip at every zoom level,
+    zoom keeping the point under the cursor fixed, and pan bounds.
+- **Scripted 3D browser checks (Playwright, headless Chromium, software
+  WebGL):**
+  - In the 3D view: box, click, Shift and double-click selection; hover
+    picking of the mine and of individual trees; right-click gather;
+    placement preview on invalid and valid ground; cursor→ground accuracy
+    (within 0.001 tile); a full Farm build; zoom and pan; the debug overlay;
+    no console errors.
+  - A typical scene draws in about 110 draw calls and 154k triangles.
+  - The same flows were checked in 2D during Milestone 1: control groups,
+    the idle-worker hotkey, and the depletion notice and idle count.
 - **Not yet done:** human playtesting of feel and pacing, and frame-rate
-  measurement on real hardware (headless Chromium has no GPU).
+  measurement on real GPUs. Software WebGL only manages ~2–3 fps, which says
+  nothing about real hardware.
 
 ## Roadmap
 
 1. ~~Economic sandbox~~ (done)
-2. Base construction and production: placement preview, worker construction,
-   costs and times, production queues and cancellation, Farms, Lumber Mill
-   drop-offs
+1.5. ~~3D foundation~~ (done): angled camera, 3D models, picking, placement
+   preview. The simulation, commands and tests carried over unchanged.
+2. Base construction and production:
+   - Done: placement, construction, cancellation, Farms, Lumber Mill
+     drop-offs.
+   - Next: Barracks, worker and soldier training, production queues with
+     cancellation and refunds, population reservation, and the rules for
+     losing a production building or population capacity.
 3. Combat foundation: melee and ranged units, attack and attack-move,
    auto-targeting, destruction
 4. Complete skirmish: computer opponent, expansion, victory, defeat,

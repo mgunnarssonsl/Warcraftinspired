@@ -81,6 +81,18 @@ export type Order =
       lastY: number;
       /** Preferred drop-off building, or -1 for nearest. */
       dropoffId: number;
+    }
+  | {
+      type: 'build';
+      buildingType: BuildingType;
+      tx: number;
+      ty: number;
+      /** Foundation entity once placed, else -1. */
+      siteId: number;
+      /** standby: another worker is already building this site. */
+      phase: 'toSite' | 'building' | 'standby';
+      /** Resource node to go back to afterwards (the previous job), or -1. */
+      resumeNodeId: number;
     };
 
 interface EntityBase {
@@ -112,6 +124,8 @@ export interface Building extends EntityBase, Footprint {
   type: BuildingType;
   hp: number;
   maxHp: number;
+  /** Construction progress in [0, 1]; 1 = complete and functional. */
+  progress: number;
 }
 
 export interface ResourceNode extends EntityBase, Footprint {
@@ -147,4 +161,7 @@ export type GameEvent =
   | { type: 'mineDepleted'; player: number; x: number; y: number }
   | { type: 'treeFelled'; x: number; y: number }
   | { type: 'noDropoff'; player: number; x: number; y: number }
-  | { type: 'chop'; x: number; y: number };
+  | { type: 'chop'; x: number; y: number }
+  | { type: 'buildingComplete'; player: number; id: number; x: number; y: number }
+  | { type: 'cantBuild'; player: number; reason: string; x: number; y: number }
+  | { type: 'constructionCancelled'; player: number; x: number; y: number };

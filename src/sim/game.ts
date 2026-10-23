@@ -4,6 +4,7 @@
 
 import { CONFIG, type BuildingType, type UnitType } from './config';
 import { applyCommand, type Command } from './commands';
+import { updateBuilder } from './construction';
 import { updateGatherer } from './gathering';
 import { generateMap } from './mapgen';
 import { planPath, updateMovement } from './movement';
@@ -129,7 +130,8 @@ export class Game {
 
   popCap(player: number): number {
     let n = 0;
-    for (const b of this.buildings()) if (b.owner === player) n += CONFIG.buildings[b.type].popProvided;
+    for (const b of this.buildings())
+      if (b.owner === player && b.progress >= 1) n += CONFIG.buildings[b.type].popProvided;
     return n;
   }
 
@@ -165,7 +167,8 @@ export class Game {
     return node;
   }
 
-  addBuilding(type: BuildingType, owner: number, tx: number, ty: number): Building {
+  /** Add a building; progress < 1 places an unfinished foundation. */
+  addBuilding(type: BuildingType, owner: number, tx: number, ty: number, progress = 1): Building {
     const def = CONFIG.buildings[type];
     const b: Building = {
       id: this.newId(),
@@ -178,8 +181,9 @@ export class Game {
       h: def.size,
       x: tx + def.size / 2,
       y: ty + def.size / 2,
-      hp: def.hp,
+      hp: progress >= 1 ? def.hp : Math.max(1, Math.round(def.hp * CONFIG.construction.startHpFraction)),
       maxHp: def.hp,
+      progress,
     };
     this.state.entities[b.id] = b;
     this.nav.addFootprint(b.id, b);
@@ -288,6 +292,8 @@ export class Game {
         }
       } else if (u.order?.type === 'gather') {
         updateGatherer(this, u, u.order);
+      } else if (u.order?.type === 'build') {
+        updateBuilder(this, u, u.order);
       }
     }
     updateMovement(this, units);

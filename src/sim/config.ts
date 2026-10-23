@@ -40,7 +40,41 @@ export const CONFIG = {
       size: 4,
       popProvided: 10,
       accepts: ['gold', 'wood'] as const,
+      cost: { gold: 385, wood: 205 },
+      buildSeconds: 60,
+      hotkey: 'K',
     },
+    farm: {
+      name: 'Farm',
+      hp: 400,
+      size: 2,
+      popProvided: 6,
+      accepts: [] as const,
+      cost: { gold: 80, wood: 20 },
+      buildSeconds: 20,
+      hotkey: 'F',
+    },
+    lumbermill: {
+      name: 'Lumber Mill',
+      hp: 600,
+      size: 3,
+      popProvided: 0,
+      accepts: ['wood'] as const,
+      cost: { gold: 120, wood: 0 },
+      buildSeconds: 30,
+      hotkey: 'L',
+    },
+  },
+
+  construction: {
+    /**
+     * One construction model: a worker walks to the site; on arrival the cost
+     * is paid and the foundation placed. A single active builder raises it;
+     * if the builder leaves, construction pauses until a worker resumes it.
+     */
+    startHpFraction: 0.1,
+    /** Share of the cost returned when an unfinished building is cancelled. */
+    cancelRefund: 0.75,
   },
 
   resources: {

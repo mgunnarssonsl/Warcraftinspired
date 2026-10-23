@@ -1,35 +1,40 @@
 // Translates mouse and keyboard input into selection changes, camera motion
 // and simulation Commands. Contextual right-click logic lives here; the
-// simulation only ever receives explicit commands.
+// simulation only ever receives explicit commands. Screen <-> world
+// conversion and picking are delegated to the 3D view.
 
-import type { Camera } from '../render/camera';
-import type { Renderer } from '../render/renderer';
+import type { World3D } from '../render3d/world';
+import { CONFIG, type BuildingType } from '../sim/config';
+import { canAfford, checkPlacement, shortfall, snapFootprint } from '../sim/construction';
 import type { Game } from '../sim/game';
 import { acceptsResource } from '../sim/gathering';
 import type { Entity, Unit } from '../sim/types';
+import type { Minimap } from '../ui/minimap';
 import type { ClientState, TargetMode } from './client';
 
-const EDGE = 10; // px from window edge that triggers scrolling
+const EDGE = 10; // px from the view edge that triggers scrolling
 const PAN_SPEED = 900; // px per second
 const DRAG_THRESHOLD = 5;
 
+export type Action = 'move' | 'stop' | 'gather' | 'return' | 'cancel' | `build:${BuildingType}`;
+
 export class InputController {
-  private mouse = { x: -1, y: -1, inside: false };
+  private mouse = { x: -1, y: -1, inside: false, moved: true };
   private keys = new Set<string>();
   private dragStart: { x: number; y: number } | null = null;
   private midDrag: { x: number; y: number } | null = null;
   private lastClick = { t: 0, id: 0 };
   private lastGroupKey = { t: 0, n: -1 };
-  /** Callbacks the HUD can subscribe to. */
+  private framesSincePick = 0;
   onSelectionChanged: () => void = () => {};
   onMessage: (text: string) => void = () => {};
 
   constructor(
     private canvas: HTMLCanvasElement,
     private game: Game,
-    private cam: Camera,
+    private world: World3D,
     private client: ClientState,
-    private renderer: Renderer,
+    private minimap: Minimap,
     private now: () => number,
   ) {
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -37,26 +42,32 @@ export class InputController {
     window.addEventListener('mousemove', (e) => this.mouseMove(e));
     window.addEventListener('mouseup', (e) => this.mouseUp(e));
     canvas.addEventListener('mouseleave', () => (this.mouse.inside = false));
-    canvas.addEventListener('mouseenter', () => (this.mouse.inside = true));
-    canvas.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      this.cam.zoomAt(e.offsetX, e.offsetY, e.deltaY < 0 ? 1.1 : 1 / 1.1);
-    }, { passive: false });
+    canvas.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        const p = this.local(e);
+        this.rig.zoomAt(p.x, p.y, e.deltaY < 0 ? 1.12 : 1 / 1.12);
+        this.mouse.moved = true;
+      },
+      { passive: false },
+    );
     window.addEventListener('keydown', (e) => this.keyDown(e));
     window.addEventListener('keyup', (e) => this.keys.delete(e.key));
     window.addEventListener('blur', () => {
       this.keys.clear();
       this.mouse.inside = false;
       this.dragStart = null;
+      this.midDrag = null;
       this.client.drag = null;
     });
   }
 
-  setGame(game: Game): void {
-    this.game = game;
+  private get rig() {
+    return this.world.rig;
   }
 
-  /** Per-frame camera scrolling. */
+  /** Per-frame: camera scrolling, hover picking, placement preview. */
   update(dt: number): void {
     let dx = 0;
     let dy = 0;
@@ -66,54 +77,43 @@ export class InputController {
     if (this.keys.has('ArrowDown')) dy += 1;
     if (this.mouse.inside && !this.dragStart && !this.midDrag && document.hasFocus()) {
       const { x, y } = this.mouse;
-      if (x >= 0 && x < EDGE) dx -= 1;
-      if (x > this.cam.viewW - EDGE) dx += 1;
-      if (y >= 0 && y < EDGE) dy -= 1;
-      if (y > this.cam.viewH - EDGE && y <= this.cam.viewH) dy += 1;
+      if (x < EDGE) dx -= 1;
+      if (x > this.rig.viewW - EDGE) dx += 1;
+      if (y < EDGE) dy -= 1;
+      if (y > this.rig.viewH - EDGE) dy += 1;
     }
-    if (dx || dy) this.cam.pan(dx * PAN_SPEED * dt, dy * PAN_SPEED * dt);
-    this.client.hoverId = this.mouse.inside ? (this.pick(this.mouse.x, this.mouse.y)?.id ?? 0) : 0;
+    if (dx || dy) {
+      this.rig.pan(dx * PAN_SPEED * dt, dy * PAN_SPEED * dt);
+      this.mouse.moved = true;
+    }
+    // Picking raycasts are not free: refresh on movement, or a few times a second.
+    if (this.mouse.moved || ++this.framesSincePick > 8) {
+      this.client.hoverId = this.mouse.inside && !this.client.placing ? (this.world.pick(this.mouse.x, this.mouse.y)?.id ?? 0) : 0;
+      this.mouse.moved = false;
+      this.framesSincePick = 0;
+    }
+    this.updatePreview();
     this.canvas.style.cursor = this.cursor();
   }
 
-  private cursor(): string {
-    if (this.client.targetMode) return 'crosshair';
-    const h = this.client.hoverId ? this.game.get(this.client.hoverId) : undefined;
-    if (h && h.kind === 'resource' && this.selectedWorkers().length) return 'pointer';
-    return 'default';
+  private updatePreview(): void {
+    const type = this.client.placing;
+    if (type && !this.ownSelectedUnits().some((u) => u.type === 'worker')) this.client.placing = null;
+    const g = this.client.placing && this.mouse.inside ? this.rig.screenToGround(this.mouse.x, this.mouse.y) : null;
+    if (!this.client.placing || !g) {
+      this.world.setPreview(null, null, null, false);
+      return;
+    }
+    const f = snapFootprint(this.client.placing, g.x, g.y);
+    const check = checkPlacement(this.game, this.client.placing, f.tx, f.ty);
+    this.world.setPreview(this.client.placing, f, check, canAfford(this.game, this.client.player, this.client.placing));
   }
 
-  // ---- picking ----------------------------------------------------------------
-
-  /** Topmost entity under a screen point (units first, then structures). */
-  pick(sx: number, sy: number): Entity | undefined {
-    const w = this.cam.toWorld(sx, sy);
-    let best: Entity | undefined;
-    let bestD = Infinity;
-    for (const u of this.game.units()) {
-      if (u.hidden) continue;
-      // Hit area covers the drawn body, which sits above the ground point.
-      const d = Math.hypot(u.x - w.x, u.y - 0.35 - w.y);
-      if (d < 0.5 && d < bestD) {
-        best = u;
-        bestD = d;
-      }
-    }
-    if (best) return best;
-    const tx = Math.floor(w.x);
-    const ty = Math.floor(w.y);
-    const nav = this.game.nav;
-    // Tall sprites (trees, keeps) are clickable slightly above their footprint.
-    for (const oy of [0, 1]) {
-      if (!nav.inBounds(tx, ty + oy)) continue;
-      const id = nav.entityAt[(ty + oy) * nav.w + tx];
-      const e = id ? this.game.get(id) : undefined;
-      if (e && (oy === 0 || e.kind === 'resource' || e.kind === 'building')) return e;
-    }
-    for (const b of this.game.buildings()) {
-      if (w.x >= b.tx && w.x < b.tx + b.w && w.y >= b.ty - 1.5 && w.y < b.ty + b.h) return b;
-    }
-    return undefined;
+  private cursor(): string {
+    if (this.client.targetMode || this.client.placing) return 'crosshair';
+    const h = this.client.hoverId ? this.game.get(this.client.hoverId) : undefined;
+    if (h && h.kind !== 'unit' && this.selectedWorkers().length) return 'pointer';
+    return 'default';
   }
 
   private ownSelectedUnits(): Unit[] {
@@ -144,14 +144,19 @@ export class InputController {
   private mouseDown(e: MouseEvent): void {
     const p = this.local(e);
     if (e.button === 0) {
+      if (this.client.placing) {
+        this.placeBuilding(p.x, p.y, e.shiftKey);
+        return;
+      }
       if (this.client.targetMode) {
         this.issueTargeted(this.client.targetMode, p.x, p.y, e.shiftKey);
         return;
       }
       this.dragStart = p;
     } else if (e.button === 2) {
-      if (this.client.targetMode) {
+      if (this.client.targetMode || this.client.placing) {
         this.client.targetMode = null;
+        this.client.placing = null;
         return;
       }
       this.smartCommand(p.x, p.y);
@@ -165,9 +170,10 @@ export class InputController {
     const p = this.local(e);
     this.mouse.x = p.x;
     this.mouse.y = p.y;
-    this.mouse.inside = p.x >= 0 && p.y >= 0 && p.x < this.cam.viewW && p.y < this.cam.viewH;
+    this.mouse.inside = p.x >= 0 && p.y >= 0 && p.x < this.rig.viewW && p.y < this.rig.viewH;
+    this.mouse.moved = true;
     if (this.midDrag) {
-      this.cam.pan(this.midDrag.x - p.x, this.midDrag.y - p.y);
+      this.rig.pan(this.midDrag.x - p.x, this.midDrag.y - p.y);
       this.midDrag = p;
     }
     if (this.dragStart) {
@@ -189,7 +195,7 @@ export class InputController {
   }
 
   private clickSelect(sx: number, sy: number, shift: boolean): void {
-    const e = this.pick(sx, sy);
+    const e = this.world.pick(sx, sy);
     const now = this.now();
     if (!e) {
       if (!shift) this.setSelection([]);
@@ -215,13 +221,13 @@ export class InputController {
       this.setSelection(sel);
       return;
     }
-    if (shift && this.ownSelectedUnits().length) return; // can't mix foreign objects into a group
+    if (shift && this.ownSelectedUnits().length) return; // can't mix other objects into a group
     this.setSelection([e.id]);
   }
 
   private onScreen(x: number, y: number): boolean {
-    const s = this.cam.toScreen(x, y);
-    return s.x >= 0 && s.y >= 0 && s.x <= this.cam.viewW && s.y <= this.cam.viewH;
+    const s = this.rig.project(x, y, 0.4);
+    return s.visible && s.x >= 0 && s.y >= 0 && s.x <= this.rig.viewW && s.y <= this.rig.viewH;
   }
 
   private boxSelect(box: { x0: number; y0: number; x1: number; y1: number }, shift: boolean): void {
@@ -233,9 +239,10 @@ export class InputController {
       .units()
       .filter((u) => {
         if (u.owner !== this.client.player || u.hidden) return false;
-        const s = this.cam.toScreen(u.x, u.y - 0.3);
-        const r = 8 * this.cam.zoom; // generous edge tolerance
-        return s.x + r >= x0 && s.x - r <= x1 && s.y + r >= y0 && s.y - r <= y1;
+        // Test the projected body center with a small tolerance for the model's size.
+        const s = this.rig.project(u.x, u.y, 0.5);
+        const r = 8;
+        return s.visible && s.x + r >= x0 && s.x - r <= x1 && s.y + r >= y0 && s.y - r <= y1;
       })
       .map((u) => u.id);
     if (shift) {
@@ -252,84 +259,124 @@ export class InputController {
   private smartCommand(sx: number, sy: number): void {
     const units = this.ownSelectedUnits();
     if (!units.length) return;
-    const target = this.pick(sx, sy);
-    const w = this.cam.toWorld(sx, sy);
+    const target = this.world.pick(sx, sy);
+    const g = this.rig.screenToGround(sx, sy);
     const player = this.client.player;
     const now = this.now();
     const workers = units.filter((u) => u.type === 'worker');
     const others = units.filter((u) => u.type !== 'worker');
+    const moveRest = (rest: Unit[]) => {
+      if (rest.length && g) this.game.issue({ type: 'move', player, units: rest.map((u) => u.id), x: g.x, y: g.y });
+    };
     if (target?.kind === 'resource' && workers.length) {
       this.game.issue({ type: 'gather', player, units: workers.map((u) => u.id), nodeId: target.id });
-      this.renderer.flashEntity(target.id, now);
-      if (others.length) this.game.issue({ type: 'move', player, units: others.map((u) => u.id), x: w.x, y: w.y });
+      this.world.flashEntity(target.id, now);
+      moveRest(others);
       return;
     }
-    if (target?.kind === 'building' && target.owner === player) {
+    if (target?.kind === 'building' && target.owner === player && workers.length) {
+      if (target.progress < 1) {
+        this.game.issue({ type: 'resumeBuild', player, units: workers.map((u) => u.id), buildingId: target.id });
+        this.world.flashEntity(target.id, now);
+        moveRest(others);
+        return;
+      }
       const carriers = workers.filter((u) => u.carry.res && acceptsResource(target, u.carry.res));
       if (carriers.length) {
         this.game.issue({ type: 'returnCargo', player, units: carriers.map((u) => u.id), dropoffId: target.id });
-        this.renderer.flashEntity(target.id, now);
-        const rest = units.filter((u) => !carriers.includes(u));
-        if (rest.length) this.game.issue({ type: 'move', player, units: rest.map((u) => u.id), x: w.x, y: w.y });
+        this.world.flashEntity(target.id, now);
+        moveRest(units.filter((u) => !carriers.includes(u)));
         return;
       }
     }
-    this.game.issue({ type: 'move', player, units: units.map((u) => u.id), x: w.x, y: w.y });
-    this.renderer.addMarker(w.x, w.y, '#5dff6a', now);
+    if (!g) return;
+    this.game.issue({ type: 'move', player, units: units.map((u) => u.id), x: g.x, y: g.y });
+    this.world.addMarker(g.x, g.y, now);
   }
 
   private issueTargeted(mode: Exclude<TargetMode, null>, sx: number, sy: number, shift: boolean): void {
     const units = this.ownSelectedUnits();
     const player = this.client.player;
-    const w = this.cam.toWorld(sx, sy);
     const now = this.now();
     if (mode === 'move') {
-      this.game.issue({ type: 'move', player, units: units.map((u) => u.id), x: w.x, y: w.y });
-      this.renderer.addMarker(w.x, w.y, '#5dff6a', now);
+      const g = this.rig.screenToGround(sx, sy);
+      if (!g) return;
+      this.game.issue({ type: 'move', player, units: units.map((u) => u.id), x: g.x, y: g.y });
+      this.world.addMarker(g.x, g.y, now);
     } else {
-      const target = this.pick(sx, sy);
+      const target = this.world.pick(sx, sy);
       if (target?.kind !== 'resource') {
         this.onMessage('Select a gold mine or tree to gather from.');
         return; // stay in targeting mode
       }
       const workers = units.filter((u) => u.type === 'worker');
       this.game.issue({ type: 'gather', player, units: workers.map((u) => u.id), nodeId: target.id });
-      this.renderer.flashEntity(target.id, now);
+      this.world.flashEntity(target.id, now);
     }
     if (!shift) this.client.targetMode = null;
   }
 
+  private placeBuilding(sx: number, sy: number, shift: boolean): void {
+    const type = this.client.placing!;
+    const g = this.rig.screenToGround(sx, sy);
+    if (!g) return;
+    const f = snapFootprint(type, g.x, g.y);
+    const problem = checkPlacement(this.game, type, f.tx, f.ty).reason ?? shortfall(this.game, this.client.player, type);
+    if (problem) {
+      this.onMessage(problem);
+      return; // stay in placement mode so the player can pick another spot
+    }
+    const workers = this.selectedWorkers();
+    this.game.issue({ type: 'build', player: this.client.player, units: workers.map((u) => u.id), buildingType: type, tx: f.tx, ty: f.ty });
+    this.world.addMarker(f.tx + f.w / 2, f.ty + f.h / 2, this.now());
+    if (!shift) this.client.placing = null;
+  }
+
   /** Command-card actions, shared by buttons and hotkeys. */
-  action(name: 'move' | 'stop' | 'gather' | 'return'): void {
+  action(name: Action): void {
+    const player = this.client.player;
+    if (name === 'cancel') {
+      for (const id of this.client.selected) {
+        const b = this.game.building(id);
+        if (b && b.owner === player && b.progress < 1) this.game.issue({ type: 'cancelBuild', player, buildingId: id });
+      }
+      return;
+    }
     const units = this.ownSelectedUnits();
     if (!units.length) return;
-    const player = this.client.player;
+    if (name.startsWith('build:')) {
+      const type = name.slice(6) as BuildingType;
+      if (!this.selectedWorkers().length) return;
+      const short = shortfall(this.game, player, type);
+      if (short) this.onMessage(`${CONFIG.buildings[type].name}: ${short}`);
+      this.client.targetMode = null;
+      this.client.placing = type;
+      return;
+    }
+    this.client.placing = null;
     if (name === 'stop') this.game.issue({ type: 'stop', player, units: units.map((u) => u.id) });
     else if (name === 'return') {
       const carriers = units.filter((u) => u.carry.amount > 0);
       if (carriers.length) this.game.issue({ type: 'returnCargo', player, units: carriers.map((u) => u.id) });
     } else if (name === 'gather') {
       if (units.some((u) => u.type === 'worker')) this.client.targetMode = 'gather';
-    } else this.client.targetMode = name;
+    } else if (name === 'move') this.client.targetMode = 'move';
   }
 
   selectIdleWorker(): void {
     const idle = this.game.idleWorkers(this.client.player).filter((u) => !u.hidden);
     if (!idle.length) return;
-    // Cycle through idle workers on repeated presses.
     const cur = this.client.selected.length === 1 ? this.client.selected[0] : 0;
     const i = idle.findIndex((u) => u.id === cur);
     const next = idle[(i + 1) % idle.length];
     this.setSelection([next.id]);
-    this.cam.centerOn(next.x, next.y);
+    this.rig.centerOn(next.x, next.y);
   }
 
   centerOnSelection(): void {
     const es = this.client.selected.map((id) => this.game.get(id)).filter((e): e is Entity => !!e);
     if (!es.length) return;
-    const x = es.reduce((s, e) => s + e.x, 0) / es.length;
-    const y = es.reduce((s, e) => s + e.y, 0) / es.length;
-    this.cam.centerOn(x, y);
+    this.rig.centerOn(es.reduce((s, e) => s + e.x, 0) / es.length, es.reduce((s, e) => s + e.y, 0) / es.length);
   }
 
   // ---- keyboard ---------------------------------------------------------------
@@ -347,9 +394,17 @@ export class InputController {
       this.controlGroup(Number(e.key), e.ctrlKey || e.metaKey, e.shiftKey);
       return;
     }
+    const hasWorkers = this.selectedWorkers().length > 0;
+    for (const [type, def] of Object.entries(CONFIG.buildings)) {
+      if (hasWorkers && k === def.hotkey.toLowerCase()) {
+        this.action(`build:${type as BuildingType}`);
+        return;
+      }
+    }
     switch (k) {
       case 'escape':
-        if (this.client.targetMode) this.client.targetMode = null;
+        if (this.client.placing) this.client.placing = null;
+        else if (this.client.targetMode) this.client.targetMode = null;
         else this.setSelection([]);
         break;
       case 's':
@@ -364,16 +419,19 @@ export class InputController {
       case 'r':
         this.action('return');
         break;
+      case 'x':
+        this.action('cancel');
+        break;
       case '.':
         this.selectIdleWorker();
         break;
-      case ' ':
+      case ' ': {
         e.preventDefault();
-        if (this.renderer.pings.length) {
-          const p = this.renderer.pings[this.renderer.pings.length - 1];
-          this.cam.centerOn(p.x, p.y);
-        } else this.centerOnSelection();
+        const a = this.minimap.lastAlert();
+        if (a) this.rig.centerOn(a.x, a.y);
+        else this.centerOnSelection();
         break;
+      }
       case 'f3':
       case '`':
         e.preventDefault();
@@ -401,10 +459,8 @@ export class InputController {
     const ids = (groups[n] ?? []).filter((id) => this.game.unit(id));
     if (!ids.length) return;
     const now = this.now();
-    if (this.lastGroupKey.n === n && now - this.lastGroupKey.t < 0.35) {
-      this.setSelection(ids);
-      this.centerOnSelection();
-    } else this.setSelection(ids);
+    this.setSelection(ids);
+    if (this.lastGroupKey.n === n && now - this.lastGroupKey.t < 0.35) this.centerOnSelection();
     this.lastGroupKey = { n, t: now };
   }
 }
