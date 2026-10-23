@@ -4,7 +4,7 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import type { BuildingType } from '../sim/config';
+import type { BuildingType, UnitType } from '../sim/config';
 
 const matCache = new Map<string, THREE.MeshStandardMaterial>();
 
@@ -98,6 +98,67 @@ export function makeWorker(team: string): WorkerParts {
     logs.push(l);
   }
   return { root, body, legL, legR, tool, pickHead, axeHead, hammerHead, goldSack, logs };
+}
+
+/** Shared legs + torso + head skeleton for soldiers. */
+function soldierBase(team: string, scale: number, legColor: string): Pick<WorkerParts, 'root' | 'body' | 'legL' | 'legR'> {
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  body.scale.setScalar(scale);
+  root.add(body);
+  const legGeo = box(0.09, 0.22, 0.09).translate(0, -0.11, 0);
+  const legL = mesh(legGeo, mat(legColor), -0.075, 0.22, 0);
+  const legR = mesh(legGeo, mat(legColor), 0.075, 0.22, 0);
+  body.add(legL, legR);
+  body.add(mesh(new THREE.CylinderGeometry(0.14, 0.18, 0.32, 8), mat(team), 0, 0.38, 0));
+  body.add(mesh(new THREE.SphereGeometry(0.11, 10, 8), mat('#e2b88c'), 0, 0.63, 0));
+  return { root, body, legL, legR };
+}
+
+function noTools(): Pick<WorkerParts, 'pickHead' | 'axeHead' | 'hammerHead' | 'goldSack' | 'logs'> {
+  return { pickHead: new THREE.Object3D(), axeHead: new THREE.Object3D(), hammerHead: new THREE.Object3D(), goldSack: new THREE.Object3D(), logs: [] };
+}
+
+/** Guard: helmeted, shield on the left arm, sword in the right hand. */
+function makeGuard(team: string): WorkerParts {
+  const base = soldierBase(team, 1.5, '#5a5f66');
+  const { body } = base;
+  const steel = mat('#a3a9b2', { rough: 0.45 });
+  body.add(mesh(new THREE.SphereGeometry(0.125, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), steel, 0, 0.66, 0));
+  body.add(mesh(box(0.36, 0.07, 0.2), steel, 0, 0.53, 0)); // pauldrons
+  const shield = mesh(box(0.05, 0.3, 0.24), mat(team), -0.2, 0.4, 0.05);
+  shield.add(mesh(box(0.02, 0.1, 0.1), mat('#e6d9a8'), -0.03, 0, 0));
+  body.add(shield);
+  const tool = new THREE.Group();
+  tool.position.set(0.2, 0.42, 0.04);
+  tool.add(mesh(box(0.035, 0.08, 0.035), mat('#5b4126'), 0, 0.02, 0));
+  tool.add(mesh(box(0.12, 0.025, 0.04), steel, 0, 0.07, 0));
+  tool.add(mesh(box(0.035, 0.3, 0.015), mat('#d6dbe2', { rough: 0.3 }), 0, 0.23, 0));
+  body.add(tool);
+  return { ...base, tool, ...noTools() };
+}
+
+/** Archer: hooded, bow in the left hand, quiver on the back. */
+function makeArcher(team: string): WorkerParts {
+  const base = soldierBase(team, 1.4, '#4a3826');
+  const { body } = base;
+  body.add(mesh(new THREE.ConeGeometry(0.15, 0.24, 8), mat('#3e5a32'), 0, 0.76, -0.01));
+  body.add(mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.3, 6), mat('#6b4a2b'), 0.06, 0.48, -0.17));
+  for (let i = 0; i < 3; i++) body.add(mesh(box(0.012, 0.08, 0.012), mat('#e8e2d0'), 0.03 + i * 0.025, 0.67, -0.17));
+  const tool = new THREE.Group();
+  tool.position.set(-0.2, 0.42, 0.06);
+  const bow = mesh(new THREE.TorusGeometry(0.22, 0.016, 4, 12, Math.PI), mat('#8a5f34'), 0, 0, 0);
+  bow.rotation.set(0, Math.PI / 2, Math.PI / 2);
+  tool.add(bow);
+  tool.add(mesh(box(0.004, 0.44, 0.004), mat('#e8e2d0'), 0, 0, -0.0));
+  body.add(tool);
+  return { ...base, tool, ...noTools() };
+}
+
+export function makeUnit(type: UnitType, team: string): WorkerParts {
+  if (type === 'guard') return makeGuard(team);
+  if (type === 'archer') return makeArcher(team);
+  return makeWorker(team);
 }
 
 // ---- resources -----------------------------------------------------------------
@@ -233,7 +294,35 @@ function lumbermill(team: string): THREE.Group {
   return g;
 }
 
-const BUILDERS: Record<BuildingType, (team: string) => THREE.Group> = { hq: keep, farm, lumbermill };
+function barracks(team: string): THREE.Group {
+  const g = new THREE.Group();
+  const stone = mat('#9a8e7a');
+  const timber = mat('#7a5733');
+  g.add(mesh(box(2.8, 0.15, 2.8), mat('#7d715f'), 0, 0.075, 0));
+  // Long hall
+  g.add(mesh(box(2.4, 1.1, 1.6), stone, 0, 0.7, -0.4));
+  const roof = mesh(new THREE.CylinderGeometry(1.0, 1.0, 2.5, 3), mat(team), 0, 1.5, -0.4);
+  roof.rotation.z = Math.PI / 2;
+  roof.scale.set(1, 1, 0.85);
+  g.add(roof);
+  g.add(mesh(box(0.6, 0.7, 0.1), mat('#3b2a1c'), 0, 0.5, 0.42));
+  // Timber frame accents
+  for (const x of [-1.1, -0.4, 0.4, 1.1]) g.add(mesh(box(0.08, 1.1, 0.06), timber, x, 0.7, 0.42));
+  // Training yard: weapon rack and a straw target
+  g.add(mesh(box(1.0, 0.08, 0.08), timber, -0.6, 0.55, 1.05));
+  for (const x of [-1.0, -0.2]) g.add(mesh(box(0.06, 0.55, 0.06), timber, x, 0.28, 1.05));
+  for (let i = 0; i < 4; i++) g.add(mesh(box(0.03, 0.5, 0.03), mat('#c0c5cc', { rough: 0.4 }), -0.95 + i * 0.22, 0.45, 1.0));
+  g.add(mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.7, 5), timber, 0.8, 0.35, 1.0));
+  const target = mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.08, 12), mat('#d9b85a'), 0.8, 0.7, 1.0);
+  target.rotation.x = Math.PI / 2;
+  g.add(target);
+  // Banner pole
+  g.add(mesh(box(0.05, 1.4, 0.05), timber, 1.15, 0.85, 0.75));
+  g.add(mesh(box(0.03, 0.45, 0.32), mat(team), 1.15, 1.3, 0.92));
+  return g;
+}
+
+const BUILDERS: Record<BuildingType, (team: string) => THREE.Group> = { hq: keep, farm, lumbermill, barracks };
 
 export function makeBuilding(type: BuildingType, team: string, size: number): BuildingParts {
   const root = new THREE.Group();

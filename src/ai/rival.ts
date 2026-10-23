@@ -1,22 +1,28 @@
-// Placeholder opponent for the economic sandbox: it only keeps its workers
-// harvesting, using the same Command interface as the player. The real
-// computer opponent (building, training, attacking) arrives in Milestone 4.
+// Placeholder opponent: it trains a few workers and keeps them harvesting,
+// using the same Command interface and rules as the player. The real
+// computer opponent (building, army, attacking) arrives in Milestone 4.
 
-import { secondsToTicks } from '../sim/config';
+import { CONFIG, secondsToTicks } from '../sim/config';
 import type { Game } from '../sim/game';
 import type { ResourceNode } from '../sim/types';
 
 const THINK_TICKS = secondsToTicks(3);
+const WORKER_TARGET = 8;
 
 export class RivalEconomy {
   constructor(private player: number) {}
 
   update(game: Game): void {
     if (game.state.tick % THINK_TICKS !== 1) return;
+    const hq = game.buildings().find((b) => b.owner === this.player && b.type === 'hq' && b.progress >= 1);
+    if (!hq) return;
+    const workers = game.units().filter((u) => u.owner === this.player && u.type === 'worker').length;
+    const p = game.player(this.player);
+    if (workers + hq.queue.length < WORKER_TARGET && hq.queue.length < 2 && p.gold >= CONFIG.units.worker.cost.gold) {
+      game.issue({ type: 'train', player: this.player, buildingId: hq.id, unit: 'worker' });
+    }
     const idle = game.idleWorkers(this.player);
     if (!idle.length) return;
-    const hq = game.buildings().find((b) => b.owner === this.player);
-    if (!hq) return;
     const near = (type: ResourceNode['type']) =>
       game
         .resources()

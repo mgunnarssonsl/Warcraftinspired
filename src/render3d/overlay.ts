@@ -83,6 +83,12 @@ export class Overlay {
         } else if (selected.has(e.id)) {
           this.bar(e.x, e.y, top, 70, e.hp / e.maxHp, '#4cd964');
         }
+        const q = e.queue[0];
+        if (q && e.owner === client.player) {
+          // Training progress just above the roof; red label when waiting for population.
+          const label = q.started ? CONFIG.units[q.unit].name : 'Need Farms';
+          this.bar(e.x, e.y, top + 0.55, 50, q.progress, q.started ? '#6ab0ff' : '#ff5a4a', label);
+        }
       } else if (e.type === 'goldmine') {
         // Occupancy pips: workers inside out of the slot limit.
         const p = this.rig.project(e.x, e.y + 1.2, 1.25);

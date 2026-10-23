@@ -4,10 +4,11 @@
 // conversion and picking are delegated to the 3D view.
 
 import type { World3D } from '../render3d/world';
-import { CONFIG, type BuildingType } from '../sim/config';
+import { CONFIG, type BuildingType, type UnitType } from '../sim/config';
 import { canAfford, checkPlacement, shortfall, snapFootprint } from '../sim/construction';
 import type { Game } from '../sim/game';
 import { acceptsResource } from '../sim/gathering';
+import { trainableAt } from '../sim/production';
 import type { Entity, Unit } from '../sim/types';
 import type { Minimap } from '../ui/minimap';
 import type { ClientState, TargetMode } from './client';
@@ -16,7 +17,7 @@ const EDGE = 10; // px from the view edge that triggers scrolling
 const PAN_SPEED = 900; // px per second
 const DRAG_THRESHOLD = 5;
 
-export type Action = 'move' | 'stop' | 'gather' | 'return' | 'cancel' | `build:${BuildingType}`;
+export type Action = 'move' | 'stop' | 'gather' | 'return' | 'cancel' | `build:${BuildingType}` | `train:${UnitType}`;
 
 export class InputController {
   private mouse = { x: -1, y: -1, inside: false, moved: true };
@@ -258,7 +259,11 @@ export class InputController {
   /** Right-click: decide the command from what is under the cursor. */
   private smartCommand(sx: number, sy: number): void {
     const units = this.ownSelectedUnits();
-    if (!units.length) return;
+    if (!units.length) {
+      const b = this.selectedOwnBuilding();
+      if (b && trainableAt(b.type).length) this.setRally(b.id, sx, sy);
+      return;
+    }
     const target = this.world.pick(sx, sy);
     const g = this.rig.screenToGround(sx, sy);
     const player = this.client.player;
@@ -292,6 +297,28 @@ export class InputController {
     if (!g) return;
     this.game.issue({ type: 'move', player, units: units.map((u) => u.id), x: g.x, y: g.y });
     this.world.addMarker(g.x, g.y, now);
+  }
+
+  private selectedOwnBuilding() {
+    const b = this.client.selected.length === 1 ? this.game.building(this.client.selected[0]) : undefined;
+    return b && b.owner === this.client.player ? b : undefined;
+  }
+
+  /** Rally on the ground, or on a resource so new workers start gathering it. */
+  private setRally(buildingId: number, sx: number, sy: number): void {
+    const target = this.world.pick(sx, sy);
+    const g = this.rig.screenToGround(sx, sy);
+    if (target?.kind === 'resource') {
+      this.game.issue({ type: 'setRally', player: this.client.player, buildingId, x: target.x, y: target.y, targetId: target.id });
+      this.world.flashEntity(target.id, this.now());
+    } else if (g) {
+      this.game.issue({ type: 'setRally', player: this.client.player, buildingId, x: g.x, y: g.y, targetId: -1 });
+      this.world.addMarker(g.x, g.y, this.now());
+    }
+  }
+
+  cancelQueued(buildingId: number, index: number): void {
+    this.game.issue({ type: 'cancelTrain', player: this.client.player, buildingId, index });
   }
 
   private issueTargeted(mode: Exclude<TargetMode, null>, sx: number, sy: number, shift: boolean): void {
@@ -336,10 +363,15 @@ export class InputController {
   action(name: Action): void {
     const player = this.client.player;
     if (name === 'cancel') {
-      for (const id of this.client.selected) {
-        const b = this.game.building(id);
-        if (b && b.owner === player && b.progress < 1) this.game.issue({ type: 'cancelBuild', player, buildingId: id });
-      }
+      // Unfinished building: cancel construction. Otherwise drop the last queued unit.
+      const b = this.selectedOwnBuilding();
+      if (b && b.progress < 1) this.game.issue({ type: 'cancelBuild', player, buildingId: b.id });
+      else if (b && b.queue.length) this.cancelQueued(b.id, b.queue.length - 1);
+      return;
+    }
+    if (name.startsWith('train:')) {
+      const b = this.selectedOwnBuilding();
+      if (b) this.game.issue({ type: 'train', player, buildingId: b.id, unit: name.slice(6) as UnitType });
       return;
     }
     const units = this.ownSelectedUnits();
@@ -393,6 +425,15 @@ export class InputController {
       e.preventDefault();
       this.controlGroup(Number(e.key), e.ctrlKey || e.metaKey, e.shiftKey);
       return;
+    }
+    const building = this.selectedOwnBuilding();
+    if (building && building.progress >= 1) {
+      for (const t of trainableAt(building.type)) {
+        if (k === CONFIG.units[t].hotkey.toLowerCase()) {
+          this.action(`train:${t}`);
+          return;
+        }
+      }
     }
     const hasWorkers = this.selectedWorkers().length > 0;
     for (const [type, def] of Object.entries(CONFIG.buildings)) {

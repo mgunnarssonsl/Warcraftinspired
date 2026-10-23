@@ -1,9 +1,10 @@
 // Commands are the only way players (human or AI) affect the simulation.
 // They are validated here: a player can only command their own living units.
 
-import { CONFIG, type BuildingType } from './config';
+import { CONFIG, type BuildingType, type UnitType } from './config';
 import { cancelConstruction, checkPlacement, resumeBuild, shortfall, startBuild } from './construction';
 import type { Game } from './game';
+import { cancelTraining, enqueue, setRally } from './production';
 import { releaseFromNode, startGather, startReturnCargo } from './gathering';
 import type { Unit } from './types';
 
@@ -14,7 +15,10 @@ export type Command =
   | { type: 'stop'; player: number; units: number[] }
   | { type: 'build'; player: number; units: number[]; buildingType: BuildingType; tx: number; ty: number }
   | { type: 'resumeBuild'; player: number; units: number[]; buildingId: number }
-  | { type: 'cancelBuild'; player: number; buildingId: number };
+  | { type: 'cancelBuild'; player: number; buildingId: number }
+  | { type: 'train'; player: number; buildingId: number; unit: UnitType }
+  | { type: 'cancelTrain'; player: number; buildingId: number; index: number }
+  | { type: 'setRally'; player: number; buildingId: number; x: number; y: number; targetId: number };
 
 function ownUnits(game: Game, player: number, ids: number[]): Unit[] {
   const out: Unit[] = [];
@@ -30,9 +34,17 @@ function ownUnits(game: Game, player: number, ids: number[]): Unit[] {
 }
 
 export function applyCommand(game: Game, cmd: Command): void {
-  if (cmd.type === 'cancelBuild') {
-    cancelConstruction(game, cmd.player, cmd.buildingId);
-    return;
+  // Building-targeted commands (no units involved).
+  switch (cmd.type) {
+    case 'cancelBuild':
+      return cancelConstruction(game, cmd.player, cmd.buildingId);
+    case 'train':
+      if (!(cmd.unit in CONFIG.units)) return;
+      return enqueue(game, cmd.player, cmd.buildingId, cmd.unit);
+    case 'cancelTrain':
+      return cancelTraining(game, cmd.player, cmd.buildingId, cmd.index);
+    case 'setRally':
+      return setRally(game, cmd.player, cmd.buildingId, cmd.x, cmd.y, cmd.targetId);
   }
   const units = ownUnits(game, cmd.player, cmd.units);
   if (!units.length) return;

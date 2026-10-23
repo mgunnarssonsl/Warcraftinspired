@@ -8,7 +8,7 @@
   <body>
     <div id="app">
       <header id="topbar">
-        <div class="brand">Ironvale <span class="sub">3D foundation</span></div>
+        <div class="brand">Ironvale <span class="sub">base building</span></div>
         <div class="resources">
           <div class="res" title="Gold: spent on workers, soldiers, buildings and upgrades">
             <span class="icon gold"></span><span id="gold">0</span>
@@ -35,13 +35,14 @@
             <li><b>Double-click</b> a unit: select all of that type on screen</li>
             <li><b>Right-click</b> ground: move · mine/tree: gather · Keep: return cargo · unfinished building: resume</li>
             <li><b>M</b> move · <b>S</b> stop · <b>G</b> gather · <b>R</b> return cargo</li>
-            <li>With a Laborer: <b>F</b> Farm · <b>L</b> Lumber Mill · <b>K</b> Keep, then click to place (Shift: keep placing) · <b>X</b> cancel construction</li>
+            <li>With a Laborer: <b>F</b> Farm · <b>L</b> Lumber Mill · <b>B</b> Barracks · <b>K</b> Keep, then click to place (Shift: keep placing)</li>
+            <li>With a Keep / Barracks: <b>Q</b>, <b>W</b> train · right-click sets the rally point · <b>X</b> cancels the last unit (or a construction)</li>
             <li><b>.</b> next idle worker · <b>Space</b> jump to last alert / selection</li>
             <li><b>Ctrl+1–9</b> set group · <b>1–9</b> recall (twice to center)</li>
             <li><b>Arrows</b>, screen edges or <b>middle-drag</b> to scroll · <b>wheel</b> zoom</li>
             <li><b>P</b> pause · <b>`</b> debug overlay · <b>F1</b> this panel</li>
           </ul>
-          <p class="goal">Put your Laborers to work: gold from mines (two miners fit inside at once), wood from trees. Resources count only when delivered. Build Farms for population and a Lumber Mill near the forest for shorter wood trips.</p>
+          <p class="goal">Put your Laborers to work: gold from mines (two miners fit inside at once), wood from trees. Resources count only when delivered. Train more Laborers at the Keep, build Farms for population, a Lumber Mill near the forest for shorter wood trips, and a Barracks for soldiers. (Combat arrives next milestone.)</p>
           <button id="help-close">Got it</button>
         </div>
       </main>

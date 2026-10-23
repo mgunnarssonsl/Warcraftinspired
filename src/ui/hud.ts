@@ -4,10 +4,11 @@
 
 import type { ClientState } from '../input/client';
 import type { Action, InputController } from '../input/input';
-import { CONFIG, TICK_RATE, type BuildingType } from '../sim/config';
+import { CONFIG, TICK_RATE, type BuildingType, type UnitType } from '../sim/config';
 import { canAfford } from '../sim/construction';
 import type { Game } from '../sim/game';
-import type { Entity, GameEvent, Unit } from '../sim/types';
+import { missingRequirement, trainableAt } from '../sim/production';
+import type { Building, Entity, GameEvent, Unit } from '../sim/types';
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -49,12 +50,20 @@ interface ActionDef {
   key: string;
   tip: string;
   build?: BuildingType;
+  train?: UnitType;
 }
 
 const BUILD_TIPS: Record<BuildingType, string> = {
   hq: 'Keep: accepts gold and wood, +10 population. Build one near a distant mine to expand.',
   farm: 'Farm: +6 population.',
-  lumbermill: 'Lumber Mill: accepts wood. Build it beside a forest to shorten wood trips.',
+  lumbermill: 'Lumber Mill: accepts wood. Build it beside a forest to shorten wood trips. Enables Archers.',
+  barracks: 'Barracks: trains Guards and Archers.',
+};
+
+const TRAIN_TIPS: Record<UnitType, string> = {
+  worker: 'Laborer: gathers, builds.',
+  guard: 'Guard: sturdy melee soldier.',
+  archer: 'Archer: fragile ranged soldier.',
 };
 
 const ACTIONS: ActionDef[] = [
@@ -70,6 +79,17 @@ const ACTIONS: ActionDef[] = [
       key: d.hotkey,
       build: t,
       tip: `${BUILD_TIPS[t]} Cost: ${d.cost.gold} gold, ${d.cost.wood} wood. Build time ${d.buildSeconds}s. Requires a Laborer.`,
+    };
+  }),
+  ...(Object.keys(CONFIG.units) as UnitType[]).map((t) => {
+    const d = CONFIG.units[t];
+    const req = d.requires ? ` Requires a ${CONFIG.buildings[d.requires].name}.` : '';
+    return {
+      id: `train:${t}` as Action,
+      label: d.name,
+      key: d.hotkey,
+      train: t,
+      tip: `${TRAIN_TIPS[t]} Cost: ${d.cost.gold} gold, ${d.cost.wood} wood, ${d.pop} population. Train time ${d.trainSeconds}s.${req}`,
     };
   }),
 ];
@@ -98,16 +118,16 @@ export class Hud {
   ) {
     this.idleBtn.addEventListener('click', () => input.selectIdleWorker());
     this.cancelBtn.innerHTML = '<span class="cmd-label">Cancel</span><span class="cmd-key">X</span>';
-    this.cancelBtn.title = `Cancel construction and refund ${CONFIG.construction.cancelRefund * 100}% of the cost. [X]`;
+    this.cancelBtn.title = `Cancel construction (${CONFIG.construction.cancelRefund * 100}% refund) or the last queued unit (${CONFIG.production.cancelRefund * 100}% refund). [X]`;
     this.cancelBtn.addEventListener('click', () => input.action('cancel'));
     this.card.appendChild(this.cancelBtn);
     for (const a of ACTIONS) {
       const b = el('button', 'cmd');
-      const cost = a.build ? CONFIG.buildings[a.build].cost : null;
+      const cost = a.build ? CONFIG.buildings[a.build].cost : a.train ? CONFIG.units[a.train].cost : null;
       b.innerHTML =
         `<span class="cmd-label">${a.label}</span><span class="cmd-key">${a.key}</span>` +
         (cost ? `<span class="cmd-cost"><i class="g">${cost.gold}</i> <i class="w">${cost.wood}</i></span>` : '');
-      if (a.build) b.classList.add('build');
+      if (a.build || a.train) b.classList.add('build');
       b.title = `${a.tip} [${a.key}]`;
       b.addEventListener('click', () => input.action(a.id));
       this.buttons.set(a.id, b);
@@ -155,6 +175,13 @@ export class Hud {
         if (b) this.notify(`${CONFIG.buildings[b.type].name} complete.`);
       } else if (e.type === 'constructionCancelled' && e.player === this.client.player) {
         this.notify('Construction cancelled; resources partly refunded.');
+      } else if (e.type === 'popBlocked' && e.player === this.client.player) {
+        this.notify('Not enough population: build more Farms.', 'alert');
+      } else if (e.type === 'cantTrain' && e.player === this.client.player) {
+        this.notify(`Cannot train: ${e.reason}`, 'alert');
+      } else if (e.type === 'buildingDestroyed' && e.player === this.client.player) {
+        const refund = e.refundGold || e.refundWood ? ` Queue refunded: ${e.refundGold} gold, ${e.refundWood} wood.` : '';
+        this.notify(`${CONFIG.buildings[e.building].name} destroyed.${refund}`, 'alert');
       }
     }
   }
@@ -187,15 +214,24 @@ export class Hud {
     }
     const own = this.client.selected.map((id) => this.game.unit(id)).filter((u): u is Unit => !!u && u.owner === p.id);
     const workers = own.some((u) => u.type === 'worker');
-    const site = this.client.selected.length === 1 ? this.game.building(this.client.selected[0]) : undefined;
-    const showCancel = !!site && site.owner === p.id && site.progress < 1;
-    this.card.classList.toggle('hidden', own.length === 0 && !showCancel);
+    const b = this.client.selected.length === 1 ? this.game.building(this.client.selected[0]) : undefined;
+    const ownB = b && b.owner === p.id ? b : undefined;
+    const showCancel = !!ownB && (ownB.progress < 1 || ownB.queue.length > 0);
+    const trainable = ownB && ownB.progress >= 1 ? trainableAt(ownB.type) : [];
+    this.card.classList.toggle('hidden', own.length === 0 && !showCancel && trainable.length === 0);
     this.cancelBtn.classList.toggle('hidden', !showCancel);
     for (const a of ACTIONS) {
-      const b = this.buttons.get(a.id)!;
-      b.classList.toggle('hidden', own.length === 0 || (!!a.build && !workers));
-      if (a.build) b.classList.toggle('poor', !canAfford(this.game, p.id, a.build));
-      b.classList.toggle('active', this.client.targetMode === a.id || (!!a.build && this.client.placing === a.build));
+      const btn = this.buttons.get(a.id)!;
+      if (a.train) {
+        btn.classList.toggle('hidden', !trainable.includes(a.train));
+        const c = CONFIG.units[a.train].cost;
+        btn.classList.toggle('poor', p.gold < c.gold || p.wood < c.wood);
+        btn.disabled = !!missingRequirement(this.game, p.id, a.train);
+        continue;
+      }
+      btn.classList.toggle('hidden', own.length === 0 || (!!a.build && !workers));
+      if (a.build) btn.classList.toggle('poor', !canAfford(this.game, p.id, a.build));
+      btn.classList.toggle('active', this.client.targetMode === a.id || (!!a.build && this.client.placing === a.build));
     }
     this.buttons.get('gather')!.disabled = !workers;
     this.buttons.get('return')!.disabled = !own.some((u) => u.carry.amount > 0);
@@ -203,8 +239,13 @@ export class Hud {
 
   private renderPanel(): void {
     const sel = this.client.selected.map((id) => this.game.get(id)).filter((e): e is Entity => !!e);
-    const panel = this.panel;
-    panel.replaceChildren();
+    // Build off-screen and swap only if something visible changed.
+    const panel = el('div');
+    this.fillPanel(panel, sel);
+    if (panel.innerHTML !== this.panel.innerHTML) this.panel.replaceChildren(...panel.childNodes);
+  }
+
+  private fillPanel(panel: HTMLElement, sel: Entity[]): void {
     if (!sel.length) {
       panel.appendChild(el('div', 'hint', 'Left-click or drag to select workers. Right-click a gold mine or tree to gather. Select a Laborer to build.'));
       return;
@@ -222,9 +263,10 @@ export class Hud {
       pt.style.setProperty('--team', this.game.player(e.owner).color);
       const hp = el('div', 'hp');
       hp.style.width = `${(e.hp / e.maxHp) * 100}%`;
-      pt.appendChild(el('span', 'portrait-icon', e.carry.amount ? (e.carry.res === 'gold' ? '●' : '≡') : ''));
+      const icon = e.type !== 'worker' ? CONFIG.units[e.type].name[0] : e.carry.amount ? (e.carry.res === 'gold' ? '●' : '≡') : '';
+      pt.appendChild(el('span', 'portrait-icon', icon));
       pt.appendChild(hp);
-      pt.addEventListener('click', (ev) => {
+      pt.addEventListener('mousedown', (ev) => {
         if (ev.shiftKey) this.input.setSelection(this.client.selected.filter((id) => id !== e.id));
         else this.input.setSelection([e.id]);
       });
@@ -245,7 +287,7 @@ export class Hud {
       box.appendChild(el('div', 'sel-title', CONFIG.units[e.type].name));
       row('Health', `${e.hp} / ${e.maxHp}`);
       row('Status', unitStatus(this.game, e));
-      row('Carrying', e.carry.amount ? `${e.carry.amount} ${e.carry.res}` : 'nothing');
+      if (e.type === 'worker') row('Carrying', e.carry.amount ? `${e.carry.amount} ${e.carry.res}` : 'nothing');
       if (e.owner !== this.client.player) row('Owner', this.game.player(e.owner).name);
     } else if (e.kind === 'building') {
       const def = CONFIG.buildings[e.type];
@@ -259,6 +301,7 @@ export class Hud {
       if (acc.length) row('Accepts', `${acc.join(' and ')} deliveries`);
       if (def.popProvided) row('Population', `+${def.popProvided}`);
       if (e.owner !== this.client.player) row('Owner', this.game.player(e.owner).name);
+      else if (e.progress >= 1 && trainableAt(e.type).length) this.production(box, e, row);
     } else if (e.type === 'goldmine') {
       box.appendChild(el('div', 'sel-title', CONFIG.resources.goldmine.name));
       row('Gold left', `${e.amount} / ${e.maxAmount}`);
@@ -276,5 +319,40 @@ export class Hud {
       row('Wood left', `${e.amount} / ${e.maxAmount}`);
     }
     return box;
+  }
+
+  /** Training status and queue slots; clicking a slot cancels it. */
+  private production(box: HTMLElement, b: Building, row: (k: string, v: string) => void): void {
+    const head = b.queue[0];
+    let status = 'Idle';
+    if (head) {
+      const name = CONFIG.units[head.unit].name;
+      status = head.started ? `Training ${name} ${Math.floor(head.progress * 100)}%` : `${name} waiting for population (build Farms)`;
+    }
+    row('Production', status);
+    row('Rally point', b.rally ? 'set (right-click to move it)' : 'none (right-click to set)');
+    const slots = el('div', 'queue');
+    for (let i = 0; i < CONFIG.production.queueSize; i++) {
+      const q = b.queue[i];
+      const slot = el('button', `slot${q ? '' : ' empty'}`);
+      if (q) {
+        slot.textContent = CONFIG.units[q.unit].name[0];
+        slot.title = `${CONFIG.units[q.unit].name}: click to cancel (full refund)`;
+        const fill = el('div', 'fill');
+        fill.style.width = `${q.progress * 100}%`;
+        slot.appendChild(fill);
+        // mousedown, not click: the panel may be rebuilt between press and release.
+        slot.addEventListener('mousedown', () => this.input.cancelQueued(b.id, i));
+      }
+      slots.appendChild(slot);
+    }
+    // Queue sits in the header, right of the building name, to save height.
+    const title = box.querySelector('.sel-title');
+    const header = el('div', 'sel-head');
+    if (title) {
+      title.replaceWith(header);
+      header.appendChild(title);
+    } else box.prepend(header);
+    header.appendChild(slots);
   }
 }

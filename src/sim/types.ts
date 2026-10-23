@@ -126,6 +126,27 @@ export interface Building extends EntityBase, Footprint {
   maxHp: number;
   /** Construction progress in [0, 1]; 1 = complete and functional. */
   progress: number;
+  /** Training queue; the head trains first. */
+  queue: QueueItem[];
+  /** Where newly trained units go (and what they gather, if a resource). */
+  rally: Rally | null;
+}
+
+export interface QueueItem {
+  unit: UnitType;
+  /** Training progress in [0, 1]. */
+  progress: number;
+  /** Population has been reserved (training has started). */
+  started: boolean;
+  /** Waiting for population capacity (the player has been told once). */
+  blocked: boolean;
+}
+
+export interface Rally {
+  x: number;
+  y: number;
+  /** Resource node to gather from on arrival (workers), or -1. */
+  targetId: number;
 }
 
 export interface ResourceNode extends EntityBase, Footprint {
@@ -164,4 +185,8 @@ export type GameEvent =
   | { type: 'chop'; x: number; y: number }
   | { type: 'buildingComplete'; player: number; id: number; x: number; y: number }
   | { type: 'cantBuild'; player: number; reason: string; x: number; y: number }
-  | { type: 'constructionCancelled'; player: number; x: number; y: number };
+  | { type: 'constructionCancelled'; player: number; x: number; y: number }
+  | { type: 'unitTrained'; player: number; id: number; x: number; y: number }
+  | { type: 'popBlocked'; player: number; buildingId: number }
+  | { type: 'cantTrain'; player: number; reason: string }
+  | { type: 'buildingDestroyed'; player: number; building: BuildingType; refundGold: number; refundWood: number; x: number; y: number };

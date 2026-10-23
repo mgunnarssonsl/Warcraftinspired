@@ -14,8 +14,9 @@ export function nodeResource(node: ResourceNode): ResourceKind {
   return node.type === 'goldmine' ? 'gold' : 'wood';
 }
 
-export function carryCapacity(u: Unit, res: ResourceKind): number {
-  const def = CONFIG.units[u.type];
+/** Worker carry limits (the unit argument keeps call sites unit-specific for later). */
+export function carryCapacity(_u: Unit, res: ResourceKind): number {
+  const def = CONFIG.units.worker;
   return res === 'gold' ? def.carryGold : def.carryWood;
 }
 
@@ -199,7 +200,7 @@ function tryStartWork(game: Game, u: Unit, o: GatherOrder, node: ResourceNode): 
   if (node.type === 'goldmine') {
     if (workingCount(game, node.id) < CONFIG.resources.goldmine.maxMiners) {
       o.phase = 'working';
-      o.timer = secondsToTicks(CONFIG.units[u.type].mineSeconds);
+      o.timer = secondsToTicks(CONFIG.units.worker.mineSeconds);
       u.hidden = true;
     } else {
       o.phase = 'waiting';
@@ -208,7 +209,7 @@ function tryStartWork(game: Game, u: Unit, o: GatherOrder, node: ResourceNode): 
   }
   if (workingCount(game, node.id) < CONFIG.resources.tree.maxChoppers) {
     o.phase = 'working';
-    o.timer = secondsToTicks(CONFIG.units[u.type].chopSeconds);
+    o.timer = secondsToTicks(CONFIG.units.worker.chopSeconds);
     u.facing = Math.atan2(node.y - u.y, node.x - u.x);
     return;
   }
@@ -272,7 +273,7 @@ export function updateGatherer(game: Game, u: Unit, o: GatherOrder): void {
       if (--o.timer > 0) return;
       const cap = carryCapacity(u, 'wood');
       if (u.carry.res !== 'wood') u.carry = { res: 'wood', amount: 0 };
-      const take = Math.min(CONFIG.units[u.type].woodPerChop, node.amount, cap - u.carry.amount);
+      const take = Math.min(CONFIG.units.worker.woodPerChop, node.amount, cap - u.carry.amount);
       u.carry.amount += take;
       node.amount -= take;
       game.emit({ type: 'chop', x: node.x, y: node.y });
@@ -285,7 +286,7 @@ export function updateGatherer(game: Game, u: Unit, o: GatherOrder): void {
       } else if (node.amount <= 0) {
         retarget(game, u, o);
       } else {
-        o.timer = secondsToTicks(CONFIG.units[u.type].chopSeconds);
+        o.timer = secondsToTicks(CONFIG.units.worker.chopSeconds);
       }
       return;
     }

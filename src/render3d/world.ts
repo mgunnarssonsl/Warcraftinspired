@@ -18,7 +18,7 @@ import {
   makeGhost,
   makeMine,
   makeTreeGeometries,
-  makeWorker,
+  makeUnit,
   type BuildingParts,
   type MineParts,
   type WorkerParts,
@@ -74,6 +74,8 @@ export class World3D {
   private ghostBad = new THREE.MeshStandardMaterial({ color: '#ff5a4a', emissive: '#6a1f1f', transparent: true, opacity: 0.6, depthWrite: false });
   private previewTiles: THREE.InstancedMesh;
   private pickables: THREE.Object3D[] = [];
+  private rallyFlag = new THREE.Group();
+  private rallyCloth: THREE.Mesh;
   private debugTiles: THREE.InstancedMesh | null = null;
   private debugVersion = -1;
   private debugPaths = new THREE.LineSegments(
@@ -127,6 +129,12 @@ export class World3D {
     this.particleMesh.frustumCulled = false;
     this.particleMesh.count = 0;
     this.scene.add(this.particleMesh);
+
+    this.rallyFlag.add(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.3, 5).translate(0, 0.65, 0), new THREE.MeshStandardMaterial({ color: '#5b4126' })));
+    this.rallyCloth = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.28, 0.03).translate(0.24, 1.12, 0), new THREE.MeshStandardMaterial({ color: '#ffffff' }));
+    this.rallyFlag.add(this.rallyCloth);
+    this.rallyFlag.visible = false;
+    this.scene.add(this.rallyFlag);
 
     this.previewTiles = new THREE.InstancedMesh(
       new THREE.PlaneGeometry(0.94, 0.94).rotateX(-Math.PI / 2),
@@ -382,12 +390,24 @@ export class World3D {
     this.updateMarkers(now);
     this.updateParticles(now);
     this.updateDebug(client);
+    this.updateRally(client, now);
 
     // Keep the shadow frustum centred on what the camera sees.
     const r = this.rig;
     this.sun.target.position.set(r.tx, 0, r.ty - 4);
     this.sun.position.set(r.tx - 22, 40, r.ty + 14);
     this.renderer.render(this.scene, r.camera);
+  }
+
+  /** Show the rally flag of the selected own production building. */
+  private updateRally(client: ClientState, now: number): void {
+    const b = client.selected.length === 1 ? this.game.building(client.selected[0]) : undefined;
+    const r = b && b.owner === client.player ? b.rally : null;
+    this.rallyFlag.visible = !!r;
+    if (!r || !b) return;
+    this.rallyFlag.position.set(r.x, 0, r.y);
+    (this.rallyCloth.material as THREE.MeshStandardMaterial).color.set(this.game.player(b.owner).color);
+    this.rallyCloth.rotation.y = Math.sin(now * 3) * 0.25;
   }
 
   private updateDebug(client: ClientState): void {
@@ -433,7 +453,7 @@ export class World3D {
   private syncUnit(u: Unit, alpha: number, now: number): void {
     let v = this.units.get(u.id);
     if (!v) {
-      v = makeWorker(this.game.player(u.owner).color);
+      v = makeUnit(u.type, this.game.player(u.owner).color);
       v.root.userData.entityId = u.id;
       this.units.set(u.id, v);
       this.scene.add(v.root);

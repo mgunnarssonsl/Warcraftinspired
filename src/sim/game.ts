@@ -5,6 +5,7 @@
 import { CONFIG, type BuildingType, type UnitType } from './config';
 import { applyCommand, type Command } from './commands';
 import { updateBuilder } from './construction';
+import { updateProduction } from './production';
 import { updateGatherer } from './gathering';
 import { generateMap } from './mapgen';
 import { planPath, updateMovement } from './movement';
@@ -122,9 +123,14 @@ export class Game {
     return this.state.players[id];
   }
 
+  /** Living units plus population reserved by items currently training. */
   popUsed(player: number): number {
     let n = 0;
-    for (const u of this.units()) if (u.owner === player) n += CONFIG.units[u.type].pop;
+    for (const e of Object.values(this.state.entities)) {
+      if (e.owner !== player) continue;
+      if (e.kind === 'unit') n += CONFIG.units[e.type].pop;
+      else if (e.kind === 'building') for (const q of e.queue) if (q.started) n += CONFIG.units[q.unit].pop;
+    }
     return n;
   }
 
@@ -132,7 +138,7 @@ export class Game {
     let n = 0;
     for (const b of this.buildings())
       if (b.owner === player && b.progress >= 1) n += CONFIG.buildings[b.type].popProvided;
-    return n;
+    return Math.min(n, CONFIG.match.maxPop);
   }
 
   idleWorkers(player: number): Unit[] {
@@ -184,6 +190,8 @@ export class Game {
       hp: progress >= 1 ? def.hp : Math.max(1, Math.round(def.hp * CONFIG.construction.startHpFraction)),
       maxHp: def.hp,
       progress,
+      queue: [],
+      rally: null,
     };
     this.state.entities[b.id] = b;
     this.nav.addFootprint(b.id, b);
@@ -276,6 +284,7 @@ export class Game {
     const cmds = this.pending;
     this.pending = [];
     for (const c of cmds) applyCommand(this, c);
+    updateProduction(this);
 
     const units = this.units();
     for (const u of units) {

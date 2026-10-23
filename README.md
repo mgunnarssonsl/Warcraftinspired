@@ -5,11 +5,10 @@ economy: workers walk to resources, gather, carry, and deliver them, and base
 layout and worker allocation decide how fast you earn. Skirmish only, against
 computer opponents. No campaign or story.
 
-![3D view: Laborers mining and chopping while a Lumber Mill goes up beside the Keep](docs/screenshot.png)
+![3D view: a growing base with Keep, Barracks, Lumber Mill and Farm; Guards and an Archer at the rally point](docs/screenshot.png)
 
-**Status:** Milestone 1 (economic sandbox) is done, and the game now renders
-in 3D (milestone 1.5). The first part of Milestone 2, placing and
-constructing buildings, is in. See [Roadmap](#roadmap).
+**Status:** Milestones 1 (economic sandbox), 1.5 (3D foundation) and 2 (base
+construction and production) are done. See [Roadmap](#roadmap).
 
 ## Run it
 
@@ -31,8 +30,11 @@ npm run build      # typecheck + production bundle in dist/
 | Double-click a unit | Select every unit of that type on screen |
 | Right-click | Context command: ground = move, mine or tree = gather, Keep = return cargo, unfinished building = resume construction |
 | M, S, G, R | Move, Stop, Gather, Return cargo (also on the command card) |
-| F, L, K (Laborer selected) | Place a Farm, Lumber Mill or Keep. Click to place, Shift+click to keep placing, right-click or Esc to cancel. |
-| X (unfinished building selected) | Cancel construction (75% refund) |
+| F, L, B, K (Laborer selected) | Place a Farm, Lumber Mill, Barracks or Keep. Click to place, Shift+click to keep placing, right-click or Esc to cancel. |
+| Q, W (Keep or Barracks selected) | Train a Laborer (Keep), or a Guard or Archer (Barracks) |
+| Right-click (Keep or Barracks selected) | Set the rally point. On a mine or tree, newly trained Laborers start gathering there. |
+| Click a queue slot | Cancel that unit (full refund) |
+| X | Cancel construction (75% refund), or the last queued unit (full refund) |
 | `.` or the *Idle workers* button | Cycle through idle workers |
 | Ctrl+1–9 / 1–9 | Set / recall a control group (press twice to center the camera) |
 | Arrows, screen edge, middle-drag | Pan the camera. The mouse wheel zooms toward the cursor, and the camera tilts flatter as you zoom in. |
@@ -66,9 +68,8 @@ These are the rules as implemented. All numbers live in `src/sim/config.ts`.
   cancels that trip and yields no gold.
 - **No drop-off:** If a worker has nowhere to deliver, it keeps its cargo,
   goes idle, and you get a notice.
-- **Population:** Each Laborer uses 1 population. A Keep provides 10 and a
-  Farm 6, but only once construction is complete. Unit production arrives in
-  the rest of Milestone 2.
+- **Population:** Laborers use 1 population, and Guards and Archers use 2. A
+  completed Keep provides 10 and a completed Farm 6, up to a cap of 100.
 - **Rival:** Placeholder only. It keeps its five workers harvesting through the
   same command interface you use. The real opponent comes in Milestone 4.
 
@@ -104,6 +105,43 @@ Unfinished buildings provide no population and accept no deliveries. A
 Lumber Mill built next to a forest shortens wood trips; in the tests it
 raises one woodcutter's output by more than 50% on a distant tree line.
 
+## Production rules (current)
+
+These rules apply the same way to every player, including the computer.
+All numbers are in `CONFIG.units` and `CONFIG.production`.
+
+| Unit | Trained at | Cost | Pop | Time | Requires |
+| --- | --- | --- | --- | --- | --- |
+| Laborer | Keep | 75 gold | 1 | 15 s | — |
+| Guard (melee) | Barracks | 135 gold | 2 | 20 s | — |
+| Archer (ranged) | Barracks | 130 gold, 10 wood | 2 | 18 s | Lumber Mill |
+
+- **Cost is paid when you queue a unit.** If you can't afford it, the unit
+  isn't queued and you're told why. The same happens if the building is
+  unfinished, a requirement is missing, or the queue is full (5 per
+  building).
+- **Population is reserved when training starts**, not when you queue.
+  Training starts when a unit reaches the front of the queue. If there isn't
+  enough capacity, the unit waits at 0% with a "Need Farms" marker, and you
+  get one notice. Nothing is lost, and training starts by itself once
+  capacity frees up.
+- **Cancelling** any queued or in-progress unit refunds 100% of its cost and
+  releases any population it reserved.
+- **If a production building is destroyed**, its whole queue is refunded.
+  Only the building itself is lost. If it was unfinished, its construction
+  cost is lost too.
+- **If capacity falls below usage**, for example when a Farm is lost, your
+  existing units are kept. New training can't start until usage is back
+  under capacity. A unit already in training keeps its reserved population
+  and finishes.
+- **Spawning and rally:** a finished unit appears on the free tile beside the
+  building that is closest to the rally point, then walks to the rally
+  point. If the rally point is a resource, a new Laborer gathers from it.
+  If the building is completely boxed in, the finished unit waits at 100%
+  until a tile frees up.
+- **Combat comes in Milestone 3.** Guards and Archers can be trained and moved
+  now, but they can't fight yet.
+
 ## Architecture
 
 TypeScript and Vite, with three.js for 3D rendering. three.js is the only
@@ -122,6 +160,7 @@ src/sim/      deterministic simulation (no DOM access)
   mapgen.ts     "Twin Vales": point-symmetric 96×72 skirmish map
   rng.ts        seeded PRNG + hash/value noise
   construction.ts placement checks, construction model, cancel/refund
+  production.ts training queues, population reservation, rally, refunds
 src/render3d/ three.js view (reads state, never writes it)
   cameraRig.ts  angled RTS camera; screen <-> ground conversion
   world.ts      scene, terrain props, entity views and animation, picking, previews
@@ -203,6 +242,20 @@ which are never shipped to players.
   - **Construction:** placement validity, pay-on-arrival, failure reasons,
     pushing units off the site, pause and resume, cancel refunds, Lumber Mill
     trip shortening, and builders returning to their job.
+  - **Production:**
+    - Pay-on-queue and reserve-on-start.
+    - Refusals with reasons: too poor, wrong building, unfinished building,
+      full queue, missing Lumber Mill.
+    - Cancel refunds.
+    - Waiting at the population cap and resuming once a Farm is built.
+    - Capacity loss, with in-progress items keeping their reservation.
+    - Destroyed-building refunds.
+    - Rally onto a mine.
+    - Ownership checks.
+  - **Growth (integration):** a scripted build order on the real map, using
+    only player commands, goes from 5 to 21 Laborers, builds a Farm, and
+    expands with a second Keep at the nearby expansion mine, which then
+    receives 200+ gold deliveries. Gold accounting is exact the whole way.
   - **Camera math:** the ground→screen→ground round trip at every zoom level,
     zoom keeping the point under the cursor fixed, and pan bounds.
 - **Scripted 3D browser checks (Playwright, headless Chromium, software
@@ -212,6 +265,10 @@ which are never shipped to players.
     placement preview on invalid and valid ground; cursor→ground accuracy
     (within 0.001 tile); a full Farm build; zoom and pan; the debug overlay;
     no console errors.
+  - Production UI: train hotkeys, the queue panel with click-to-cancel, rally
+    by right-click, Barracks placement, the Archer locked until a Lumber Mill
+    is finished, the population-blocked notice, and Guards and Archers
+    walking to the rally flag.
   - A typical scene draws in about 110 draw calls and 154k triangles.
   - The same flows were checked in 2D during Milestone 1: control groups,
     the idle-worker hotkey, and the depletion notice and idle count.
@@ -224,12 +281,7 @@ which are never shipped to players.
 1. ~~Economic sandbox~~ (done)
 1.5. ~~3D foundation~~ (done): angled camera, 3D models, picking, placement
    preview. The simulation, commands and tests carried over unchanged.
-2. Base construction and production:
-   - Done: placement, construction, cancellation, Farms, Lumber Mill
-     drop-offs.
-   - Next: Barracks, worker and soldier training, production queues with
-     cancellation and refunds, population reservation, and the rules for
-     losing a production building or population capacity.
+2. ~~Base construction and production~~ (done)
 3. Combat foundation: melee and ranged units, attack and attack-move,
    auto-targeting, destruction
 4. Complete skirmish: computer opponent, expansion, victory, defeat,
