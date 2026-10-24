@@ -76,7 +76,8 @@ export class Screens {
           <p>Laborers walk to gold mines and trees, carry what they gather and bring it home. Only delivered resources count.
           Two Laborers fit inside a mine at once; about five keep one busy.</p>
           <h3>Base</h3>
-          <p>Farms raise your population limit. A Lumber Mill by the forest shortens wood trips. The Barracks trains Guards and Archers.</p>
+          <p>Farms raise your population limit. A Lumber Mill by the forest shortens wood trips. The Barracks trains Guards and Archers.
+          Fortify the Keep to a Castle for Lancers, Clerics and Mangonels, then to a Citadel.</p>
           <h3>Heroes and the map</h3>
           <p>The Hall of Valor raises one hero who levels up from kills nearby. Brigand camps guard the richer mines and pay a bounty. You only see what your units see: scout.</p>
         </div>
@@ -91,6 +92,8 @@ export class Screens {
             <li><b>Right-drag</b> grabs the map, <b>arrows</b> or edges scroll, <b>wheel</b> zooms</li>
             <li><b>F1</b> all controls, <b>F10</b> menu</li>
           </ul>
+          <h3>Army</h3>
+          <p>Guards beat Lancers, Lancers beat Archers, Archers beat Guards. Clerics heal nearby allies on their own. Mangonels wreck buildings but need protecting.</p>
         </div>
       </div>
       <h3>Opponent</h3>

@@ -461,7 +461,8 @@ body {
 
 /* ---- modal screens --------------------------------------------------------- */
 #modal {
-  position: absolute;
+  /* Full window, over the top and bottom bars: modal screens get all the room. */
+  position: fixed;
   inset: 0;
   display: flex;
   align-items: center;

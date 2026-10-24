@@ -3,6 +3,7 @@ import { ComputerPlayer, type Difficulty } from '../src/ai/computer';
 import { CONFIG } from '../src/sim/config';
 import { Game } from '../src/sim/game';
 import { emptyGame } from './helpers';
+import { findSite } from '../src/ai/placement';
 
 function play(seed: number, a: Difficulty | null, b: Difficulty | null, minutes: number) {
   const g = Game.create(seed);
@@ -119,5 +120,20 @@ describe('computer routing and memory', () => {
     for (const u of mine) g.addUnit('guard', 0, u.x + 30, u.y + 12); // look where they were
     g.step();
     expect(priv.favourable(g, mine, priv.visible(g) as unknown[])).toBe(true);
+  });
+});
+
+describe('fair seats', () => {
+  it('building placement is mirror-symmetric between the two starts', () => {
+    const g = Game.create(5);
+    const { width: W, height: H } = g.state.map;
+    for (const type of ['farm', 'barracks', 'tower'] as const) {
+      const s = CONFIG.buildings[type].size;
+      const p0 = g.buildings().find((b) => b.owner === 0 && b.type === 'hq')!;
+      // Aim at the Keep itself, so the search must walk outward and order matters.
+      const a = findSite(g, 0, type, p0.x, p0.y)!;
+      const b = findSite(g, 1, type, W - p0.x, H - p0.y)!;
+      expect(b).toEqual({ tx: W - a.tx - s, ty: H - a.ty - s, w: s, h: s });
+    }
   });
 });

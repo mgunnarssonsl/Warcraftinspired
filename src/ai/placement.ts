@@ -45,13 +45,20 @@ export function findSite(game: Game, player: number, type: BuildingType, x: numb
   const mines = game.resources().filter((r) => r.type === 'goldmine');
   // Keeps sit a little back from their mine; everything else keeps clear of mines.
   const mineGap = type === 'hq' ? 3 : 2;
-  const cx = Math.round(x - s / 2);
-  const cy = Math.round(y - s / 2);
+  // Maps are point-symmetric. A player starting in the rotated half scans in
+  // the rotated order, so both sides build mirror-image bases: the order of a
+  // search must never favour one seat.
+  const { width: W, height: H } = game.state.map;
+  const start = game.state.starts[player];
+  const flip = !!start && start.x + start.y > (W + H) / 2;
+  const cx = flip ? W - s - Math.round(W - x - s / 2) : Math.round(x - s / 2);
+  const cy = flip ? H - s - Math.round(H - y - s / 2) : Math.round(y - s / 2);
+  const sign = flip ? -1 : 1;
   for (let r = 0; r <= maxRing; r++)
     for (let dy = -r; dy <= r; dy++)
       for (let dx = -r; dx <= r; dx++) {
         if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
-        const f = { tx: cx + dx, ty: cy + dy, w: s, h: s };
+        const f = { tx: cx + sign * dx, ty: cy + sign * dy, w: s, h: s };
         if (!checkPlacement(game, type, f.tx, f.ty).ok || !padFree(game, f)) continue;
         if (lanes.some((l) => overlaps(l, f))) continue;
         if (mines.some((m) => rectGap(m, f) < mineGap)) continue;

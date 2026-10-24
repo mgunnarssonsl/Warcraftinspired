@@ -2,12 +2,13 @@
 // number used by the rules goes through here, so upgrades, hero levels and
 // buffs apply consistently to every player.
 
-import { CONFIG, type BuildingType, type ResearchId } from './config';
+import { CONFIG, type ArmorType, type AttackType, type BuildingType, type ResearchId } from './config';
 import type { Game } from './game';
 import type { Building, Unit } from './types';
 
-/** Unit types that benefit from Blacksmith upgrades. */
-const MILITARY = new Set(['guard', 'archer', 'hero']);
+/** Unit types that benefit from Blacksmith weapon and armor upgrades. */
+const WEAPONS = new Set(['guard', 'archer', 'lancer', 'hero']);
+const ARMORED = new Set(['guard', 'archer', 'lancer', 'cleric', 'hero']);
 
 export function researched(game: Game, player: number, id: ResearchId): boolean {
   return !!game.state.players[player]?.research[id];
@@ -41,22 +42,22 @@ export function researchProblem(game: Game, player: number, b: Building, id: Res
 /** Effect of finishing research. */
 export function completeResearch(game: Game, b: Building, id: ResearchId): void {
   game.player(b.owner).research[id] = true;
-  if (id === 'castle') {
-    b.tier = 2;
+  if (id === 'castle' || id === 'citadel') {
+    b.tier = id === 'castle' ? 2 : 3;
     b.maxHp += CONFIG.tech.castleHp;
     b.hp += CONFIG.tech.castleHp;
   }
   game.emit({ type: 'researchComplete', player: b.owner, research: id });
 }
 
-function levels(game: Game, owner: number, first: ResearchId, second: ResearchId): number {
-  return (researched(game, owner, first) ? 1 : 0) + (researched(game, owner, second) ? 1 : 0);
+function levels(game: Game, owner: number, ids: ResearchId[]): number {
+  return ids.reduce((n, id) => n + (researched(game, owner, id) ? 1 : 0), 0);
 }
 
 /** Damage of one attack, after upgrades, hero level and Battle Cry. */
 export function attackDamage(game: Game, u: Unit): number {
   let dmg = CONFIG.units[u.type].attack.damage;
-  if (MILITARY.has(u.type)) dmg += CONFIG.tech.weaponBonus * levels(game, u.owner, 'weapons1', 'weapons2');
+  if (WEAPONS.has(u.type)) dmg += CONFIG.tech.weaponBonus * levels(game, u.owner, ['weapons1', 'weapons2', 'weapons3']);
   if (u.hero) dmg += CONFIG.hero.damagePerLevel * (u.hero.level - 1);
   const bonus = u.buffs.reduce((s, b) => s + b.amount, 0);
   return Math.round(dmg * (1 + bonus));
@@ -65,11 +66,35 @@ export function attackDamage(game: Game, u: Unit): number {
 export function armorValue(game: Game, t: Unit | Building): number {
   if (t.kind === 'building') return CONFIG.combat.buildingArmor;
   let a: number = CONFIG.units[t.type].armor;
-  if (MILITARY.has(t.type)) a += CONFIG.tech.armorBonus * levels(game, t.owner, 'armor1', 'armor2');
+  if (ARMORED.has(t.type)) a += CONFIG.tech.armorBonus * levels(game, t.owner, ['armor1', 'armor2', 'armor3']);
   if (t.hero) a += CONFIG.hero.armorPerLevel * (t.hero.level - 1);
   return a;
 }
 
 export function woodCarry(game: Game, owner: number): number {
   return CONFIG.units.worker.carryWood + (researched(game, owner, 'saws') ? CONFIG.tech.sawsCarry : 0);
+}
+
+export function goldCarry(game: Game, owner: number): number {
+  return CONFIG.units.worker.carryGold + (researched(game, owner, 'carts') ? CONFIG.tech.cartsCarry : 0);
+}
+
+export function armorTypeOf(t: Unit | Building): ArmorType {
+  return t.kind === 'building' ? CONFIG.buildings[t.type].armorType : CONFIG.units[t.type].armorType;
+}
+
+/** Damage multiplier of an attack type against what the target wears. */
+export function typeMultiplier(attack: AttackType, armor: ArmorType): number {
+  return CONFIG.combat.typeTable[attack][armor];
+}
+
+/** Weapon range after upgrades (Longbows for Archers). */
+export function attackRange(game: Game, u: Unit): number {
+  const r = CONFIG.units[u.type].attack.range;
+  return u.type === 'archer' && researched(game, u.owner, 'longbows') ? r + CONFIG.tech.longbowRange : r;
+}
+
+/** Health a Cleric's prayer restores. */
+export function healAmount(game: Game, owner: number): number {
+  return CONFIG.cleric.heal[researched(game, owner, 'healing2') ? 1 : 0];
 }

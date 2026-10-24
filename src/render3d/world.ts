@@ -20,6 +20,8 @@ import {
   makeMine,
   makeTreeGeometries,
   makeArrowGeometry,
+  makeBoltGeometry,
+  makeBoulderGeometry,
   makeHammerGeometry,
   makeUnit,
   type BuildingParts,
@@ -74,6 +76,10 @@ export class World3D {
   private particleMesh: THREE.InstancedMesh;
   private arrows: THREE.InstancedMesh;
   private hammers: THREE.InstancedMesh;
+  private bolts: THREE.InstancedMesh;
+  private boulders: THREE.InstancedMesh;
+  /** Where each boulder was first seen, for its arc. */
+  private boulderFrom = new Map<number, { x: number; y: number }>();
   /** Views of units/buildings that just died, animated out before removal. */
   private dying: Array<{ root: THREE.Object3D; t0: number; building: boolean }> = [];
   private ghosts = new Map<BuildingType, THREE.Group>();
@@ -154,6 +160,17 @@ export class World3D {
     this.hammers.frustumCulled = false;
     this.hammers.count = 0;
     this.scene.add(this.hammers);
+    this.bolts = new THREE.InstancedMesh(
+      makeBoltGeometry(),
+      new THREE.MeshStandardMaterial({ color: '#d8ffe4', emissive: '#3aff7a', emissiveIntensity: 0.9 }),
+      60,
+    );
+    this.boulders = new THREE.InstancedMesh(makeBoulderGeometry(), new THREE.MeshStandardMaterial({ color: '#7a7468', flatShading: true }), 60);
+    for (const m of [this.bolts, this.boulders]) {
+      m.frustumCulled = false;
+      m.count = 0;
+      this.scene.add(m);
+    }
 
     this.rallyFlag.add(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.3, 5).translate(0, 0.65, 0), new THREE.MeshStandardMaterial({ color: '#5b4126' })));
     this.rallyCloth = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.28, 0.03).translate(0.24, 1.12, 0), new THREE.MeshStandardMaterial({ color: '#ffffff' }));
@@ -331,6 +348,11 @@ export class World3D {
         this.burst(e.x, 1.2, e.y, 30, '#ffd84a', 2.4, now);
       } else if (e.type === 'cast' && e.ability === 'cry') {
         this.burst(e.x, 0.6, e.y, 36, '#ff9a3a', 4.5, now);
+      } else if (e.type === 'heal') {
+        this.burst(e.x, 0.9, e.y, 6, '#7dff8a', 0.8, now);
+      } else if (e.type === 'impact') {
+        this.burst(e.x, 0.3, e.y, 18, '#8a7c68', 2.6, now);
+        this.burst(e.x, 0.3, e.y, 6, '#ffb060', 1.6, now);
       } else if (e.type === 'cast' && e.ability === 'mend') {
         this.burst(e.x, 0.8, e.y, 20, '#7dff8a', 1.6, now);
       } else if (e.type === 'buildingComplete') {
@@ -534,12 +556,35 @@ export class World3D {
     const ps = this.game.state.projectiles;
     let a = 0;
     let h = 0;
+    let bo = 0;
+    let st = 0;
+    const live = new Set<number>();
     for (const p of ps) {
+      if (p.kind === 'boulder') {
+        live.add(p.id);
+        if (!this.boulderFrom.has(p.id)) this.boulderFrom.set(p.id, { x: p.px, y: p.py });
+      }
       if (!this.tileVisible(p.x, p.y)) continue;
       const x = p.px + (p.x - p.px) * alpha;
       const y = p.py + (p.y - p.py) * alpha;
       const heading = Math.atan2(p.x - p.px, p.y - p.py);
-      if (p.kind === 'hammer') {
+      if (p.kind === 'boulder') {
+        if (st >= 60) continue;
+        // A lobbed arc from launch point to landing spot.
+        const from = this.boulderFrom.get(p.id)!;
+        const total = Math.max(0.01, Math.hypot(p.tx - from.x, p.ty - from.y));
+        const f = Math.min(1, Math.hypot(x - from.x, y - from.y) / total);
+        this.p.set(x, 0.9 + Math.sin(f * Math.PI) * total * 0.35 - f * 0.8, y);
+        this.q.setFromEuler(this.e.set(now * 5, now * 3, 0));
+        this.s.set(1, 1, 1);
+        this.boulders.setMatrixAt(st++, this.m4.compose(this.p, this.q, this.s));
+      } else if (p.kind === 'bolt') {
+        if (bo >= 60) continue;
+        this.p.set(x, 0.9, y);
+        this.q.setFromEuler(this.e.set(now * 9, now * 7, 0));
+        this.s.set(1, 1, 1);
+        this.bolts.setMatrixAt(bo++, this.m4.compose(this.p, this.q, this.s));
+      } else if (p.kind === 'hammer') {
         if (h >= 20) continue;
         this.p.set(x, 1.0, y);
         this.q.setFromEuler(this.e.set(now * 18, heading, 0, 'YXZ')); // tumbling
@@ -557,6 +602,11 @@ export class World3D {
     this.arrows.instanceMatrix.needsUpdate = true;
     this.hammers.count = h;
     this.hammers.instanceMatrix.needsUpdate = true;
+    this.bolts.count = bo;
+    this.bolts.instanceMatrix.needsUpdate = true;
+    this.boulders.count = st;
+    this.boulders.instanceMatrix.needsUpdate = true;
+    for (const id of this.boulderFrom.keys()) if (!live.has(id)) this.boulderFrom.delete(id);
   }
 
   private removePickable(o: THREE.Object3D): void {
@@ -588,8 +638,16 @@ export class World3D {
     const windup = secondsToTicks(CONFIG.units[u.type].attack.windup);
     const ph = now * 11 + u.id;
     v.body.position.y = moving ? Math.abs(Math.sin(ph)) * 0.04 : 0;
-    v.legL.rotation.x = moving ? Math.sin(ph) * 0.6 : 0;
-    v.legR.rotation.x = moving ? -Math.sin(ph) * 0.6 : 0;
+    if (u.type === 'mangonel') {
+      // Wheels roll rather than stride.
+      if (moving) v.legL.rotation.x = v.legR.rotation.x = v.legL.rotation.x - 0.12;
+    } else {
+      v.legL.rotation.x = moving ? Math.sin(ph) * 0.6 : 0;
+      v.legR.rotation.x = moving ? -Math.sin(ph) * 0.6 : 0;
+    }
+    // Four-legged mounts: hind legs move with the opposite front leg.
+    (v.legL.userData.partner as THREE.Object3D | undefined)?.rotation.set(v.legR.rotation.x, 0, 0);
+    (v.legR.userData.partner as THREE.Object3D | undefined)?.rotation.set(v.legL.rotation.x, 0, 0);
     const mode = o?.type === 'build' ? 'hammer' : o?.type === 'gather' && o.res === 'gold' ? 'pick' : 'axe';
     v.pickHead.visible = mode === 'pick';
     v.axeHead.visible = mode === 'axe';

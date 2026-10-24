@@ -23,8 +23,10 @@ describe('damage and death', () => {
     const events: GameEvent[] = [];
     runUntil(g, () => (events.push(...g.drainEvents()), !g.unit(b.id)), 20 * 60);
     const hits = events.filter((e) => e.type === 'hit');
-    expect(hits[0]).toMatchObject({ damage: damageAfterArmor(GUARD.attack.damage, 0) });
-    expect(hits.length).toBe(Math.ceil(CONFIG.units.worker.hp / GUARD.attack.damage));
+    // Normal attacks deal 1.5x against a Laborer's medium armor.
+    const per = damageAfterArmor(GUARD.attack.damage * CONFIG.combat.typeTable.normal.medium, 0);
+    expect(hits[0]).toMatchObject({ damage: per });
+    expect(hits.length).toBe(Math.ceil(CONFIG.units.worker.hp / per));
     expect(events.some((e) => e.type === 'death' && e.id === b.id)).toBe(true);
     run(g, 2);
     expect(a.order).toBeNull();
@@ -57,7 +59,7 @@ describe('damage and death', () => {
     expect(b.hp).toBe(b.maxHp); // in flight, not yet landed
     expect(Math.hypot(a.x - 5.5, a.y - 10.5)).toBeLessThan(0.01); // in range: did not walk
     runUntil(g, () => b.hp < b.maxHp, 40);
-    expect(b.hp).toBe(b.maxHp - ARCHER.attack.damage);
+    expect(b.hp).toBe(b.maxHp - damageAfterArmor(ARCHER.attack.damage * CONFIG.combat.typeTable.pierce.medium, 0));
   });
 
   it('a shot whose target dies first fizzles', () => {

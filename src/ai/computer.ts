@@ -15,12 +15,12 @@
 //   military - defend anything near its buildings; launch attack waves that
 //              grow each time; fall back when a wave is mostly lost
 
-import { CONFIG, secondsToTicks, type AbilityId, type BuildingType, type ResearchId, type UnitType } from '../sim/config';
+import { CONFIG, secondsToTicks, type AbilityId, type ArmyMix, type BuildingType, type ResearchId, type UnitType } from '../sim/config';
 import { isEnemy } from '../sim/combat';
 import type { Game } from '../sim/game';
 import { distToRect } from '../sim/movement';
 import { castProblem } from '../sim/hero';
-import { hasCompleted, trainCost } from '../sim/production';
+import { hasCompleted, missingRequirement, trainableAt, trainCost } from '../sim/production';
 import { researched, researchPending, researchProblem } from '../sim/tech';
 import type { Building, Entity, ResourceNode, Unit } from '../sim/types';
 import { findSite } from './placement';
@@ -32,6 +32,11 @@ export type ProfileOverrides = Partial<Profile>;
 type Profile = { -readonly [K in keyof (typeof CONFIG.ai.profiles)['hard']]: Widen<(typeof CONFIG.ai.profiles)['hard'][K]> };
 
 const dist = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
+
+type ArmyUnit = keyof ArmyMix;
+const ARMY_UNITS: readonly UnitType[] = ['guard', 'archer', 'lancer', 'cleric', 'mangonel'];
+/** Buildings that train soldiers. */
+const PRODUCTION = new Set<BuildingType>(['barracks', 'chapel', 'workshop']);
 
 /** Distance from point p to the segment a–b. */
 function segmentDistance(p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }): number {
@@ -249,6 +254,11 @@ export class ComputerPlayer {
     if (count('barracks') > 0 && count('altar') === 0) return 'altar';
     if (count('tower') < this.profile.towers && hasCompleted(game, P, 'barracks')) return 'tower';
     if (this.profile.upgrades && count('smithy') === 0 && hasCompleted(game, P, 'lumbermill')) return 'smithy';
+    // Tier II production, for the units its mix calls for.
+    if (researched(game, P, 'castle')) {
+      if (count('chapel') === 0 && this.profile.mix.cleric > 0) return 'chapel';
+      if (count('workshop') === 0 && this.profile.mix.mangonel > 0) return 'workshop';
+    }
     const me = game.player(P);
     if (count('barracks') < this.profile.maxBarracks && workers.length >= this.profile.extraBarracksAtWorkers && me.gold >= 300) return 'barracks';
     const seconds = game.state.tick / 20;
@@ -290,7 +300,7 @@ export class ComputerPlayer {
       const tree = this.nearestTree(game, home);
       return tree ? findSite(game, P, type, tree.x + Math.sign(home.x - tree.x) * 2, tree.y + Math.sign(home.y - tree.y) * 2) : null;
     }
-    if (type === 'tower' || type === 'barracks' || type === 'altar' || type === 'smithy') {
+    if (type === 'tower' || type === 'barracks' || type === 'altar' || type === 'smithy' || type === 'workshop') {
       const s = this.staging(game, home);
       return findSite(game, P, type, (s.x + home.x) / 2, (s.y + home.y) / 2);
     }
@@ -365,20 +375,55 @@ export class ComputerPlayer {
       }
     }
     this.research(game, buildings, reserve);
-    const archers = army.filter((u) => u.type === 'archer').length;
+    const mix = this.wantedMix(game);
+    const total = Object.values(mix).reduce((a, b) => a + b, 0) || 1;
+    const counts = new Map<UnitType, number>();
+    for (const u of army) counts.set(u.type, (counts.get(u.type) ?? 0) + 1);
+    for (const b of buildings) for (const q of b.queue) if (q.unit) counts.set(q.unit, (counts.get(q.unit) ?? 0) + 1);
+    const size = army.length + 1;
+    // How far each soldier type is below its share of the wanted mix.
+    const deficit = (t: ArmyUnit) => mix[t] / total - (counts.get(t) ?? 0) / size;
     for (const b of buildings) {
-      if (b.type !== 'barracks' || b.progress < 1) continue;
+      if (b.progress < 1 || !PRODUCTION.has(b.type)) continue;
       if (home && !b.rally) {
         const s = this.staging(game, home);
         game.issue({ type: 'setRally', player: P, buildingId: b.id, x: s.x, y: s.y, targetId: -1 });
       }
       if (b.queue.length >= 2) continue;
-      const wantArcher = hasCompleted(game, P, 'lumbermill') && archers < (army.length + 1) * this.profile.archerShare;
-      const unit: UnitType = wantArcher ? 'archer' : 'guard';
+      const options = (trainableAt(b.type) as ArmyUnit[]).filter((t) => ARMY_UNITS.includes(t) && mix[t] > 0 && !missingRequirement(game, P, t));
+      if (!options.length) continue;
+      const unit = options.reduce((a, c) => (deficit(c) > deficit(a) ? c : a));
+      // The Barracks always keeps training; specialist buildings only fill their share.
+      if (b.type !== 'barracks' && deficit(unit) <= 0) continue;
       const c = CONFIG.units[unit].cost;
-      if (me.gold - reserve.gold >= c.gold && me.wood - reserve.wood >= c.wood)
+      if (me.gold - reserve.gold >= c.gold && me.wood - reserve.wood >= c.wood) {
         game.issue({ type: 'train', player: P, buildingId: b.id, unit });
+        counts.set(unit, (counts.get(unit) ?? 0) + 1);
+      }
     }
+  }
+
+  /**
+   * The composition it wants now: its profile's mix, shifted toward counters
+   * of the enemy soldiers it has seen (and still remembers).
+   */
+  wantedMix(game: Game): Record<ArmyUnit, number> {
+    const mix = { ...this.profile.mix };
+    if (!this.profile.adapt) return mix;
+    const seen = new Map<UnitType, number>();
+    for (const m of this.armySeen.values()) seen.set(m.type, (seen.get(m.type) ?? 0) + 1);
+    const n = [...seen.values()].reduce((a, b) => a + b, 0);
+    if (n < CONFIG.ai.adaptAfterSeen) return mix;
+    const share = (t: UnitType) => (seen.get(t) ?? 0) / n;
+    const k = CONFIG.ai.adaptStrength;
+    // Lancers run down archers, casters and siege; Guards stop Lancers;
+    // Archers shred light units; Clerics' magic burns heavy armor.
+    mix.lancer += k * (share('archer') + share('cleric') + share('mangonel'));
+    mix.guard += k * share('lancer');
+    mix.archer += k * share('cleric');
+    mix.cleric += (k / 2) * share('guard');
+    if (!researched(game, this.player, 'castle')) mix.guard += k * share('archer') * 0.5; // no Lancers yet
+    return mix;
   }
 
   /** Upgrades in a fixed order, when the economy can spare it. */
@@ -388,7 +433,16 @@ export class ComputerPlayer {
     const me = game.player(P);
     const seconds = game.state.tick / 20;
     const order: ResearchId[] = ['weapons1', 'armor1', 'saws'];
-    if (this.profile.castleSeconds !== null && seconds >= this.profile.castleSeconds) order.push('castle', 'weapons2', 'armor2');
+    // Mule Carts ties up the Keep, which also trains Laborers: not in the opening.
+    if (seconds >= CONFIG.ai.cartsSeconds) order.push('carts');
+    if (this.profile.castleSeconds !== null && seconds >= this.profile.castleSeconds) {
+      order.push('castle', 'weapons2', 'armor2');
+      if (this.profile.mix.archer > 0) order.push('longbows');
+    }
+    if (this.profile.citadelSeconds !== null && seconds >= this.profile.citadelSeconds) {
+      order.push('citadel', 'weapons3', 'armor3');
+      if (this.profile.mix.cleric > 0) order.push('healing2');
+    }
     for (const id of order) {
       const def = CONFIG.research[id];
       if (researched(game, P, id) || researchPending(game, P, id)) continue;

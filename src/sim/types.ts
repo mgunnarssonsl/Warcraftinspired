@@ -2,7 +2,7 @@
 // (numbers, strings, arrays, records) so JSON round-trips are lossless.
 // Derived caches (navigation grid etc.) live outside it, in Game.
 
-import type { AbilityId, BuildingType, ResearchId, UnitType } from './config';
+import type { AbilityId, AttackType, BuildingType, ResearchId, UnitType } from './config';
 
 export type ResourceKind = 'gold' | 'wood';
 export type NodeType = 'goldmine' | 'tree';
@@ -221,6 +221,10 @@ export interface Unit extends EntityBase {
   /** Ticks of stun remaining: a stunned unit cannot act or move. */
   stun: number;
   buffs: Buff[];
+  /** Mana of non-hero casters (Clerics); 0 for everyone else. */
+  mana: number;
+  /** Tick from which a Cleric's next prayer (heal) is ready. */
+  prayerReady: number;
 }
 
 export interface Projectile {
@@ -234,9 +238,17 @@ export interface Projectile {
   py: number;
   speed: number;
   damage: number;
-  kind: 'arrow' | 'hammer';
+  kind: 'arrow' | 'hammer' | 'bolt' | 'boulder';
+  attackType: AttackType;
   /** Stun applied on hit, in ticks. */
   stun: number;
+  /**
+   * Area damage radius. A projectile with splash flies to a fixed ground
+   * point (where the target stood at launch) instead of homing.
+   */
+  splash: number;
+  tx: number;
+  ty: number;
 }
 
 export interface Building extends EntityBase, Footprint {
@@ -322,6 +334,8 @@ export interface GameState {
 }
 
 export type GameEvent =
+  | { type: 'impact'; x: number; y: number; radius: number }
+  | { type: 'heal'; player: number; id: number; source: number; amount: number; x: number; y: number }
   | { type: 'deliver'; player: number; res: ResourceKind; amount: number; x: number; y: number }
   | { type: 'mineDepleted'; player: number; x: number; y: number }
   | { type: 'treeFelled'; x: number; y: number }

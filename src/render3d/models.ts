@@ -179,6 +179,82 @@ function makeHero(team: string): WorkerParts {
   return { ...base, tool, ...noTools() };
 }
 
+/** Lancer: a rider on a barded horse with a long lance couched forward. */
+function makeLancer(team: string): WorkerParts {
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  body.scale.setScalar(1.45);
+  root.add(body);
+  const horse = mat('#6b4a2e');
+  const legGeo = box(0.07, 0.3, 0.07).translate(0, -0.15, 0);
+  // Front legs swing as the "walk" legs; the hind legs follow in the other phase.
+  const legL = mesh(legGeo, horse, -0.09, 0.3, 0.2);
+  const legR = mesh(legGeo, horse, 0.09, 0.3, 0.2);
+  const hindL = mesh(legGeo, horse, -0.09, 0.3, -0.2);
+  const hindR = mesh(legGeo, horse, 0.09, 0.3, -0.2);
+  body.add(legL, legR, hindL, hindR);
+  // Keep the hind legs in step with the front ones.
+  legL.userData.partner = hindR;
+  legR.userData.partner = hindL;
+  body.add(mesh(box(0.26, 0.22, 0.6), horse, 0, 0.4, 0));
+  body.add(mesh(box(0.28, 0.12, 0.5), mat(team), 0, 0.36, 0)); // barding
+  const neck = mesh(box(0.12, 0.3, 0.12), horse, 0, 0.56, 0.3);
+  neck.rotation.x = 0.5;
+  body.add(neck);
+  body.add(mesh(box(0.11, 0.11, 0.24), horse, 0, 0.7, 0.42));
+  body.add(mesh(box(0.05, 0.2, 0.04), mat('#2e2018'), 0, 0.42, -0.34)); // tail
+  // Rider
+  body.add(mesh(new THREE.CylinderGeometry(0.11, 0.14, 0.28, 8), mat(team), 0, 0.64, -0.02));
+  body.add(mesh(new THREE.SphereGeometry(0.095, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), mat('#a3a9b2', { rough: 0.45 }), 0, 0.84, -0.02));
+  body.add(mesh(new THREE.SphereGeometry(0.085, 8, 6), mat('#e2b88c'), 0, 0.82, -0.02));
+  const tool = new THREE.Group();
+  tool.position.set(0.15, 0.66, 0);
+  const lance = mesh(new THREE.ConeGeometry(0.03, 0.95, 6).rotateX(Math.PI / 2), mat('#d6c49a'), 0, 0, 0.35);
+  tool.add(lance);
+  tool.add(mesh(box(0.012, 0.1, 0.1), mat(team), 0, 0.06, 0.62)); // pennant
+  body.add(tool);
+  return { root, body, legL, legR, tool, ...noTools() };
+}
+
+/** Cleric: long robe and hood, a staff topped with a glowing orb. */
+function makeCleric(team: string): WorkerParts {
+  const base = soldierBase(team, 1.4, '#d9d2c0');
+  const { body } = base;
+  body.add(mesh(new THREE.ConeGeometry(0.22, 0.42, 8), mat('#ece6d6'), 0, 0.3, 0)); // robe
+  body.add(mesh(box(0.05, 0.3, 0.02), mat(team), 0, 0.36, 0.17)); // stole
+  body.add(mesh(new THREE.ConeGeometry(0.14, 0.2, 8), mat('#ece6d6'), 0, 0.74, -0.01)); // hood
+  const tool = new THREE.Group();
+  tool.position.set(0.2, 0.36, 0.05);
+  tool.add(mesh(box(0.03, 0.55, 0.03), mat('#7a5733'), 0, 0.17, 0));
+  tool.add(mesh(new THREE.IcosahedronGeometry(0.06, 0), mat('#b8ffd0', { emissive: 0x3aa05a, rough: 0.3 }), 0, 0.47, 0));
+  body.add(tool);
+  return { ...base, tool, ...noTools() };
+}
+
+/** Mangonel: a wheeled timber frame with a throwing arm (the "tool"). */
+function makeMangonel(team: string): WorkerParts {
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  body.scale.setScalar(1.3);
+  root.add(body);
+  const wood = mat('#8a6440');
+  const dark = mat('#5b4126');
+  const wheelGeo = new THREE.CylinderGeometry(0.16, 0.16, 0.06, 10).rotateZ(Math.PI / 2);
+  const legL = mesh(wheelGeo, dark, -0.3, 0.16, 0.2);
+  const legR = mesh(wheelGeo, dark, 0.3, 0.16, 0.2);
+  body.add(legL, legR, mesh(wheelGeo, dark, -0.3, 0.16, -0.25), mesh(wheelGeo, dark, 0.3, 0.16, -0.25));
+  body.add(mesh(box(0.56, 0.08, 0.7), wood, 0, 0.26, 0));
+  for (const x of [-0.2, 0.2]) body.add(mesh(box(0.06, 0.45, 0.06), wood, x, 0.5, -0.05));
+  body.add(mesh(box(0.46, 0.06, 0.06), wood, 0, 0.7, -0.05));
+  body.add(mesh(box(0.3, 0.06, 0.2), mat(team), 0, 0.32, 0.25)); // team-colored shield board
+  const tool = new THREE.Group();
+  tool.position.set(0, 0.62, -0.05);
+  tool.add(mesh(box(0.06, 0.06, 0.75), wood, 0, 0, 0.1));
+  tool.add(mesh(new THREE.SphereGeometry(0.1, 6, 4), mat('#7a7468'), 0, 0.06, -0.26)); // stone in the cup
+  body.add(tool);
+  return { root, body, legL, legR, tool, ...noTools() };
+}
+
 /** Hammer projectile for Stormhammer, pointing along +Z. */
 export function makeHammerGeometry(): THREE.BufferGeometry {
   return mergeGeometries([new THREE.BoxGeometry(0.06, 0.06, 0.4), new THREE.BoxGeometry(0.22, 0.16, 0.16).translate(0, 0, 0.2)])!;
@@ -186,10 +262,22 @@ export function makeHammerGeometry(): THREE.BufferGeometry {
 
 export function makeUnit(type: UnitType, team: string): WorkerParts {
   if (type === 'hero') return makeHero(team);
+  if (type === 'lancer') return makeLancer(team);
+  if (type === 'cleric') return makeCleric(team);
+  if (type === 'mangonel') return makeMangonel(team);
   // Camp creeps reuse the soldier silhouettes in their own drab colours.
   if (type === 'guard' || type === 'brigand' || type === 'chief') return makeGuard(team);
   if (type === 'archer' || type === 'poacher') return makeArcher(team);
   return makeWorker(team);
+}
+
+/** Siege boulder and a Cleric's glowing bolt. */
+export function makeBoulderGeometry(): THREE.BufferGeometry {
+  return new THREE.IcosahedronGeometry(0.17, 0);
+}
+
+export function makeBoltGeometry(): THREE.BufferGeometry {
+  return new THREE.OctahedronGeometry(0.1, 0);
 }
 
 /** Arrow mesh for projectiles, pointing along +Z. */
@@ -431,11 +519,59 @@ function smithy(team: string): THREE.Group {
   return g;
 }
 
-const BUILDERS: Record<BuildingType, (team: string) => THREE.Group> = { hq: keep, farm, lumbermill, barracks, tower, altar, smithy };
+/** Citadel: the Castle ringed by four banner towers. */
+function citadel(team: string): THREE.Group {
+  const g = castle(team);
+  const stone = mat('#a99c84');
+  for (const [x, z] of [[-1.75, -1.75], [1.75, -1.75], [-1.75, 1.75], [1.75, 1.75]]) {
+    g.add(mesh(new THREE.CylinderGeometry(0.3, 0.34, 2.8, 7), stone, x, 1.4, z));
+    g.add(mesh(new THREE.ConeGeometry(0.42, 0.7, 7), mat(team), x, 3.15, z));
+    g.add(mesh(box(0.03, 0.6, 0.03), mat('#3b2a1c'), x, 3.7, z));
+    g.add(mesh(box(0.32, 0.2, 0.02), mat('#e8d27a', { emissive: 0x3a2a00 }), x + 0.17, 3.9, z));
+  }
+  return g;
+}
+
+function chapel(team: string): THREE.Group {
+  const g = new THREE.Group();
+  const stone = mat('#e3dccb');
+  g.add(mesh(box(2.7, 0.12, 2.7), mat('#8d8272'), 0, 0.06, 0));
+  g.add(mesh(box(1.4, 1.2, 2.2), stone, 0, 0.72, -0.1));
+  // A gabled roof running front to back: a three-sided prism, ridge up.
+  g.add(mesh(new THREE.CylinderGeometry(0.9, 0.9, 2.3, 3).rotateX(-Math.PI / 2), mat(team), 0, 1.68, -0.1));
+  // Steeple over the door, with a glowing window and a finial.
+  g.add(mesh(box(0.6, 1.9, 0.6), stone, 0, 1.0, 0.95));
+  g.add(mesh(new THREE.ConeGeometry(0.48, 1.0, 4), mat(tint(team, -0.25)), 0, 2.45, 0.95));
+  g.add(mesh(box(0.22, 0.34, 0.04), mat('#b8ffd0', { emissive: 0x3aa05a }), 0, 1.45, 1.26));
+  g.add(mesh(box(0.34, 0.5, 0.05), mat('#4a3626'), 0, 0.37, 1.26));
+  g.add(mesh(new THREE.OctahedronGeometry(0.1, 0), mat('#e8d27a', { emissive: 0x3a2a00 }), 0, 3.05, 0.95));
+  return g;
+}
+
+function workshop(team: string): THREE.Group {
+  const g = new THREE.Group();
+  const wood = mat('#8a6440');
+  g.add(mesh(box(2.7, 0.12, 2.7), mat('#6d5a43'), 0, 0.06, 0));
+  // Open timber shed
+  for (const [x, z] of [[-1.1, -1.1], [1.1, -1.1], [-1.1, 0.4], [1.1, 0.4]]) g.add(mesh(box(0.14, 1.3, 0.14), wood, x, 0.71, z));
+  const roof = mesh(box(2.6, 0.1, 1.9), mat(team), 0, 1.4, -0.35);
+  roof.rotation.x = -0.18;
+  g.add(roof);
+  g.add(mesh(box(2.3, 0.9, 0.1), mat('#9a8e7a'), 0, 0.55, -1.15)); // back wall
+  // A big wheel and a stack of beams out front
+  const wheel = mesh(new THREE.TorusGeometry(0.35, 0.06, 4, 10), mat('#5b4126'), 0.7, 0.42, 0.9);
+  wheel.rotation.y = Math.PI / 2;
+  g.add(wheel);
+  for (let i = 0; i < 3; i++) g.add(mesh(box(1.0, 0.1, 0.12), wood, -0.55, 0.17 + i * 0.1, 0.85 + (i % 2) * 0.05));
+  g.add(mesh(box(0.25, 0.25, 0.25), mat('#7a7468'), -0.1, 0.25, -0.3));
+  return g;
+}
+
+const BUILDERS: Record<BuildingType, (team: string) => THREE.Group> = { hq: keep, farm, lumbermill, barracks, tower, altar, smithy, chapel, workshop };
 
 export function makeBuilding(type: BuildingType, team: string, size: number, tier = 1): BuildingParts {
   const root = new THREE.Group();
-  const model = type === 'hq' && tier > 1 ? castle(team) : BUILDERS[type](team);
+  const model = type === 'hq' && tier > 2 ? citadel(team) : type === 'hq' && tier > 1 ? castle(team) : BUILDERS[type](team);
   root.add(model);
   const scaffold = new THREE.Group();
   const pole = mat('#a07a4a');

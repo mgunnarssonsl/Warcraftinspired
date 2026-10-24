@@ -171,7 +171,11 @@ function cast(game: Game, u: Unit, ability: AbilityId, t: Unit | null): void {
       speed: h.projectileSpeed,
       damage: h.damage[r],
       kind: 'hammer',
+      attackType: 'hero',
       stun: secondsToTicks(h.stun[r]),
+      splash: 0,
+      tx: t.x,
+      ty: t.y,
     });
   } else if (ability === 'cry') {
     const c = CONFIG.hero.abilities.cry;

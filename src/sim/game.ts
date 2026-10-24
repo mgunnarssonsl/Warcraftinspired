@@ -7,6 +7,7 @@ import { applyCommand, applyQueued, type Command } from './commands';
 import { updateCombat, updateCombatOrder } from './combat';
 import { checkOutcome } from './outcome';
 import { updateCast, updateStatus } from './hero';
+import { updatePrayers } from './support';
 import { updateBuilder } from './construction';
 import { updateProduction } from './production';
 import { updateGatherer } from './gathering';
@@ -305,6 +306,8 @@ export class Game {
       hero: null,
       stun: 0,
       buffs: [],
+      mana: type === 'cleric' ? CONFIG.cleric.mana : 0,
+      prayerReady: 0,
     };
     this.state.entities[u.id] = u;
     this.lists = null;
@@ -382,6 +385,7 @@ export class Game {
       u.py = u.y;
     }
     updateStatus(this, units);
+    updatePrayers(this, units);
     for (const u of units) {
       if (!this.state.entities[u.id]) continue;
       if (u.stun > 0) {

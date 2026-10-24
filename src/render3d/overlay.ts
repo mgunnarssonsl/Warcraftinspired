@@ -175,6 +175,7 @@ export class Overlay {
         // Selected or wounded units show health, so fights stay readable.
         if (!selected.has(e.id) && e.hp >= e.maxHp) continue;
         this.bar(x, y, 1.25, 30, e.hp / e.maxHp, hpColor(e.hp / e.maxHp));
+        if (e.type === 'cleric') this.bar(x, y, 1.13, 30, e.mana / CONFIG.cleric.mana, '#5a8cff');
       } else if (e.kind === 'building') {
         const top = e.w * 0.75 + 0.6;
         if (e.progress < 1 && e.owner === client.player) {

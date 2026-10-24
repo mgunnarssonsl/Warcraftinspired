@@ -9,7 +9,7 @@ import { canAfford } from '../sim/construction';
 import type { Game } from '../sim/game';
 import { rank } from '../sim/hero';
 import { missingRequirement, trainableAt, trainCost } from '../sim/production';
-import { armorValue, attackDamage, researchAt, researched, researchPending, researchProblem } from '../sim/tech';
+import { armorValue, attackDamage, attackRange, healAmount, researchAt, researched, researchPending, researchProblem } from '../sim/tech';
 import type { Building, Entity, GameEvent, Unit } from '../sim/types';
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
@@ -72,16 +72,21 @@ const BUILD_TIPS: Record<BuildingType, string> = {
   hq: 'Keep: accepts gold and wood, +10 population. Build one near a distant mine to expand.',
   farm: 'Farm: +6 population.',
   lumbermill: 'Lumber Mill: accepts wood. Build it beside a forest to shorten wood trips. Enables Archers.',
-  barracks: 'Barracks: trains Guards and Archers.',
+  barracks: 'Barracks: trains Guards and Archers, and Lancers from tier II.',
   tower: 'Watch Tower: shoots enemies within 7 tiles.',
   altar: 'Hall of Valor: trains and revives your hero.',
-  smithy: 'Blacksmith: researches weapon and armor upgrades.',
+  smithy: 'Blacksmith: researches weapon and armor upgrades. Needed for Lancers.',
+  chapel: 'Chapel (tier II): trains Clerics; researches Greater Healing.',
+  workshop: 'Siege Works (tier II): builds Mangonels.',
 };
 
 const TRAIN_TIPS: Record<UnitType, string> = {
   worker: 'Laborer: gathers, builds.',
-  guard: 'Guard: sturdy melee soldier.',
-  archer: 'Archer: fragile ranged soldier.',
+  guard: 'Guard: sturdy melee soldier in heavy armor. Strong against Lancers and siege; slow to bring down buildings.',
+  archer: 'Archer: fragile ranged soldier with pierce damage. Shreds lightly armored units (Archers, Clerics); weak against Lancers and buildings.',
+  lancer: 'Lancer: fast cavalry in medium armor that shrugs off arrows. Runs down Archers, Clerics and Mangonels; loses to Guards.',
+  cleric: 'Cleric: support. Automatically heals the most wounded nearby ally while it has mana. Its weak magic bolt burns heavy armor (Guards). Fragile.',
+  mangonel: 'Mangonel: siege. Lobs boulders 8 tiles that crush buildings and splash clumps where they land; moving units can dodge. Cannot hit anything within 2 tiles; easy prey for Lancers.',
   brigand: '',
   poacher: '',
   chief: '',
@@ -102,12 +107,13 @@ const ACTIONS: ActionDef[] = [
       label: d.name,
       key: d.hotkey,
       build: t,
-      tip: `${BUILD_TIPS[t]} Cost: ${d.cost.gold} gold, ${d.cost.wood} wood. Build time ${d.buildSeconds}s. Requires a Laborer.`,
+      tip: `${BUILD_TIPS[t]} Cost: ${d.cost.gold} gold, ${d.cost.wood} wood. Build time ${d.buildSeconds}s. Requires a Laborer${d.requires ? ` and ${CONFIG.research[d.requires as ResearchId].name}` : ''}.`,
     };
   }),
   ...(Object.keys(CONFIG.units) as UnitType[]).filter((t) => CONFIG.units[t].trainedAt).map((t) => {
     const d = CONFIG.units[t];
-    const req = d.requires ? ` Requires a ${CONFIG.buildings[d.requires].name}.` : '';
+    const reqs = [d.tech ? CONFIG.research[d.tech as ResearchId].name : '', d.requires ? `a ${CONFIG.buildings[d.requires as BuildingType].name}` : ''].filter(Boolean);
+    const req = reqs.length ? ` Requires ${reqs.join(' and ')}.` : '';
     return {
       id: `train:${t}` as Action,
       label: d.name,
@@ -364,7 +370,11 @@ export class Hud {
       }
       const workerOnly = !!a.build || a.id === 'gather' || a.id === 'return';
       btn.classList.toggle('hidden', own.length === 0 || (workerOnly && !workers));
-      if (a.build) btn.classList.toggle('poor', !canAfford(this.game, p.id, a.build));
+      if (a.build) {
+        btn.classList.toggle('poor', !canAfford(this.game, p.id, a.build));
+        const req = CONFIG.buildings[a.build].requires as ResearchId | null;
+        btn.disabled = !!req && !researched(this.game, p.id, req);
+      }
       btn.classList.toggle('active', this.client.targetMode === a.id || (!!a.build && this.client.placing === a.build));
     }
     this.buttons.get('gather')!.disabled = !workers;
@@ -441,8 +451,10 @@ export class Hud {
       const dmg = attackDamage(this.game, e);
       const arm = armorValue(this.game, e);
       const plus = (v: number, b: number) => (v !== b ? `${v} (${v > b ? '+' : ''}${Math.round((v - b) * 10) / 10})` : String(v));
-      row('Attack', `${plus(dmg, at.damage)} ${at.projectileSpeed ? 'ranged' : 'melee'}, every ${at.cooldown}s${at.projectileSpeed ? `, range ${at.range}` : ''}`);
-      row('Armor', plus(arm, def.armor));
+      const range = attackRange(this.game, e);
+      row('Attack', `${plus(dmg, at.damage)} ${at.type}, ${at.projectileSpeed ? `range ${range}` : 'melee'}, every ${at.cooldown}s${at.splash ? ', splash' : ''}`);
+      row('Armor', `${plus(arm, def.armor)} ${def.armorType}`);
+      if (e.type === 'cleric') row('Mana', `${Math.floor(e.mana)} / ${CONFIG.cleric.mana} (heals ${healAmount(this.game, e.owner)} each prayer)`);
       if (e.hero) {
         const h = e.hero;
         const next = CONFIG.hero.xpForLevel[h.level];
@@ -465,11 +477,12 @@ export class Hud {
       }
       const acc = def.accepts as readonly string[];
       if (acc.length) row('Accepts', `${acc.join(' and ')} deliveries`);
-      if (def.attack) row('Attack', `${def.attack.damage}, every ${def.attack.cooldown}s, range ${def.attack.range}`);
+      if (def.attack) row('Attack', `${def.attack.damage} ${def.attack.type}, every ${def.attack.cooldown}s, range ${def.attack.range}`);
+      row('Armor', `${def.armorType}`);
       if (def.popProvided) row('Population', `+${def.popProvided}`);
       if (e.owner !== this.client.player) row('Owner', this.game.player(e.owner).name);
       else if (e.progress >= 1 && (trainableAt(e.type).length || researchAt(e.type).length)) this.production(box, e, row);
-      if (e.tier > 1) row('Fortified', 'Castle (tier II research unlocked)');
+      if (e.tier > 1) row('Fortified', e.tier > 2 ? 'Citadel (tier III unlocked)' : 'Castle (tier II unlocked)');
       const done = researchAt(e.type).filter((r) => researched(this.game, e.owner, r));
       if (done.length && e.owner === this.client.player) row('Researched', done.map((r) => CONFIG.research[r].name).join(', '));
     } else if (e.type === 'goldmine') {

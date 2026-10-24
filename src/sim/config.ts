@@ -9,6 +9,14 @@ export function secondsToTicks(seconds: number): number {
   return Math.max(1, Math.round(seconds * TICK_RATE));
 }
 
+/** How an attack deals damage; see CONFIG.combat.typeTable. */
+export type AttackType = 'normal' | 'pierce' | 'siege' | 'magic' | 'hero';
+/** What a unit or building is protected by. */
+export type ArmorType = 'light' | 'medium' | 'heavy' | 'fortified' | 'hero';
+
+/** Relative weights of the soldier types a computer player aims to field. */
+export type ArmyMix = { guard: number; archer: number; lancer: number; cleric: number; mangonel: number };
+
 export const CONFIG = {
   match: {
     startGold: 500,
@@ -38,13 +46,16 @@ export const CONFIG = {
       trainSeconds: 15,
       trainedAt: 'hq',
       requires: null,
+      /** Research that must be complete (a tier), or null. */
+      tech: null as string | null,
       hotkey: 'Q',
       armor: 0,
+      armorType: 'medium' as ArmorType,
       /** Experience granted to the killer's nearby hero, and gold bounty to the killer. */
       xp: 15,
       bounty: 0,
       // Laborers fight only when ordered to (acquire 0: no auto-targeting).
-      attack: { damage: 6, range: 0.4, cooldown: 1.6, windup: 0.45, acquire: 0, projectileSpeed: 0 },
+      attack: { type: 'normal' as AttackType, damage: 6, range: 0.4, cooldown: 1.6, windup: 0.45, acquire: 0, projectileSpeed: 0, minRange: 0, splash: 0 },
     },
     guard: {
       name: 'Guard',
@@ -58,16 +69,19 @@ export const CONFIG = {
       trainSeconds: 20,
       trainedAt: 'barracks',
       requires: null,
+      /** Research that must be complete (a tier), or null. */
+      tech: null as string | null,
       hotkey: 'Q',
       armor: 2,
+      armorType: 'heavy' as ArmorType,
       /** Experience granted to the killer's nearby hero, and gold bounty to the killer. */
       xp: 35,
       bounty: 0,
-      attack: { damage: 14, range: 0.45, cooldown: 1.3, windup: 0.4, acquire: 6, projectileSpeed: 0 },
+      attack: { type: 'normal' as AttackType, damage: 14, range: 0.45, cooldown: 1.3, windup: 0.4, acquire: 6, projectileSpeed: 0, minRange: 0, splash: 0 },
     },
     archer: {
       name: 'Archer',
-      hp: 260,
+      hp: 300,
       speed: 2.9,
       radius: 0.3,
       /** Vision radius in tiles. */
@@ -78,12 +92,86 @@ export const CONFIG = {
       trainedAt: 'barracks',
       /** Needs a completed Lumber Mill (bows need seasoned wood). */
       requires: 'lumbermill',
+      /** Research that must be complete (a tier), or null. */
+      tech: null as string | null,
       hotkey: 'W',
       armor: 0,
+      armorType: 'light' as ArmorType,
       /** Experience granted to the killer's nearby hero, and gold bounty to the killer. */
       xp: 35,
       bounty: 0,
-      attack: { damage: 13, range: 5.5, cooldown: 1.5, windup: 0.45, acquire: 7, projectileSpeed: 12 },
+      attack: { type: 'pierce' as AttackType, damage: 15, range: 5.5, cooldown: 1.5, windup: 0.45, acquire: 7, projectileSpeed: 12, minRange: 0, splash: 0 },
+    },
+    // ---- tier II (requires Fortify to Castle) ----
+    lancer: {
+      name: 'Lancer',
+      hp: 560,
+      speed: 3.6,
+      radius: 0.45,
+      /** Vision radius in tiles. */
+      sight: 9,
+      pop: 3,
+      cost: { gold: 195, wood: 40 },
+      trainSeconds: 28,
+      trainedAt: 'barracks',
+      /** Horses need shoeing: a completed Blacksmith. */
+      requires: 'smithy',
+      /** Research that must be complete (a tier), or null. */
+      tech: 'castle' as string | null,
+      hotkey: 'E',
+      armor: 2,
+      armorType: 'medium' as ArmorType,
+      /** Experience granted to the killer's nearby hero, and gold bounty to the killer. */
+      xp: 55,
+      bounty: 0,
+      attack: { type: 'normal' as AttackType, damage: 17, range: 0.5, cooldown: 1.5, windup: 0.35, acquire: 7, projectileSpeed: 0, minRange: 0, splash: 0 },
+    },
+    cleric: {
+      name: 'Cleric',
+      hp: 280,
+      speed: 2.7,
+      radius: 0.3,
+      /** Vision radius in tiles. */
+      sight: 9,
+      pop: 2,
+      cost: { gold: 140, wood: 30 },
+      trainSeconds: 24,
+      trainedAt: 'chapel',
+      requires: null,
+      /** Research that must be complete (a tier), or null. */
+      tech: 'castle' as string | null,
+      hotkey: 'Q',
+      armor: 0,
+      armorType: 'light' as ArmorType,
+      /** Experience granted to the killer's nearby hero, and gold bounty to the killer. */
+      xp: 45,
+      bounty: 0,
+      attack: { type: 'magic' as AttackType, damage: 8, range: 4.5, cooldown: 1.8, windup: 0.4, acquire: 7, projectileSpeed: 10, minRange: 0, splash: 0 },
+    },
+    mangonel: {
+      name: 'Mangonel',
+      hp: 380,
+      speed: 2.0,
+      radius: 0.55,
+      /** Vision radius in tiles. */
+      sight: 9,
+      pop: 3,
+      cost: { gold: 220, wood: 120 },
+      trainSeconds: 35,
+      trainedAt: 'workshop',
+      requires: null,
+      /** Research that must be complete (a tier), or null. */
+      tech: 'castle' as string | null,
+      hotkey: 'Q',
+      armor: 1,
+      armorType: 'medium' as ArmorType,
+      /** Experience granted to the killer's nearby hero, and gold bounty to the killer. */
+      xp: 55,
+      bounty: 0,
+      // A boulder lands where the target stood at launch: moving units can
+      // dodge it. Damage splashes (full at the centre, half at the edge) and
+      // nothing closer than minRange can be hit.
+      attack: { type: 'siege' as AttackType, damage: 45, range: 8, cooldown: 4.0, windup: 0.6, acquire: 8, projectileSpeed: 8, minRange: 2, splash: 1.2 },
     },
     // Hostile neutrals that guard expansions. Not trainable by anyone.
     brigand: {
@@ -98,12 +186,15 @@ export const CONFIG = {
       trainSeconds: 0,
       trainedAt: null,
       requires: null,
+      /** Research that must be complete (a tier), or null. */
+      tech: null as string | null,
       hotkey: '',
       armor: 1,
+      armorType: 'medium' as ArmorType,
       /** Experience granted to the killer's nearby hero, and gold bounty to the killer. */
       xp: 40,
       bounty: 25,
-      attack: { damage: 11, range: 0.45, cooldown: 1.4, windup: 0.4, acquire: 5, projectileSpeed: 0 },
+      attack: { type: 'normal' as AttackType, damage: 11, range: 0.45, cooldown: 1.4, windup: 0.4, acquire: 5, projectileSpeed: 0, minRange: 0, splash: 0 },
     },
     poacher: {
       name: 'Poacher',
@@ -117,12 +208,15 @@ export const CONFIG = {
       trainSeconds: 0,
       trainedAt: null,
       requires: null,
+      /** Research that must be complete (a tier), or null. */
+      tech: null as string | null,
       hotkey: '',
       armor: 0,
+      armorType: 'light' as ArmorType,
       /** Experience granted to the killer's nearby hero, and gold bounty to the killer. */
       xp: 30,
       bounty: 20,
-      attack: { damage: 10, range: 5, cooldown: 1.7, windup: 0.5, acquire: 6, projectileSpeed: 11 },
+      attack: { type: 'pierce' as AttackType, damage: 10, range: 5, cooldown: 1.7, windup: 0.5, acquire: 6, projectileSpeed: 11, minRange: 0, splash: 0 },
     },
     chief: {
       name: 'Brigand Chief',
@@ -135,11 +229,14 @@ export const CONFIG = {
       trainSeconds: 0,
       trainedAt: null,
       requires: null,
+      /** Research that must be complete (a tier), or null. */
+      tech: null as string | null,
       hotkey: '',
       armor: 3,
+      armorType: 'heavy' as ArmorType,
       xp: 90,
       bounty: 60,
-      attack: { damage: 20, range: 0.5, cooldown: 1.6, windup: 0.45, acquire: 6, projectileSpeed: 0 },
+      attack: { type: 'normal' as AttackType, damage: 20, range: 0.5, cooldown: 1.6, windup: 0.45, acquire: 6, projectileSpeed: 0, minRange: 0, splash: 0 },
     },
     hero: {
       name: 'Marshal',
@@ -152,11 +249,14 @@ export const CONFIG = {
       trainSeconds: 30,
       trainedAt: 'altar',
       requires: null,
+      /** Research that must be complete (a tier), or null. */
+      tech: null as string | null,
       hotkey: 'Q',
       armor: 3,
+      armorType: 'hero' as ArmorType,
       xp: 0, // a slain hero is worth CONFIG.hero.killXpPerLevel x level
       bounty: 0,
-      attack: { damage: 22, range: 0.5, cooldown: 1.5, windup: 0.4, acquire: 7, projectileSpeed: 0 },
+      attack: { type: 'hero' as AttackType, damage: 22, range: 0.5, cooldown: 1.5, windup: 0.4, acquire: 7, projectileSpeed: 0, minRange: 0, splash: 0 },
     },
   },
 
@@ -239,7 +339,21 @@ export const CONFIG = {
     scanTicks: 5,
     /** Extra reach allowed when a swing lands, so a step back doesn't whiff. */
     swingSlack: 0.5,
-    buildingArmor: 5,
+    buildingArmor: 1,
+    /**
+     * Damage multiplier by attack type (rows) against armor type (columns).
+     * The roles it creates: Pierce (Archers) shreds light units but barely
+     * scratches buildings; Normal (Guards, Lancers) is best against medium
+     * armor (Lancers, siege); Magic (Clerics) burns heavy armor; Siege
+     * demolishes buildings and is poor against medium armor.
+     */
+    typeTable: {
+      normal: { light: 1, medium: 1.5, heavy: 1, fortified: 0.8, hero: 1 },
+      pierce: { light: 1.5, medium: 0.75, heavy: 1.6, fortified: 0.4, hero: 0.75 },
+      siege: { light: 1, medium: 0.5, heavy: 1, fortified: 2, hero: 0.5 },
+      magic: { light: 1.25, medium: 0.75, heavy: 1.5, fortified: 0.35, hero: 0.5 },
+      hero: { light: 1, medium: 1, heavy: 1, fortified: 0.7, hero: 1 },
+    } satisfies Record<AttackType, Record<ArmorType, number>>,
   },
 
   production: {
@@ -271,6 +385,9 @@ export const CONFIG = {
       cost: { gold: 385, wood: 205 },
       buildSeconds: 110,
       hotkey: 'K',
+      /** Research needed before it can be built (a tier), or null. */
+      requires: null as string | null,
+      armorType: 'fortified' as ArmorType,
       attack: null,
     },
     farm: {
@@ -283,6 +400,9 @@ export const CONFIG = {
       cost: { gold: 80, wood: 20 },
       buildSeconds: 20,
       hotkey: 'F',
+      /** Research needed before it can be built (a tier), or null. */
+      requires: null as string | null,
+      armorType: 'fortified' as ArmorType,
       attack: null,
     },
     barracks: {
@@ -295,6 +415,9 @@ export const CONFIG = {
       cost: { gold: 160, wood: 60 },
       buildSeconds: 45,
       hotkey: 'B',
+      /** Research needed before it can be built (a tier), or null. */
+      requires: null as string | null,
+      armorType: 'fortified' as ArmorType,
       attack: null,
     },
     lumbermill: {
@@ -307,6 +430,9 @@ export const CONFIG = {
       cost: { gold: 120, wood: 0 },
       buildSeconds: 30,
       hotkey: 'L',
+      /** Research needed before it can be built (a tier), or null. */
+      requires: null as string | null,
+      armorType: 'fortified' as ArmorType,
       attack: null,
     },
     tower: {
@@ -319,7 +445,10 @@ export const CONFIG = {
       cost: { gold: 110, wood: 80 },
       buildSeconds: 35,
       hotkey: 'T',
-      attack: { damage: 16, range: 7, cooldown: 1.2, windup: 0, acquire: 7, projectileSpeed: 14 },
+      /** Research needed before it can be built (a tier), or null. */
+      requires: null as string | null,
+      armorType: 'fortified' as ArmorType,
+      attack: { type: 'pierce' as AttackType, damage: 16, range: 7, cooldown: 1.2, windup: 0, acquire: 7, projectileSpeed: 14 },
     },
     altar: {
       name: 'Hall of Valor',
@@ -331,6 +460,9 @@ export const CONFIG = {
       cost: { gold: 180, wood: 50 },
       buildSeconds: 40,
       hotkey: 'V',
+      /** Research needed before it can be built (a tier), or null. */
+      requires: null as string | null,
+      armorType: 'fortified' as ArmorType,
       attack: null,
     },
     smithy: {
@@ -343,6 +475,39 @@ export const CONFIG = {
       cost: { gold: 140, wood: 60 },
       buildSeconds: 40,
       hotkey: 'N',
+      /** Research needed before it can be built (a tier), or null. */
+      requires: null as string | null,
+      armorType: 'fortified' as ArmorType,
+      attack: null,
+    },
+    chapel: {
+      name: 'Chapel',
+      hp: 700,
+      size: 3,
+      sight: 7,
+      popProvided: 0,
+      accepts: [] as const,
+      cost: { gold: 150, wood: 100 },
+      buildSeconds: 45,
+      hotkey: 'C',
+      /** Research needed before it can be built (a tier), or null. */
+      requires: 'castle' as string | null,
+      armorType: 'fortified' as ArmorType,
+      attack: null,
+    },
+    workshop: {
+      name: 'Siege Works',
+      hp: 800,
+      size: 3,
+      sight: 7,
+      popProvided: 0,
+      accepts: [] as const,
+      cost: { gold: 160, wood: 140 },
+      buildSeconds: 50,
+      hotkey: 'W',
+      /** Research needed before it can be built (a tier), or null. */
+      requires: 'castle' as string | null,
+      armorType: 'fortified' as ArmorType,
       attack: null,
     },
   },
@@ -360,7 +525,7 @@ export const CONFIG = {
       seconds: 40,
       requires: [] as string[],
       hotkey: 'Q',
-      desc: '+2 attack damage for Guards, Archers and your hero.',
+      desc: '+2 attack damage for Guards, Archers, Lancers and your hero.',
     },
     weapons2: {
       name: 'Tempered Blades',
@@ -369,7 +534,7 @@ export const CONFIG = {
       seconds: 55,
       requires: ['weapons1', 'castle'] as string[],
       hotkey: 'Q',
-      desc: 'Another +2 attack damage for Guards, Archers and your hero.',
+      desc: 'Another +2 attack damage for Guards, Archers, Lancers and your hero.',
     },
     armor1: {
       name: 'Studded Armor',
@@ -378,7 +543,7 @@ export const CONFIG = {
       seconds: 40,
       requires: [] as string[],
       hotkey: 'W',
-      desc: '+2 armor for Guards, Archers and your hero.',
+      desc: '+2 armor for Guards, Archers, Lancers, Clerics and your hero.',
     },
     armor2: {
       name: 'Plate Armor',
@@ -387,7 +552,7 @@ export const CONFIG = {
       seconds: 55,
       requires: ['armor1', 'castle'] as string[],
       hotkey: 'W',
-      desc: 'Another +2 armor for Guards, Archers and your hero.',
+      desc: 'Another +2 armor for Guards, Archers, Lancers, Clerics and your hero.',
     },
     saws: {
       name: 'Bow Saws',
@@ -405,7 +570,61 @@ export const CONFIG = {
       seconds: 60,
       requires: [] as string[],
       hotkey: 'W',
-      desc: 'This Keep gains 500 health. Unlocks tier II research.',
+      desc: 'This Keep gains 500 health. Unlocks tier II: Lancers, the Chapel, the Siege Works and tier II research.',
+    },
+    citadel: {
+      name: 'Fortify to Citadel',
+      at: 'hq',
+      cost: { gold: 400, wood: 300 },
+      seconds: 80,
+      requires: ['castle'] as string[],
+      hotkey: 'W',
+      desc: 'This Castle gains another 500 health. Unlocks tier III research.',
+    },
+    weapons3: {
+      name: 'Masterwork Blades',
+      at: 'smithy',
+      cost: { gold: 250, wood: 150 },
+      seconds: 70,
+      requires: ['weapons2', 'citadel'] as string[],
+      hotkey: 'Q',
+      desc: 'A third +2 attack damage for Guards, Archers, Lancers and your hero.',
+    },
+    armor3: {
+      name: 'Gothic Plate',
+      at: 'smithy',
+      cost: { gold: 250, wood: 150 },
+      seconds: 70,
+      requires: ['armor2', 'citadel'] as string[],
+      hotkey: 'W',
+      desc: 'A third +2 armor for Guards, Archers, Lancers, Clerics and your hero.',
+    },
+    carts: {
+      name: 'Mule Carts',
+      at: 'hq',
+      cost: { gold: 150, wood: 100 },
+      seconds: 45,
+      requires: [] as string[],
+      hotkey: 'E',
+      desc: 'Laborers carry 12 gold per trip instead of 10: a mine yields 20% more.',
+    },
+    longbows: {
+      name: 'Longbows',
+      at: 'lumbermill',
+      cost: { gold: 125, wood: 100 },
+      seconds: 45,
+      requires: ['castle'] as string[],
+      hotkey: 'W',
+      desc: 'Archers shoot 1.5 tiles further.',
+    },
+    healing2: {
+      name: 'Greater Healing',
+      at: 'chapel',
+      cost: { gold: 150, wood: 150 },
+      seconds: 50,
+      requires: ['citadel'] as string[],
+      hotkey: 'W',
+      desc: 'Clerics heal 50% more per prayer.',
     },
   },
 
@@ -413,7 +632,27 @@ export const CONFIG = {
     weaponBonus: 2,
     armorBonus: 2,
     sawsCarry: 5,
+    /** Health added to a Keep by each fortification (Castle, Citadel). */
     castleHp: 500,
+    cartsCarry: 2,
+    longbowRange: 1.5,
+  },
+
+  /**
+   * Clerics heal on their own: whenever a prayer is ready and they have the
+   * mana, they heal the most wounded friendly unit in range (not buildings).
+   * Same rule for every player; nothing to micro-manage.
+   */
+  cleric: {
+    mana: 180,
+    manaRegen: 0.9, // per second
+    healRange: 5,
+    healMana: 15,
+    healCooldown: 2,
+    /** Health restored per prayer, before and after Greater Healing. */
+    heal: [35, 50],
+    /** Only units missing at least this much health are worth a prayer. */
+    minMissing: 15,
   },
 
   /**
@@ -431,7 +670,10 @@ export const CONFIG = {
         extraBarracksAtWorkers: 11,
         maxBarracks: 1,
         towers: 0,
-        archerShare: 0.25,
+        /** Army composition it aims for (relative weights, among units it can train). */
+        mix: { guard: 3, archer: 1, lancer: 0, cleric: 0, mangonel: 0 } as ArmyMix,
+        /** Shifts that mix to counter the enemy units it has seen. */
+        adapt: false,
         firstAttackSeconds: 540,
         waveSize: 4,
         waveGrowth: 2,
@@ -442,6 +684,8 @@ export const CONFIG = {
         upgrades: false,
         /** When (seconds) it fortifies to a Castle; null = never. */
         castleSeconds: null as number | null,
+        /** When (seconds) it fortifies further to a Citadel; null = never. */
+        citadelSeconds: null as number | null,
         /** Takes its army and hero to clear neutral camps for experience. */
         creeps: false,
         /** Simultaneous constructions it will manage. */
@@ -454,7 +698,8 @@ export const CONFIG = {
         extraBarracksAtWorkers: 11,
         maxBarracks: 2,
         towers: 1,
-        archerShare: 0.4,
+        mix: { guard: 3, archer: 2, lancer: 1.5, cleric: 1, mangonel: 0.6 } as ArmyMix,
+        adapt: true,
         firstAttackSeconds: 400,
         waveSize: 6,
         waveGrowth: 3,
@@ -462,6 +707,7 @@ export const CONFIG = {
         assessStrength: true,
         upgrades: true,
         castleSeconds: 720 as number | null,
+        citadelSeconds: null as number | null,
         creeps: true,
         builders: 1,
       },
@@ -472,7 +718,8 @@ export const CONFIG = {
         extraBarracksAtWorkers: 11,
         maxBarracks: 2,
         towers: 1,
-        archerShare: 0.4,
+        mix: { guard: 3, archer: 2, lancer: 2, cleric: 1, mangonel: 0.8 } as ArmyMix,
+        adapt: true,
         firstAttackSeconds: 300,
         waveSize: 7,
         waveGrowth: 3,
@@ -480,6 +727,7 @@ export const CONFIG = {
         assessStrength: true,
         upgrades: true,
         castleSeconds: 540 as number | null,
+        citadelSeconds: 960 as number | null,
         creeps: true,
         builders: 2,
       },
@@ -489,6 +737,12 @@ export const CONFIG = {
     goldWorkersPerMine: 5,
     /** A wave falls back when reduced to this share of its launch size. */
     retreatShare: 0.35,
+    /** Earliest time (seconds) it researches Mule Carts. */
+    cartsSeconds: 300,
+    /** Enemy soldiers it must have seen before it adapts its army mix. */
+    adaptAfterSeen: 4,
+    /** How strongly observed enemy units shift its mix toward counters. */
+    adaptStrength: 4,
     /** How long (seconds) it remembers enemy soldiers it saw. */
     armyMemorySeconds: 120,
     /** Waves route this far (tiles) around neutral camps they know of. */

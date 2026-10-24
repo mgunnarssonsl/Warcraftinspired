@@ -7,7 +7,8 @@
 //   4. Cancelling an unfinished building refunds CONFIG.construction.cancelRefund.
 // Unfinished buildings provide no population and accept no deliveries.
 
-import { CONFIG, secondsToTicks, type BuildingType } from './config';
+import { CONFIG, secondsToTicks, type BuildingType, type ResearchId } from './config';
+import { researched } from './tech';
 import type { Game } from './game';
 import { releaseFromNode, startGather } from './gathering';
 import { atRect, distToRect } from './movement';
@@ -61,6 +62,8 @@ export function canAfford(game: Game, player: number, type: BuildingType): boole
 
 export function shortfall(game: Game, player: number, type: BuildingType): string | null {
   const p = game.player(player);
+  const req = CONFIG.buildings[type].requires as ResearchId | null;
+  if (req && !researched(game, player, req)) return `Requires ${CONFIG.research[req].name}.`;
   const c = CONFIG.buildings[type].cost;
   if (p.gold < c.gold) return `Not enough gold (${c.gold} needed).`;
   if (p.wood < c.wood) return `Not enough wood (${c.wood} needed).`;

@@ -11,14 +11,17 @@
 // - Idle units with an acquire range engage enemies that come close. Units
 //   that are hit while idle strike back if they can fight.
 // - Melee damage lands at the end of the wind-up; ranged attacks launch a
-//   homing projectile that deals damage on arrival.
+//   homing projectile that deals damage on arrival. Siege boulders instead
+//   fly to where the target stood and splash everything there.
+// - Damage = raw x type multiplier (attack type vs armor type, see
+//   CONFIG.combat.typeTable), then reduced by armor.
 
-import { CONFIG, secondsToTicks, TICK_SECONDS, type UnitType } from './config';
+import { CONFIG, secondsToTicks, TICK_SECONDS, type AttackType, type UnitType } from './config';
 import type { Game } from './game';
 import { distToRect } from './movement';
 import { onHeroDeath, onKill } from './hero';
 import { destroyBuilding } from './production';
-import { armorValue, attackDamage } from './tech';
+import { armorTypeOf, armorValue, attackDamage, attackRange, typeMultiplier } from './tech';
 import type { Building, Entity, Order, Unit } from './types';
 
 type Target = Unit | Building;
@@ -60,13 +63,14 @@ export function damageAfterArmor(raw: number, armor: number): number {
 export function findTarget(game: Game, u: Unit, range: number): Target | undefined {
   let best: Target | undefined;
   let bestKey = Infinity;
+  const minRange = attackDef(u).minRange;
   const scan = (list: readonly Target[]) => {
     for (const e of list) consider(e);
   };
   const consider = (e: Target) => {
     if (!isEnemy(game, u.owner, e.owner) || !targetable(e) || !game.vision.canSee(u.owner, e)) return;
     const d = gap(u, e);
-    if (d > range) return;
+    if (d > range || d < minRange) return;
     const tier = e.kind === 'unit' ? (canAttack(e) ? 0 : 1) : 2;
     const key = tier * 1000 + d;
     if (key < bestKey) {
@@ -103,7 +107,15 @@ function fight(game: Game, u: Unit, targetId: number, mayMove: boolean): boolean
   if (!targetable(t) || !isEnemy(game, u.owner, t.owner) || !game.vision.knows(u.owner, t)) return false;
   const def = attackDef(u);
   const d = gap(u, t);
-  if (d <= def.range) {
+  if (d < def.minRange) {
+    // Too close for a siege engine: back off (or give up when holding).
+    if (!mayMove) return false;
+    const away = Math.atan2(u.y - t.y, u.x - t.x);
+    const back = def.minRange + 1.5;
+    game.moveTo(u, { kind: 'point', x: t.x + Math.cos(away) * (back + (t.kind === 'unit' ? t.radius : t.w / 2)), y: t.y + Math.sin(away) * (back + (t.kind === 'unit' ? t.radius : t.w / 2)) });
+    return true;
+  }
+  if (d <= attackRange(game, u)) {
     u.move = null;
     u.facing = Math.atan2(t.y - u.y, t.x - u.x);
     if (u.swing === 0 && u.cooldown <= 0) {
@@ -179,12 +191,12 @@ export function updateCombatOrder(game: Game, u: Unit): void {
     if (o.targetId >= 0) {
       const t = game.get(o.targetId);
       // Drop targets that died or ran far away, then carry on.
-      if (targetable(t) && gap(u, t) <= Math.max(def.acquire, def.range) * 1.5 && fight(game, u, o.targetId, true)) return;
+      if (targetable(t) && gap(u, t) <= Math.max(def.acquire, attackRange(game, u)) * 1.5 && fight(game, u, o.targetId, true)) return;
       o.targetId = -1;
       u.move = null;
     }
     if (scan) {
-      const t = findTarget(game, u, Math.max(def.acquire, def.range));
+      const t = findTarget(game, u, Math.max(def.acquire, attackRange(game, u)));
       if (t) {
         o.targetId = t.id;
         u.move = null;
@@ -204,10 +216,10 @@ export function updateCombatOrder(game: Game, u: Unit): void {
     u.move = null;
     if (o.targetId >= 0) {
       const t = game.get(o.targetId);
-      if (targetable(t) && gap(u, t) <= def.range && fight(game, u, o.targetId, false)) return;
+      if (targetable(t) && gap(u, t) <= attackRange(game, u) && fight(game, u, o.targetId, false)) return;
       o.targetId = -1;
     }
-    const t = findTarget(game, u, def.range);
+    const t = findTarget(game, u, attackRange(game, u));
     if (t) {
       o.targetId = t.id;
       fight(game, u, t.id, false);
@@ -216,8 +228,8 @@ export function updateCombatOrder(game: Game, u: Unit): void {
 }
 
 /** Apply damage, emit feedback, trigger retaliation, and kill at 0 HP. */
-export function dealDamage(game: Game, attackerId: number, attackerOwner: number, t: Target, raw: number): void {
-  const dmg = damageAfterArmor(raw, armorValue(game, t));
+export function dealDamage(game: Game, attackerId: number, attackerOwner: number, t: Target, raw: number, type: AttackType): void {
+  const dmg = damageAfterArmor(raw * typeMultiplier(type, armorTypeOf(t)), armorValue(game, t));
   t.hp -= dmg;
   game.emit({ type: 'hit', id: t.id, attacker: attackerId, attackerOwner, owner: t.owner, damage: dmg, x: t.x, y: t.y });
   if (t.hp <= 0) {
@@ -246,8 +258,23 @@ export function kill(game: Game, t: Target, attackerOwner: number): void {
   game.removeEntity(t.id);
 }
 
-/** Cooldowns, swings landing, towers and projectiles. Runs once per tick. */
+/** A blow that lands this tick; all of them are applied together. */
+interface Blow {
+  sourceId: number;
+  owner: number;
+  targetId: number;
+  damage: number;
+  type: AttackType;
+}
+
+/**
+ * Cooldowns, swings landing, towers and projectiles. Runs once per tick.
+ * Everything that lands in a tick is collected first and applied together,
+ * so update order (entity ids, and therefore player seats) never decides
+ * who strikes first: two units that kill each other both land their blow.
+ */
 export function updateCombat(game: Game, units: Unit[]): void {
+  const blows: Blow[] = [];
   for (const u of units) {
     if (!game.state.entities[u.id]) continue;
     if (u.cooldown > 0) u.cooldown--;
@@ -265,10 +292,10 @@ export function updateCombat(game: Game, units: Unit[]): void {
     const def = attackDef(u);
     u.cooldown = Math.max(1, secondsToTicks(def.cooldown) - secondsToTicks(def.windup));
     const t = game.get(u.swingTarget);
-    if (!targetable(t) || gap(u, t) > def.range + CONFIG.combat.swingSlack) continue;
+    if (!targetable(t) || gap(u, t) > attackRange(game, u) + CONFIG.combat.swingSlack) continue;
     const damage = attackDamage(game, u);
-    if (def.projectileSpeed > 0) launch(game, u.id, u.owner, u.x, u.y, t.id, def.projectileSpeed, damage);
-    else dealDamage(game, u.id, u.owner, t, damage);
+    if (def.projectileSpeed > 0) launch(game, u.id, u.owner, u.x, u.y, t, def.projectileSpeed, damage, def.type, def.splash);
+    else blows.push({ sourceId: u.id, owner: u.owner, targetId: t.id, damage, type: def.type });
   }
 
   for (const b of game.buildings()) {
@@ -284,11 +311,16 @@ export function updateCombat(game: Game, units: Unit[]): void {
       b.targetId = t ? t.id : -1;
     }
     if (!t || !targetable(t)) continue;
-    launch(game, b.id, b.owner, b.x, b.y, t.id, def.projectileSpeed, def.damage);
+    launch(game, b.id, b.owner, b.x, b.y, t, def.projectileSpeed, def.damage, def.type, 0);
     b.cooldown = secondsToTicks(def.cooldown);
   }
 
-  updateProjectiles(game);
+  const landings = updateProjectiles(game);
+  for (const b of blows) {
+    const t = game.get(b.targetId);
+    if (targetable(t)) dealDamage(game, b.sourceId, b.owner, t, b.damage, b.type);
+  }
+  for (const land of landings) land();
 }
 
 function towerGap(b: Building, t: Target): number {
@@ -309,15 +341,66 @@ function towerTarget(game: Game, b: Building, range: number): Target | undefined
   return best;
 }
 
-function launch(game: Game, sourceId: number, owner: number, x: number, y: number, targetId: number, speed: number, damage: number): void {
-  game.state.projectiles.push({ id: game.state.nextId++, owner, sourceId, targetId, x, y, px: x, py: y, speed, damage, kind: 'arrow', stun: 0 });
+function launch(
+  game: Game,
+  sourceId: number,
+  owner: number,
+  x: number,
+  y: number,
+  t: Target,
+  speed: number,
+  damage: number,
+  attackType: AttackType,
+  splash: number,
+): void {
+  const kind = attackType === 'siege' ? 'boulder' : attackType === 'magic' ? 'bolt' : 'arrow';
+  game.state.projectiles.push({ id: game.state.nextId++, owner, sourceId, targetId: t.id, x, y, px: x, py: y, speed, damage, kind, attackType, stun: 0, splash, tx: t.x, ty: t.y });
 }
 
-function updateProjectiles(game: Game): void {
+/** Area damage around (x, y): full at the centre, half at the edge. Enemies only. */
+function splashDamage(game: Game, p: { sourceId: number; owner: number; damage: number; attackType: AttackType; splash: number }, x: number, y: number): void {
+  const victims: Array<{ t: Target; d: number }> = [];
+  for (const u of game.units()) {
+    if (!isEnemy(game, p.owner, u.owner) || !targetable(u)) continue;
+    const d = Math.max(0, Math.hypot(u.x - x, u.y - y) - u.radius);
+    if (d <= p.splash) victims.push({ t: u, d });
+  }
+  for (const b of game.buildings()) {
+    if (!isEnemy(game, p.owner, b.owner)) continue;
+    const d = distToRect(x, y, b);
+    if (d <= p.splash) victims.push({ t: b, d });
+  }
+  for (const { t, d } of victims) {
+    if (!game.state.entities[t.id]) continue;
+    dealDamage(game, p.sourceId, p.owner, t, p.damage * (1 - 0.5 * (d / p.splash)), p.attackType);
+  }
+  game.emit({ type: 'impact', x, y, radius: p.splash });
+}
+
+/** Move projectiles; returns the hits that land this tick, to apply after melee blows. */
+function updateProjectiles(game: Game): Array<() => void> {
+  const landings: Array<() => void> = [];
   const keep = [];
   for (const p of game.state.projectiles) {
     p.px = p.x;
     p.py = p.y;
+    if (p.splash > 0) {
+      // Ground-targeted: fly to the spot, then burst.
+      const dx = p.tx - p.x;
+      const dy = p.ty - p.y;
+      const d = Math.hypot(dx, dy);
+      const step = p.speed * TICK_SECONDS;
+      if (d <= step) {
+        p.x = p.tx;
+        p.y = p.ty;
+        landings.push(() => splashDamage(game, p, p.tx, p.ty));
+        continue;
+      }
+      p.x += (dx / d) * step;
+      p.y += (dy / d) * step;
+      keep.push(p);
+      continue;
+    }
     const t = game.get(p.targetId);
     if (!targetable(t)) continue; // target died or hid: the shot fizzles
     const dx = t.x - p.x;
@@ -327,11 +410,14 @@ function updateProjectiles(game: Game): void {
     if (d <= step + (t.kind === 'unit' ? t.radius : 0.5)) {
       p.x = t.x;
       p.y = t.y;
-      if (p.stun > 0 && t.kind === 'unit') {
-        t.stun = Math.max(t.stun, p.stun);
-        t.swing = 0;
-      }
-      dealDamage(game, p.sourceId, p.owner, t, p.damage);
+      landings.push(() => {
+        if (!targetable(game.get(t.id))) return;
+        if (p.stun > 0 && t.kind === 'unit') {
+          t.stun = Math.max(t.stun, p.stun);
+          t.swing = 0;
+        }
+        dealDamage(game, p.sourceId, p.owner, t, p.damage, p.attackType);
+      });
       continue;
     }
     p.x += (dx / d) * step;
@@ -339,4 +425,5 @@ function updateProjectiles(game: Game): void {
     keep.push(p);
   }
   game.state.projectiles = keep;
+  return landings;
 }

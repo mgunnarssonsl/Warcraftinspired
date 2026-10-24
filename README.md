@@ -18,6 +18,10 @@ computer opponents. No campaign or story.
 - Phase A, first pass: refining the core experience (Shift-queued orders,
   grab-to-pan camera, group pacing, objectives that register reliably, AI
   routing and scouting memory, a balance pass from AI-vs-AI playtests)
+- Phase B: a complete first faction. It adds damage and armor types, three
+  new units (Lancer, Cleric, Mangonel), two new buildings, a third
+  technology tier, economic and military upgrades, and a computer opponent
+  that uses all of it.
 
 See [Roadmap](#roadmap).
 
@@ -45,8 +49,8 @@ npm run build      # typecheck + production bundle in dist/
 | M, S, G, R | Move, Stop, Gather, Return cargo (also on the command card) |
 | A, then click | Click an enemy to attack it, or the ground to attack-move: walk there and fight anything on the way |
 | H | Hold position: never move, and fight whatever comes within weapon range |
-| F, L, B, T, V, N, K (Laborer selected) | Place a Farm, Lumber Mill, Barracks, Watch Tower, Hall of Valor, Blacksmith or Keep. Click to place, Shift+click to keep placing, right-click or Esc to cancel. |
-| Q, W (building selected) | Train or research what that building offers (Keep: Laborer / Castle · Barracks: Guard / Archer · Hall: hero · Blacksmith: weapons / armor · Lumber Mill: Bow Saws) |
+| F, L, B, T, V, N, K (Laborer selected) | Place a Farm, Lumber Mill, Barracks, Watch Tower, Hall of Valor, Blacksmith or Keep. From tier II, C places a Chapel and W a Siege Works. Click to place, Shift+click to keep placing, right-click or Esc to cancel. |
+| Q, W, E (building selected) | Train or research what that building offers. See the table below. |
 | F2 or the Hero button | Select your hero |
 | Q, W, E (hero selected) | Stormhammer (click an enemy), Battle Cry, Mend (click one of your units) |
 | Right-click (Keep or Barracks selected) | Set the rally point. On a mine or tree, newly trained Laborers start gathering there. |
@@ -62,6 +66,16 @@ npm run build      # typecheck + production bundle in dist/
 | F10 or the Menu button | Menu: resume, restart, new match, surrender (pauses the game) |
 | `` ` `` / F3 | Debug overlay: blocked tiles (red) and the selected units' paths |
 | F1 / ? | Controls panel |
+
+| Building | Q | W | E |
+| --- | --- | --- | --- |
+| Keep | Laborer | Fortify to Castle, then to Citadel | Mule Carts |
+| Barracks | Guard | Archer | Lancer (tier II) |
+| Hall of Valor | hero (or revive) | | |
+| Blacksmith | weapons I–III | armor I–III | |
+| Lumber Mill | Bow Saws | Longbows (tier II) | |
+| Chapel | Cleric | Greater Healing (tier III) | |
+| Siege Works | Mangonel | | |
 
 ## Economy rules (current)
 
@@ -124,6 +138,17 @@ These are the rules as implemented. All numbers live in `src/sim/config.ts`.
   it had just watched walk into the fog.
 - **Routes:** waves march around neutral camps they know of, using queued
   waypoints like a player would, instead of fighting them on the way.
+- **Army composition:** each difficulty aims for a mix of soldier types.
+  - Easy uses Guards and Archers only.
+  - Normal and Hard also field Lancers, Clerics and Mangonels once
+    fortified.
+  - Normal and Hard adapt the mix to enemy soldiers they have seen: more
+    Lancers against Archers, Clerics and siege; more Guards against
+    Lancers; more Clerics against Guards.
+  - Hard fortifies to a Citadel at 16:00 for the tier III upgrades.
+- **Fair seats:** its building-placement search runs in the mirrored order
+  for the player in the rotated half of the map, so both sides build
+  mirror-image bases.
 - **Heroes and upgrades:**
   - It builds a Hall of Valor after its first Barracks, then trains its hero
     and revives it when it falls.
@@ -243,6 +268,56 @@ All numbers are in `CONFIG.units` and `CONFIG.production`.
   If the building is completely boxed in, the finished unit waits at 100%
   until a tile frees up.
 
+## The faction: roster and roles
+
+The roster is small on purpose. Each unit is there because it creates a
+choice:
+
+| Unit | From | Cost | Tier | Role | Strong against | Weak against |
+| --- | --- | --- | --- | --- | --- | --- |
+| Guard | Barracks | 135 gold | I | Heavy-armored line infantry | Lancers, siege | Archers, Clerics' magic |
+| Archer | Barracks (needs Lumber Mill) | 130 gold, 10 wood | I | Ranged pierce damage | Guards, light units (Archers, Clerics) | Lancers, buildings |
+| Lancer | Barracks (needs Blacksmith) | 195 gold, 40 wood | II | Fast cavalry, shrugs off arrows | Archers, Clerics, Mangonels | Guards |
+| Cleric | Chapel | 140 gold, 30 wood | II | Support: heals on its own | (heavy armor, with its weak bolt) | everything, alone |
+| Mangonel | Siege Works | 220 gold, 120 wood | II | Siege, splash | Buildings, clumps that stand still | Anything that reaches it (2-tile minimum range) |
+| Marshal (hero) | Hall of Valor | 250 gold, 50 wood | I | Hero | | |
+
+On an open field at equal cost, the triangle is Guards beat Lancers,
+Lancers beat Archers and Archers beat Guards. Clerics lose alone but make a
+mixed army last. Mangonels lose to any melee unit that reaches them.
+`tests/roster.test.ts` checks all of these with real battles.
+
+### Damage and armor types
+
+Final damage is `raw × multiplier`, then reduced by armor as before. The
+multiplier depends on the attack type and the target's armor type:
+
+| Attack \ armor | Light | Medium | Heavy | Fortified | Hero |
+| --- | --- | --- | --- | --- | --- |
+| Normal (Guard, Lancer, Laborer, Brigand) | 1 | **1.5** | 1 | 0.8 | 1 |
+| Pierce (Archer, Poacher, Watch Tower) | **1.5** | 0.75 | **1.6** | 0.4 | 0.75 |
+| Siege (Mangonel) | 1 | 0.5 | 1 | **2** | 0.5 |
+| Magic (Cleric) | 1.25 | 0.75 | **1.5** | 0.35 | 0.5 |
+| Hero (Marshal) | 1 | 1 | 1 | 0.7 | 1 |
+
+- **Armor types:**
+  - Light: Archer, Cleric, Poacher.
+  - Medium: Laborer, Lancer, Mangonel, Brigand.
+  - Heavy: Guard, Brigand Chief.
+  - Fortified: every building.
+- **Cleric prayers:** a Cleric heals the most wounded friendly unit within 5
+  tiles that is missing at least 15 HP.
+  - Each prayer heals 35 HP (50 with Greater Healing).
+  - Each prayer costs 15 of its 180 mana, and prayers come 2 s apart.
+  - Mana regenerates at 0.9 per second.
+  - It needs no orders and works the same for the computer.
+- **Mangonel boulders:** a boulder flies to where the target stood when it
+  was thrown, then splashes 1.2 tiles around, full damage at the centre and
+  half at the edge, hurting enemies only.
+  - Units that keep moving dodge it.
+  - A Mangonel can't hit anything within 2 tiles: it backs off first, or,
+    on hold position, picks another target.
+
 ## Combat rules (current)
 
 All numbers are in `CONFIG.units[*].attack`, `CONFIG.combat` and
@@ -252,13 +327,20 @@ All numbers are in `CONFIG.units[*].attack`, `CONFIG.combat` and
 | --- | --- | --- | --- | --- | --- | --- |
 | Laborer | 220 | 0 | 6 | 1.6 s | melee | Fights only when ordered |
 | Guard | 420 | 2 | 14 | 1.3 s | melee | |
-| Archer | 260 | 0 | 13 | 1.5 s | 5.5 | Projectile |
+| Archer | 300 | 0 | 15 | 1.5 s | 5.5 (7 with Longbows) | Projectile |
+| Lancer | 560 | 2 | 17 | 1.5 s | melee | Speed 3.6 (Guards 2.7) |
+| Cleric | 280 | 0 | 8 | 1.8 s | 4.5 | Magic bolt; heals |
+| Mangonel | 380 | 1 | 45 | 4 s | 2–8 | Boulder, splash 1.2 |
 | Watch Tower | 500 | 5 | 16 | 1.2 s | 7 | 110 gold, 80 wood. Fires only once finished. |
 | Brigand (neutral) | 300 | 1 | 11 | 1.4 s | melee | |
 | Poacher (neutral) | 200 | 0 | 10 | 1.7 s | 5 | Projectile |
 
-- **Damage** is `damage / (1 + 0.06 × armor)`, rounded and at least 1.
-  Buildings have 5 armor. Melee hits land at the end of a short wind-up.
+- **Damage** is `damage × type multiplier / (1 + 0.06 × armor)`, rounded and
+  at least 1. Buildings have 1 armor plus the fortified armor type.
+- **Simultaneous blows:** every hit that lands in a tick is applied
+  together. If two units kill each other in the same tick, both die. The
+  order in which units are processed, and so the player seat, never decides
+  who strikes first. Melee hits land at the end of a short wind-up.
   Ranged attacks launch a homing projectile, which is part of the
   simulation state. It deals damage when it arrives and fizzles if the
   target dies or goes into a mine first.
@@ -344,14 +426,30 @@ is permanent and player-wide, even if the building is later lost.
 
 | Research | At | Cost | Time | Effect | Requires |
 | --- | --- | --- | --- | --- | --- |
-| Forged Blades | Blacksmith | 100 gold, 50 wood | 40 s | +2 damage: Guards, Archers, hero | — |
+| Forged Blades | Blacksmith | 100 gold, 50 wood | 40 s | +2 damage: Guards, Archers, Lancers, hero | — |
 | Tempered Blades | Blacksmith | 175 gold, 100 wood | 55 s | another +2 damage | Forged Blades, Castle |
-| Studded Armor | Blacksmith | 100 gold, 50 wood | 40 s | +2 armor: Guards, Archers, hero | — |
+| Masterwork Blades | Blacksmith | 250 gold, 150 wood | 70 s | a third +2 damage | Tempered Blades, Citadel |
+| Studded Armor | Blacksmith | 100 gold, 50 wood | 40 s | +2 armor: Guards, Archers, Lancers, Clerics, hero | — |
 | Plate Armor | Blacksmith | 175 gold, 100 wood | 55 s | another +2 armor | Studded Armor, Castle |
+| Gothic Plate | Blacksmith | 250 gold, 150 wood | 70 s | a third +2 armor | Plate Armor, Citadel |
 | Bow Saws | Lumber Mill | 75 gold, 50 wood | 30 s | Laborers carry 15 wood instead of 10 | — |
-| Fortify to Castle | Keep | 300 gold, 200 wood | 60 s | that Keep gets +500 HP; unlocks tier II | — |
+| Mule Carts | Keep | 150 gold, 100 wood | 45 s | Laborers carry 12 gold instead of 10: +20% from every mine | — |
+| Longbows | Lumber Mill | 125 gold, 100 wood | 45 s | Archers +1.5 range | Castle |
+| Greater Healing | Chapel | 150 gold, 150 wood | 50 s | Clerics heal 50 instead of 35 | Citadel |
+| Fortify to Castle | Keep | 300 gold, 200 wood | 60 s | that Keep gets +500 HP; tier II | — |
+| Fortify to Citadel | Keep | 400 gold, 300 wood | 80 s | another +500 HP; tier III | Castle |
 
-The Blacksmith (hotkey N) costs 140 gold and 60 wood.
+**Tiers.** Tier II (Castle) unlocks:
+
+- the Lancer;
+- the Chapel (150 gold, 100 wood) and Siege Works (160 gold, 140 wood);
+- Longbows and the second Blacksmith level.
+
+Tier III (Citadel) unlocks the third Blacksmith level and Greater Healing.
+Tiers are player-wide: losing the fortified Keep doesn't undo them.
+
+The Blacksmith (hotkey N) costs 140 gold and 60 wood. It is also needed for
+Lancers.
 
 ## Hero
 
@@ -666,6 +764,29 @@ which are never shipped to players.
     (eco, 23–1). Rushes cannot punish it. One mine saturates at about 10
     Laborers, so a lean build gains no army advantage, and the defender
     fights at home with reinforcements.
+- **Phase B (automated, `npm test`):** `tests/roster.test.ts` covers:
+  - the type table;
+  - cost-equal battles for the counter triangle: Guards beat Lancers,
+    Lancers beat Archers, Archers beat Guards, Archers beat Clerics, Lancers
+    and Guards beat Mangonels;
+  - tier requirements with refusal reasons, and the Citadel;
+  - Cleric healing (most wounded first, never enemies, mana, cooldown,
+    Greater Healing);
+  - Mangonel splash, minimum range and dodging, and its building damage;
+  - Mule Carts and Longbows;
+  - the computer adapting its mix.
+
+  `tests/ai.test.ts` checks that building placement is mirror-symmetric
+  between seats.
+- **Phase B in the browser (scripted):**
+  - Barracks hotkey E queued a Lancer.
+  - C started Chapel placement.
+  - A Cleric healed a wounded Guard.
+  - A Mangonel's boulder hit.
+  - The new models render: Lancer, Cleric, Mangonel, Chapel, Siege Works,
+    Citadel.
+  - The start screen fits.
+  - No console errors.
 - **Not yet done:** human playtesting of feel and pacing, and frame-rate
   measurement on real GPUs. Software WebGL only manages ~2–3 fps, which says
   nothing about real hardware.

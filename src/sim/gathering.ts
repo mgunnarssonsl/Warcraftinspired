@@ -5,7 +5,7 @@
 
 import { CONFIG, secondsToTicks } from './config';
 import type { Game } from './game';
-import { woodCarry } from './tech';
+import { goldCarry, woodCarry } from './tech';
 import { atRect, closestAround, distToRect } from './movement';
 import type { Building, Order, ResourceKind, ResourceNode, Unit } from './types';
 
@@ -17,7 +17,7 @@ export function nodeResource(node: ResourceNode): ResourceKind {
 
 /** Worker carry limits; Bow Saws raise the wood load. */
 export function carryCapacity(game: Game, u: Unit, res: ResourceKind): number {
-  return res === 'wood' ? woodCarry(game, u.owner) : CONFIG.units.worker.carryGold;
+  return res === 'wood' ? woodCarry(game, u.owner) : goldCarry(game, u.owner);
 }
 
 function rectGoal(f: { tx: number; ty: number; w: number; h: number }) {

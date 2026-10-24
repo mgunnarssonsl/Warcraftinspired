@@ -6,7 +6,7 @@ import { CONFIG, secondsToTicks, type BuildingType, type ResearchId, type UnitTy
 import type { Game } from './game';
 import { startGather } from './gathering';
 import { initHero, reviveCost, reviveSeconds } from './hero';
-import { completeResearch, researchProblem } from './tech';
+import { completeResearch, researched, researchProblem } from './tech';
 import type { Building, QueueItem } from './types';
 
 export function trainableAt(type: BuildingType): UnitType[] {
@@ -19,6 +19,8 @@ export function hasCompleted(game: Game, player: number, type: BuildingType): bo
 
 /** Unmet prerequisite for a unit type, as a readable reason, or null. */
 export function missingRequirement(game: Game, player: number, unit: UnitType): string | null {
+  const tech = CONFIG.units[unit].tech as ResearchId | null;
+  if (tech && !researched(game, player, tech)) return `Requires ${CONFIG.research[tech].name}.`;
   const req = CONFIG.units[unit].requires as BuildingType | null;
   if (req && !hasCompleted(game, player, req)) return `Requires a ${CONFIG.buildings[req].name}.`;
   return null;
