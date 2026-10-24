@@ -195,7 +195,9 @@ export function updateBuilder(game: Game, u: Unit, o: BuildOrder): void {
     site.progress = 1;
     site.hp = Math.min(site.maxHp, Math.round(site.hp));
     game.emit({ type: 'buildingComplete', player: site.owner, id: site.id, x: site.x, y: site.y });
-    game.player(site.owner).stats.buildingsBuilt++;
+    const stats = game.player(site.owner).stats;
+    stats.buildingsBuilt++;
+    stats.built[site.type] = (stats.built[site.type] ?? 0) + 1;
     finish(game, u, o);
   }
 }
@@ -205,5 +207,9 @@ function finish(game: Game, u: Unit, o: BuildOrder): void {
   u.order = null;
   u.move = null;
   const node = o.resumeNodeId >= 0 ? game.resource(o.resumeNodeId) : undefined;
-  if (node) startGather(game, u, node);
+  if (!node) return;
+  // More Shift-queued work first; the old job resumes after all of it.
+  if (u.orderQueue.length) {
+    if (!u.orderQueue.some((q) => q.type === 'gather')) u.orderQueue.push({ type: 'gather', nodeId: node.id });
+  } else startGather(game, u, node);
 }

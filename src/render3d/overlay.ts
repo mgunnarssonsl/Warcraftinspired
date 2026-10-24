@@ -5,7 +5,7 @@
 import type { ClientState } from '../input/client';
 import { CONFIG } from '../sim/config';
 import type { Game } from '../sim/game';
-import type { GameEvent } from '../sim/types';
+import type { GameEvent, Order, QueuedOrder, Unit } from '../sim/types';
 import type { CameraRig } from './cameraRig';
 
 interface FloatText {
@@ -84,10 +84,79 @@ export class Overlay {
     ctx.fillText(text, p.x, p.y);
   }
 
+  /** Where an order (current or queued) leads, and the line color for it. */
+  private orderPoint(o: Order | QueuedOrder): { x: number; y: number; color: string } | null {
+    switch (o.type) {
+      case 'move':
+        return { x: o.x, y: o.y, color: '#7dff8a' };
+      case 'attackMove':
+        return { x: o.x, y: o.y, color: '#ff6a5a' };
+      case 'attack': {
+        const t = this.game.get(o.targetId);
+        return t && this.perceived(t) ? { x: t.x, y: t.y, color: '#ff6a5a' } : null;
+      }
+      case 'gather': {
+        const n = o.nodeId >= 0 ? this.game.resource(o.nodeId) : undefined;
+        return n ? { x: n.x, y: n.y, color: '#ffd84a' } : null;
+      }
+      case 'build': {
+        const size = CONFIG.buildings[o.buildingType].size;
+        return { x: o.tx + size / 2, y: o.ty + size / 2, color: '#ffd84a' };
+      }
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Shift-queued waypoints of the selected own units, and the rally line of a
+   * selected production building, as dashed lines on the ground.
+   */
+  private drawPlans(client: ClientState, alpha: number): void {
+    const { ctx } = this;
+    const line = (pts: Array<{ x: number; y: number; color: string }>) => {
+      for (let i = 1; i < pts.length; i++) {
+        const a = this.rig.project(pts[i - 1].x, pts[i - 1].y, 0.05);
+        const b = this.rig.project(pts[i].x, pts[i].y, 0.05);
+        ctx.strokeStyle = pts[i].color;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+        ctx.fillStyle = pts[i].color;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    };
+    ctx.save();
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 5]);
+    ctx.globalAlpha = 0.85;
+    for (const id of client.selected) {
+      const e = this.game.get(id);
+      if (!e || e.owner !== client.player) continue;
+      if (e.kind === 'unit') {
+        const u = e as Unit;
+        if (!u.orderQueue.length) continue;
+        const pts = [{ x: u.px + (u.x - u.px) * alpha, y: u.py + (u.y - u.py) * alpha, color: '' }];
+        for (const o of [...(u.order ? [u.order] : []), ...u.orderQueue]) {
+          const p = this.orderPoint(o);
+          if (p) pts.push(p);
+        }
+        line(pts);
+      } else if (e.kind === 'building' && e.rally && client.selected.length === 1) {
+        line([{ x: e.x, y: e.y, color: '' }, { x: e.rally.x, y: e.rally.y, color: '#ffffff' }]);
+      }
+    }
+    ctx.restore();
+  }
+
   draw(client: ClientState, alpha: number, now: number): void {
     const { ctx, canvas, game } = this;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const selected = new Set(client.selected);
+    this.drawPlans(client, alpha);
 
     for (const e of Object.values(game.state.entities)) {
       if (!this.perceived(e)) continue;

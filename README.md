@@ -15,6 +15,9 @@ computer opponents. No campaign or story.
 - 3: combat foundation
 - 4: complete skirmish against a computer opponent
 - 5: strategic depth (fog of war, upgrades and tech, a hero, rewarding camps)
+- Phase A, first pass: refining the core experience (Shift-queued orders,
+  grab-to-pan camera, group pacing, objectives that register reliably, AI
+  routing and scouting memory, a balance pass from AI-vs-AI playtests)
 
 See [Roadmap](#roadmap).
 
@@ -38,6 +41,7 @@ npm run build      # typecheck + production bundle in dist/
 | Shift + click / drag | Add or remove from the selection |
 | Double-click a unit | Select every unit of that type on screen |
 | Right-click | Context command: ground = move, enemy = attack, mine or tree = gather, Keep = return cargo, unfinished building = resume construction |
+| Shift + any order | Queue it after the current one: waypoints, attack-move legs, several buildings for one Laborer. Selected units show their queued route as dashed lines (green move, red attack, yellow gather or build). A plain order or Stop clears the queue. |
 | M, S, G, R | Move, Stop, Gather, Return cargo (also on the command card) |
 | A, then click | Click an enemy to attack it, or the ground to attack-move: walk there and fight anything on the way |
 | H | Hold position: never move, and fight whatever comes within weapon range |
@@ -50,7 +54,8 @@ npm run build      # typecheck + production bundle in dist/
 | X | Cancel construction (75% refund), or the last queued unit (full refund) |
 | `.` or the *Idle workers* button | Cycle through idle workers |
 | Ctrl+1–9 / 1–9 | Set / recall a control group (press twice to center the camera) |
-| Arrows, screen edge, middle-drag | Pan the camera. The mouse wheel zooms toward the cursor, and the camera tilts flatter as you zoom in. |
+| Hold and drag the right or middle mouse button | Grab the map and drag it: the ground under the cursor follows the mouse. A right-click released without dragging is still a normal command. |
+| Arrows, screen edge | Pan the camera. The mouse wheel zooms toward the cursor, and the camera tilts flatter as you zoom in. |
 | Minimap | Left-click jumps the camera there. Right-click moves the selected units there. |
 | Space | Jump to the latest alert, or to the current selection |
 | P | Pause |
@@ -111,8 +116,14 @@ These are the rules as implemented. All numbers live in `src/sim/config.ts`.
   - camps it has spotted;
   - the public start locations.
 
-  When it knows of no enemy building, its waves search start locations and
-  mine sites.
+  When it knows of no enemy building, its waves head for the enemy start
+  location first, then search mine sites.
+- **Memory, not cheating:** it remembers enemy soldiers it has seen for two
+  minutes (forgetting any it saw die), and counts them when judging whether
+  it is strong enough to attack. Without this it would attack into an army
+  it had just watched walk into the fog.
+- **Routes:** waves march around neutral camps they know of, using queued
+  waypoints like a player would, instead of fighting them on the way.
 - **Heroes and upgrades:**
   - It builds a Hall of Valor after its first Barracks, then trains its hero
     and revives it when it falls.
@@ -134,7 +145,7 @@ These are the rules as implemented. All numbers live in `src/sim/config.ts`.
   2. Barracks
   3. Lumber Mill, next to the nearest forest
   4. Watch Tower
-  5. A second Barracks
+  5. A second Barracks (once it has enough Laborers)
   6. An expansion Keep at the nearest unguarded mine
 - **Placing buildings:** it keeps the lanes between Keeps and mines clear. It
   sets aside money for builders still walking to their sites, and puts a new
@@ -189,6 +200,9 @@ One construction model applies throughout:
    before.
 6. **Cancel.** Cancelling an unfinished building refunds 75% of its cost and
    frees its tiles.
+7. **Several buildings.** Shift+click places more buildings for the same
+   Laborer, who builds them one after another and only then goes back to its
+   previous job.
 
 Unfinished buildings provide no population and accept no deliveries. A
 Lumber Mill built next to a forest shortens wood trips; in the tests it
@@ -271,16 +285,33 @@ All numbers are in `CONFIG.units[*].attack`, `CONFIG.combat` and
   on both halves of the map:
   - **Contested centre mines:** a Brigand Chief, a Brigand and a Poacher,
     worth 105 gold in bounty and 160 hero experience.
-  - **Far expansions:** a Brigand and a Poacher.
+  - **Far expansions and the natural expansion:** a Brigand and a Poacher.
 
   Camps stay home until you come near, so expanding there means clearing
   them first. Killing a camp unit pays its bounty, and your hero earns its
-  experience if within 12 tiles. The nearby natural expansion is
-  unguarded.
+  experience if within 12 tiles. The centre mines sit off the direct route
+  between the bases, so armies can march past their camps.
 - **Alerts:** when any of your units or buildings is hit, you get "under
   attack" notices with a red minimap ping. They are throttled to one per
   10 s unless the attack is somewhere else. Space jumps to the latest alert.
   In fights, health bars show on every wounded unit.
+
+## Orders and movement
+
+- **Shift-queued orders** are part of the simulation state: plain data on
+  each unit, saved with the game and identical for every player and the
+  computer. When the current order ends, the next one starts. Orders that
+  never end on their own (gathering, hold position) wait for you to replace
+  them; a queued attack on a target that has died or vanished into the fog is
+  skipped.
+- **Group pace:** units ordered together while close to each other (within
+  5 tiles of the group's centre) march at the slowest member's speed, so a
+  mixed group arrives together instead of stringing out. A scattered
+  selection is not slowed, and once units start fighting they move at full
+  speed.
+- **Melee surround:** melee attackers spread around a single target rather
+  than queueing behind each other (8 of 8 Guards engage one target in the
+  test).
 
 ## Fog of war
 
@@ -584,6 +615,57 @@ which are never shipped to players.
     mana.
   - Clearing a camp gave 160 experience and 105 gold in bounty.
   - No console errors.
+- **Phase A (automated, `npm test`, 112 tests):**
+  - Shift-queued waypoints run in order. A queued order on an idle unit
+    starts at once. A plain order or Stop clears the queue. One Laborer
+    builds two Shift-placed Farms in turn, then returns to its mine.
+  - Group pace applies to compact groups only.
+  - 8 Guards surround one target, and all 8 engage.
+  - Objectives: progress counts are cumulative, and each step ticks off
+    once.
+  - The AI routes around a known camp, and remembers an army it saw go into
+    the fog.
+- **Phase A in the browser (scripted, headless):**
+  - Right-drag moved the camera, and a plain right-click still gave a move
+    order.
+  - Shift+right-clicks queued a gather and a move behind the current order,
+    and the dashed route lines rendered.
+  - The gold objective ticked off with an "Objective complete" notice.
+  - The command card now fits a Laborer's full build list (the Blacksmith
+    button used to be clipped), and costs no longer overlap labels.
+  - No console errors.
+- **Phase A balance playtest (`npm run playtest`):** seven computer openings
+  in a round robin, on 2 maps, from both seats (84 games, all on Hard rules
+  and decisions).
+
+  | Opening | Won | Lost | No result | Avg minutes |
+  | --- | --- | --- | --- | --- |
+  | standard | 14 | 10 | 0 | 14.4 |
+  | rush | 3 | 21 | 0 | 13.4 |
+  | eco | 23 | 1 | 0 | 13.7 |
+  | turtle | 15 | 8 | 1 | 15.8 |
+  | mass | 10 | 13 | 1 | 14.1 |
+  | archers | 6 | 18 | 0 | 13.7 |
+  | guards | 12 | 12 | 0 | 14.8 |
+
+  - **Fixed along the way:**
+    - Waves searched the nearest mine instead of the enemy start.
+    - Waves fought every camp on the lane, because both centre camps sat
+      on the direct route.
+    - The AI attacked blind into armies it had seen.
+    - An extra-Barracks rule for floating gold inverted the difficulty
+      order.
+    - With those fixed: Hard beats Normal 3–0 (plus one 30-minute
+      stalemate), Normal beats Easy 4–0, and Hard beats Easy 3–1.
+  - **Tuning:** the natural expansion now has a camp, and a Keep takes 110 s
+    to build (was 60 s).
+  - **Healthy:** Guards against Archers is 2–2 head to head, and a mixed
+    army beats a single unit type. Turtling is viable but not dominant.
+    Games last 12–20 minutes.
+  - **Still dominant:** expanding early and attacking later in one big wave
+    (eco, 23–1). Rushes cannot punish it. One mine saturates at about 10
+    Laborers, so a lean build gains no army advantage, and the defender
+    fights at home with reinforcements.
 - **Not yet done:** human playtesting of feel and pacing, and frame-rate
   measurement on real GPUs. Software WebGL only manages ~2–3 fps, which says
   nothing about real hardware.
@@ -599,6 +681,17 @@ which are never shipped to players.
 5. ~~Strategic depth~~ (done): fog of war, upgrades and tech, a hero with
    levels and abilities, rewarding neutral camps.
 
-Next is the long-term roadmap, starting with Phase A: refining pathfinding
-and group movement, controls, pacing and balance, informed by real
-playtesting.
+Phase A, first pass (done): Shift-queued orders with route lines,
+grab-to-pan camera, group pace, objectives that register reliably, AI
+routing and memory, a readable command card, and an AI-vs-AI balance
+harness.
+
+Still open in Phase A, ideally driven by human playtesting:
+
+- **Early aggression should be able to punish a fast expansion.** Options to
+  test:
+  - diminishing returns beyond 5 miners, so economy and army trade off;
+  - cheaper or faster early units;
+  - harassing workers.
+- **Mirror matches still favor player 0.**
+- **Opening playtests by people, not only by the AI.**

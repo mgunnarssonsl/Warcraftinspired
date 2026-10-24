@@ -81,10 +81,13 @@ export interface PlayerStats {
   kills: number;
   buildingsBuilt: number;
   buildingsLost: number;
+  /** Per type: units trained and buildings completed (for objectives and summaries). */
+  trained: Partial<Record<UnitType, number>>;
+  built: Partial<Record<BuildingType, number>>;
 }
 
 export function emptyStats(): PlayerStats {
-  return { unitsTrained: 0, unitsLost: 0, kills: 0, buildingsBuilt: 0, buildingsLost: 0 };
+  return { unitsTrained: 0, unitsLost: 0, kills: 0, buildingsBuilt: 0, buildingsLost: 0, trained: {}, built: {} };
 }
 
 export interface Outcome {
@@ -118,7 +121,13 @@ export interface MoveState {
 export type GatherPhase = 'toNode' | 'waiting' | 'working' | 'toDropoff';
 
 export type Order =
-  | { type: 'move'; x: number; y: number }
+  | {
+      type: 'move';
+      x: number;
+      y: number;
+      /** Group pace (tiles/s): a group ordered together moves at its slowest member's speed. */
+      pace?: number;
+    }
   | {
       type: 'gather';
       /** Resource node to (re)visit; -1 = none, go idle after delivering. */
@@ -161,9 +170,20 @@ export type Order =
       y: number;
       /** Enemy currently engaged on the way, or -1. */
       targetId: number;
+      /** Group pace (tiles/s): a group ordered together moves at its slowest member's speed. */
+      pace?: number;
     }
   | { type: 'hold'; targetId: number }
   | { type: 'cast'; ability: AbilityId; targetId: number };
+
+/** A Shift-queued instruction, turned into a real order when its turn comes. */
+export type QueuedOrder =
+  | { type: 'move'; x: number; y: number; pace?: number }
+  | { type: 'attackMove'; x: number; y: number; pace?: number }
+  | { type: 'attack'; targetId: number }
+  | { type: 'gather'; nodeId: number }
+  | { type: 'build'; buildingType: BuildingType; tx: number; ty: number }
+  | { type: 'hold' };
 
 interface EntityBase {
   id: number;
@@ -183,6 +203,8 @@ export interface Unit extends EntityBase {
   py: number;
   facing: number; // radians
   order: Order | null;
+  /** Shift-queued orders that run, in turn, once the current order ends. */
+  orderQueue: QueuedOrder[];
   move: MoveState | null;
   carry: Carry;
   /** True while inside a gold mine (not drawn, not clickable). */

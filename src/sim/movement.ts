@@ -97,7 +97,7 @@ export function updateMovement(game: Game, units: Unit[]): void {
       // Terrain changed (tree felled, building placed); paths may be stale.
       planPath(game, u);
     }
-    let budget = CONFIG.units[u.type].speed * TICK_SECONDS;
+    let budget = moveSpeed(u) * TICK_SECONDS;
     while (budget > 1e-9 && mv.path.length) {
       const wp = mv.path[0];
       const dx = wp.x - u.x;
@@ -136,7 +136,7 @@ export function updateMovement(game: Game, units: Unit[]): void {
     if (!mv || mv.state !== 'moving' || u.hidden) continue;
     if (tick - mv.checkTick < window) continue;
     const moved = Math.hypot(u.x - mv.checkX, u.y - mv.checkY);
-    const expected = CONFIG.units[u.type].speed * TICK_SECONDS * window;
+    const expected = moveSpeed(u) * TICK_SECONDS * window;
     mv.checkX = u.x;
     mv.checkY = u.y;
     mv.checkTick = tick;
@@ -205,4 +205,13 @@ function separate(game: Game, units: Unit[]): void {
         }
       }
   }
+}
+
+/** Walking speed: the unit's own, or its group's pace while marching together. */
+export function moveSpeed(u: Unit): number {
+  const speed = CONFIG.units[u.type].speed;
+  const o = u.order;
+  if (o?.type === 'move' && o.pace) return Math.min(speed, o.pace);
+  if (o?.type === 'attackMove' && o.pace && o.targetId < 0) return Math.min(speed, o.pace);
+  return speed;
 }

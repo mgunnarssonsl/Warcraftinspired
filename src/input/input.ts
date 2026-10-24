@@ -25,7 +25,11 @@ export class InputController {
   private mouse = { x: -1, y: -1, inside: false, moved: true };
   private keys = new Set<string>();
   private dragStart: { x: number; y: number } | null = null;
-  private midDrag: { x: number; y: number } | null = null;
+  /** Right/middle button held: grab-pan once it moves past the threshold. */
+  /** Shift is held: orders given now are queued after current ones. */
+  private shiftDown = false;
+  private grab: { button: number; x: number; y: number; anchor: { x: number; y: number } | null; panning: boolean; shift: boolean } | null =
+    null;
   private lastClick = { t: 0, id: 0 };
   private lastGroupKey = { t: 0, n: -1 };
   private framesSincePick = 0;
@@ -55,13 +59,17 @@ export class InputController {
       },
       { passive: false },
     );
-    window.addEventListener('keydown', (e) => this.keyDown(e));
+    window.addEventListener('keydown', (e) => {
+      this.shiftDown = e.shiftKey;
+      this.keyDown(e);
+    });
+    window.addEventListener('keyup', (e) => (this.shiftDown = e.shiftKey));
     window.addEventListener('keyup', (e) => this.keys.delete(e.key));
     window.addEventListener('blur', () => {
       this.keys.clear();
       this.mouse.inside = false;
       this.dragStart = null;
-      this.midDrag = null;
+      this.grab = null;
       this.client.drag = null;
     });
   }
@@ -78,7 +86,7 @@ export class InputController {
     if (this.keys.has('ArrowRight')) dx += 1;
     if (this.keys.has('ArrowUp')) dy -= 1;
     if (this.keys.has('ArrowDown')) dy += 1;
-    if (this.mouse.inside && !this.dragStart && !this.midDrag && document.hasFocus()) {
+    if (this.mouse.inside && !this.dragStart && !this.grab?.panning && document.hasFocus()) {
       const { x, y } = this.mouse;
       if (x < EDGE) dx -= 1;
       if (x > this.rig.viewW - EDGE) dx += 1;
@@ -113,6 +121,7 @@ export class InputController {
   }
 
   private cursor(): string {
+    if (this.grab?.panning) return 'grabbing';
     if (this.client.targetMode || this.client.placing) return 'crosshair';
     const h = this.client.hoverId ? this.game.get(this.client.hoverId) : undefined;
     if (h && h.kind !== 'unit' && this.selectedWorkers().length) return 'pointer';
@@ -156,17 +165,21 @@ export class InputController {
         return;
       }
       this.dragStart = p;
-    } else if (e.button === 2) {
-      if (this.client.targetMode || this.client.placing) {
-        this.client.targetMode = null;
-        this.client.placing = null;
-        return;
-      }
-      this.smartCommand(p.x, p.y);
-    } else if (e.button === 1) {
+    } else if (e.button === 2 || e.button === 1) {
+      // Hold and drag to grab-pan the map; a plain right-click acts on release.
       e.preventDefault();
-      this.midDrag = p;
+      this.grab = { button: e.button, x: p.x, y: p.y, anchor: this.rig.screenToGround(p.x, p.y), panning: e.button === 1, shift: e.shiftKey };
     }
+  }
+
+  /** What a right-click (press and release without dragging) does. */
+  private rightClick(sx: number, sy: number, shift: boolean): void {
+    if (this.client.targetMode || this.client.placing) {
+      this.client.targetMode = null;
+      this.client.placing = null;
+      return;
+    }
+    this.smartCommand(sx, sy, shift);
   }
 
   private mouseMove(e: MouseEvent): void {
@@ -175,9 +188,10 @@ export class InputController {
     this.mouse.y = p.y;
     this.mouse.inside = p.x >= 0 && p.y >= 0 && p.x < this.rig.viewW && p.y < this.rig.viewH;
     this.mouse.moved = true;
-    if (this.midDrag) {
-      this.rig.pan(this.midDrag.x - p.x, this.midDrag.y - p.y);
-      this.midDrag = p;
+    const grab = this.grab;
+    if (grab) {
+      if (!grab.panning && Math.hypot(p.x - grab.x, p.y - grab.y) > DRAG_THRESHOLD) grab.panning = true;
+      if (grab.panning && grab.anchor) this.rig.dragTo(grab.anchor, p.x, p.y);
     }
     if (this.dragStart) {
       const d = Math.hypot(p.x - this.dragStart.x, p.y - this.dragStart.y);
@@ -188,7 +202,12 @@ export class InputController {
   }
 
   private mouseUp(e: MouseEvent): void {
-    if (e.button === 1) this.midDrag = null;
+    if (this.grab && e.button === this.grab.button) {
+      const g = this.grab;
+      this.grab = null;
+      if (e.button === 2 && !g.panning) this.rightClick(g.x, g.y, g.shift || e.shiftKey);
+      return;
+    }
     if (e.button !== 0 || !this.dragStart) return;
     const p = this.local(e);
     if (this.client.drag) this.boxSelect(this.client.drag, e.shiftKey);
@@ -259,7 +278,7 @@ export class InputController {
   // ---- commands ---------------------------------------------------------------
 
   /** Right-click: decide the command from what is under the cursor. */
-  private smartCommand(sx: number, sy: number): void {
+  private smartCommand(sx: number, sy: number, shift = false): void {
     const units = this.ownSelectedUnits();
     if (!units.length) {
       const b = this.selectedOwnBuilding();
@@ -273,16 +292,16 @@ export class InputController {
     const workers = units.filter((u) => u.type === 'worker');
     const others = units.filter((u) => u.type !== 'worker');
     const moveRest = (rest: Unit[]) => {
-      if (rest.length && g) this.game.issue({ type: 'move', player, units: rest.map((u) => u.id), x: g.x, y: g.y });
+      if (rest.length && g) this.game.issue({ type: 'move', player, units: rest.map((u) => u.id), x: g.x, y: g.y, queued: shift });
     };
     if (target && target.kind !== 'resource' && isEnemy(this.game, player, target.owner) && targetable(target)) {
       const fighters = units.filter(canAttack);
-      this.game.issue({ type: 'attack', player, units: fighters.map((u) => u.id), targetId: target.id });
+      this.game.issue({ type: 'attack', player, units: fighters.map((u) => u.id), targetId: target.id, queued: shift });
       this.world.flashEntity(target.id, now);
       return;
     }
     if (target?.kind === 'resource' && workers.length) {
-      this.game.issue({ type: 'gather', player, units: workers.map((u) => u.id), nodeId: target.id });
+      this.game.issue({ type: 'gather', player, units: workers.map((u) => u.id), nodeId: target.id, queued: shift });
       this.world.flashEntity(target.id, now);
       moveRest(others);
       return;
@@ -303,7 +322,7 @@ export class InputController {
       }
     }
     if (!g) return;
-    this.game.issue({ type: 'move', player, units: units.map((u) => u.id), x: g.x, y: g.y });
+    this.game.issue({ type: 'move', player, units: units.map((u) => u.id), x: g.x, y: g.y, queued: shift });
     this.world.addMarker(g.x, g.y, now);
   }
 
@@ -351,18 +370,18 @@ export class InputController {
       const target = this.world.pick(sx, sy);
       const fighters = units.filter(canAttack).map((u) => u.id);
       if (target && target.kind !== 'resource' && isEnemy(this.game, player, target.owner) && targetable(target)) {
-        this.game.issue({ type: 'attack', player, units: fighters, targetId: target.id });
+        this.game.issue({ type: 'attack', player, units: fighters, targetId: target.id, queued: shift });
         this.world.flashEntity(target.id, now);
       } else {
         const g = this.rig.screenToGround(sx, sy);
         if (!g) return;
-        this.game.issue({ type: 'attackMove', player, units: fighters, x: g.x, y: g.y });
+        this.game.issue({ type: 'attackMove', player, units: fighters, x: g.x, y: g.y, queued: shift });
         this.world.addMarker(g.x, g.y, now, '#ff5a4a');
       }
     } else if (mode === 'move') {
       const g = this.rig.screenToGround(sx, sy);
       if (!g) return;
-      this.game.issue({ type: 'move', player, units: units.map((u) => u.id), x: g.x, y: g.y });
+      this.game.issue({ type: 'move', player, units: units.map((u) => u.id), x: g.x, y: g.y, queued: shift });
       this.world.addMarker(g.x, g.y, now);
     } else {
       const target = this.world.pick(sx, sy);
@@ -371,7 +390,7 @@ export class InputController {
         return; // stay in targeting mode
       }
       const workers = units.filter((u) => u.type === 'worker');
-      this.game.issue({ type: 'gather', player, units: workers.map((u) => u.id), nodeId: target.id });
+      this.game.issue({ type: 'gather', player, units: workers.map((u) => u.id), nodeId: target.id, queued: shift });
       this.world.flashEntity(target.id, now);
     }
     if (!shift) this.client.targetMode = null;
@@ -388,7 +407,7 @@ export class InputController {
       return; // stay in placement mode so the player can pick another spot
     }
     const workers = this.selectedWorkers();
-    this.game.issue({ type: 'build', player: this.client.player, units: workers.map((u) => u.id), buildingType: type, tx: f.tx, ty: f.ty });
+    this.game.issue({ type: 'build', player: this.client.player, units: workers.map((u) => u.id), buildingType: type, tx: f.tx, ty: f.ty, queued: shift });
     this.world.addMarker(f.tx + f.w / 2, f.ty + f.h / 2, this.now());
     if (!shift) this.client.placing = null;
   }
@@ -434,7 +453,7 @@ export class InputController {
     }
     this.client.placing = null;
     if (name === 'stop') this.game.issue({ type: 'stop', player, units: units.map((u) => u.id) });
-    else if (name === 'hold') this.game.issue({ type: 'hold', player, units: units.map((u) => u.id) });
+    else if (name === 'hold') this.game.issue({ type: 'hold', player, units: units.map((u) => u.id), queued: this.shiftDown });
     else if (name === 'attack') {
       if (units.some(canAttack)) this.client.targetMode = 'attack';
     }

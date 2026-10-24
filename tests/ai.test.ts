@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { ComputerPlayer, type Difficulty } from '../src/ai/computer';
+import { CONFIG } from '../src/sim/config';
 import { Game } from '../src/sim/game';
+import { emptyGame } from './helpers';
 
 function play(seed: number, a: Difficulty | null, b: Difficulty | null, minutes: number) {
   const g = Game.create(seed);
@@ -37,7 +39,7 @@ describe('computer opponent', () => {
     const { g, minGold } = play(22, null, 'normal', 15);
     expect(g.state.outcome?.winner).toBe(1);
     expect(minGold).toBeGreaterThanOrEqual(0);
-  });
+  }, 30_000);
 
   it('defends its base against an attack', () => {
     const g = Game.create(23);
@@ -67,10 +69,55 @@ describe('computer opponent', () => {
     const loser = g.player(1);
     expect(loser.defeated).toBe(true);
     expect(g.buildings().some((b) => b.owner === 1)).toBe(false);
-  });
+  }, 30_000); // a whole simulated match
 
   it('is deterministic', () => {
     const run = () => play(24, 'normal', 'hard', 5).g.toJSON();
     expect(run()).toBe(run());
+  });
+});
+
+describe('computer routing and memory', () => {
+  it('routes a march around a camp it knows, but not around one it is heading for', () => {
+    const g = emptyGame(60, 40);
+    const ai = new ComputerPlayer(0, 'hard') as unknown as {
+      campsSeen: Array<{ x: number; y: number }>;
+      detours(g: Game, a: { x: number; y: number }, b: { x: number; y: number }): Array<{ x: number; y: number }>;
+    };
+    ai.campsSeen = [{ x: 30, y: 20 }];
+    const way = ai.detours(g, { x: 5, y: 20 }, { x: 55, y: 20 });
+    expect(way).toHaveLength(1);
+    expect(Math.abs(way[0].y - 20)).toBeGreaterThanOrEqual(CONFIG.ai.campClearance);
+    expect(ai.detours(g, { x: 5, y: 20 }, { x: 31, y: 21 })).toHaveLength(0);
+    expect(ai.detours(g, { x: 5, y: 5 }, { x: 55, y: 5 })).toHaveLength(0); // the line passes well clear
+  });
+
+  it('remembers an enemy army it saw and does not attack into it blind', () => {
+    const g = emptyGame(60, 40);
+    g.addBuilding('hq', 0, 3, 3);
+    g.addBuilding('hq', 1, 50, 30);
+    const ai = new ComputerPlayer(0, 'hard');
+    const mine = [0, 1, 2, 3, 4, 5, 6].map((i) => g.addUnit('guard', 0, 8.5 + i, 12.5));
+    const theirs = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((i) => g.addUnit('guard', 1, 8.5 + (i % 6), 16.5 + Math.floor(i / 6)));
+    g.issue({ type: 'hold', player: 1, units: theirs.map((u) => u.id) });
+    g.step();
+    const priv = ai as unknown as { visible(g: Game): unknown; favourable(g: Game, h: unknown[], e: unknown[]): boolean };
+    priv.visible(g); // sees them once
+    // They walk off into the fog: still remembered.
+    for (const u of theirs) {
+      u.x += 30;
+      u.y += 10;
+      u.px = u.x;
+      u.py = u.y;
+    }
+    g.step();
+    const enemies = priv.visible(g) as unknown[];
+    expect(enemies.filter((e) => (e as { kind: string }).kind === 'unit')).toHaveLength(0);
+    expect(priv.favourable(g, mine, enemies)).toBe(false);
+    // Seen dying: forgotten.
+    for (const u of theirs) g.removeEntity(u.id);
+    for (const u of mine) g.addUnit('guard', 0, u.x + 30, u.y + 12); // look where they were
+    g.step();
+    expect(priv.favourable(g, mine, priv.visible(g) as unknown[])).toBe(true);
   });
 });

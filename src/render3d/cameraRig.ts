@@ -79,6 +79,18 @@ export class CameraRig {
     this.apply();
   }
 
+  /**
+   * Grab-pan: move the view so the ground point `anchor` sits under screen
+   * pixel (sx, sy) again, i.e. the map follows the cursor exactly.
+   */
+  dragTo(anchor: { x: number; y: number }, sx: number, sy: number): void {
+    const g = this.screenToGround(sx, sy);
+    if (!g) return;
+    this.tx += anchor.x - g.x;
+    this.ty += anchor.y - g.y;
+    this.apply();
+  }
+
   /** Zoom, keeping the ground point under the cursor fixed where possible. */
   zoomAt(sx: number, sy: number, factor: number): void {
     const before = this.screenToGround(sx, sy);

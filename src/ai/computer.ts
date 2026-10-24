@@ -26,11 +26,24 @@ import type { Building, Entity, ResourceNode, Unit } from '../sim/types';
 import { findSite } from './placement';
 
 export type Difficulty = keyof typeof CONFIG.ai.profiles;
+type Widen<T> = T extends number ? number : T extends boolean ? boolean : T;
+/** Strategy tweaks on top of a difficulty profile (used by balance playtests). */
+export type ProfileOverrides = Partial<Profile>;
+type Profile = { -readonly [K in keyof (typeof CONFIG.ai.profiles)['hard']]: Widen<(typeof CONFIG.ai.profiles)['hard'][K]> };
 
 const dist = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
 
+/** Distance from point p to the segment a–b. */
+function segmentDistance(p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const l2 = dx * dx + dy * dy;
+  const t = l2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2)) : 0;
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
 export class ComputerPlayer {
-  private readonly profile;
+  private readonly profile: Profile;
   private readonly thinkTicks: number;
   /** Current wave threshold; grows after every wave. */
   private waveSize: number;
@@ -42,8 +55,9 @@ export class ComputerPlayer {
   constructor(
     readonly player: number,
     readonly difficulty: Difficulty,
+    overrides: ProfileOverrides = {},
   ) {
-    this.profile = CONFIG.ai.profiles[difficulty];
+    this.profile = { ...CONFIG.ai.profiles[difficulty], ...overrides };
     this.thinkTicks = secondsToTicks(this.profile.thinkSeconds);
     this.waveSize = this.profile.waveSize;
   }
@@ -72,6 +86,9 @@ export class ComputerPlayer {
     return spots;
   }
 
+  /** Enemy soldiers seen recently: last known type, health and place. */
+  private armySeen = new Map<number, { type: UnitType; hp: number; x: number; y: number; tick: number }>();
+
   /** Neutral guards it has spotted: places not to send a lone builder. */
   private campsSeen: Array<{ x: number; y: number }> = [];
 
@@ -85,6 +102,24 @@ export class ComputerPlayer {
       if (u.kind !== 'unit' || !game.player(u.owner).neutral || !u.home) continue;
       if (!this.campsSeen.some((c) => dist(c, u.home!) < 4)) this.campsSeen.push({ ...u.home });
     }
+    // Remember enemy soldiers it has seen, as a player remembers a scouted
+    // army; forget one when the memory expires, or when it died in plain view.
+    const now = game.state.tick;
+    for (const u of out) {
+      if (u.kind !== 'unit' || game.player(u.owner).neutral || u.type === 'worker') continue;
+      this.armySeen.set(u.id, { type: u.type, hp: u.hp, x: u.x, y: u.y, tick: now });
+    }
+    for (const [id, m] of this.armySeen) {
+      const expired = now - m.tick > secondsToTicks(CONFIG.ai.armyMemorySeconds);
+      const gone = !game.get(id) && v.isVisible(this.player, Math.floor(m.x), Math.floor(m.y));
+      if (expired || gone) this.armySeen.delete(id);
+    }
+    // A camp spot in plain view with no guards left has been cleared (by anyone).
+    this.campsSeen = this.campsSeen.filter(
+      (c) =>
+        !v.isVisible(this.player, Math.floor(c.x), Math.floor(c.y)) ||
+        out.some((u) => u.kind === 'unit' && game.player(u.owner).neutral && dist(u, c) < 5),
+    );
     return out;
   }
 
@@ -215,7 +250,7 @@ export class ComputerPlayer {
     if (count('tower') < this.profile.towers && hasCompleted(game, P, 'barracks')) return 'tower';
     if (this.profile.upgrades && count('smithy') === 0 && hasCompleted(game, P, 'lumbermill')) return 'smithy';
     const me = game.player(P);
-    if (count('barracks') < this.profile.maxBarracks && workers.length >= 11 && me.gold >= 300) return 'barracks';
+    if (count('barracks') < this.profile.maxBarracks && workers.length >= this.profile.extraBarracksAtWorkers && me.gold >= 300) return 'barracks';
     const seconds = game.state.tick / 20;
     const starved = me.wood > CONFIG.ai.woodSurplus && seconds > 180;
     const homeMineLow = this.homeMineLow(game, buildings);
@@ -469,7 +504,7 @@ export class ComputerPlayer {
       return;
     }
     if (now - this.lastWaveOrder < secondsToTicks(4)) return;
-    const idleWave = waveUnits.filter((u) => u.order === null || u.order.type === 'move');
+    const idleWave = waveUnits.filter((u) => u.orderQueue.length === 0 && (u.order === null || u.order.type === 'move'));
     if (!idleWave.length) return;
     const c = centroid(waveUnits);
     const targets: Array<{ x: number; y: number }> = enemies.filter((e) => e.kind === 'building' && !game.player(e.owner).neutral);
@@ -482,12 +517,46 @@ export class ComputerPlayer {
         this.searched.clear();
         spots = this.searchSpots(game);
       }
-      targets.push(...spots);
+      // Enemy start locations are public: head there before combing mines.
+      const starts = spots.filter((p) => game.state.starts.some((st) => st.x === p.x && st.y === p.y));
+      targets.push(...(starts.length ? starts : spots));
     }
     if (!targets.length) return;
     const t = targets.reduce((a, b) => (dist(b, c) < dist(a, c) ? b : a));
     this.lastWaveOrder = now;
-    game.issue({ type: 'attackMove', player: P, units: idleWave.map((u) => u.id), x: t.x, y: t.y });
+    // March around known camps rather than through them: detour waypoints
+    // first (Shift-queued, as a player would), then on to the target.
+    const ids = idleWave.map((u) => u.id);
+    const route = [...this.detours(game, c, t), t];
+    route.forEach((p, i) => game.issue({ type: 'attackMove', player: P, units: ids, x: p.x, y: p.y, queued: i > 0 }));
+  }
+
+  /**
+   * Waypoints that keep a march from `from` to `to` clear of the neutral camps
+   * it knows about (camps at the destination itself are the point, not detours).
+   */
+  private detours(game: Game, from: { x: number; y: number }, to: { x: number; y: number }): Array<{ x: number; y: number }> {
+    const clear = CONFIG.ai.campClearance;
+    const out: Array<{ x: number; y: number }> = [];
+    let a = from;
+    for (let n = 0; n < 3; n++) {
+      const blocking = this.campsSeen
+        .filter((cp) => dist(cp, to) > clear && dist(cp, a) > clear && segmentDistance(cp, a, to) < clear)
+        .sort((p, q) => dist(p, a) - dist(q, a))[0];
+      if (!blocking) break;
+      // Step sideways off the line, on whichever side is open ground.
+      const len = dist(a, to) || 1;
+      const nx = -(to.y - a.y) / len;
+      const ny = (to.x - a.x) / len;
+      const sides = [1, -1]
+        .map((k) => ({ x: blocking.x + nx * k * (clear + 2), y: blocking.y + ny * k * (clear + 2) }))
+        .filter((p) => game.nav.canStand(p.x, p.y, 0.5) && game.nav.component(Math.floor(p.x), Math.floor(p.y)) === game.nav.component(Math.floor(a.x), Math.floor(a.y)))
+        .sort((p, q) => dist(a, p) + dist(p, to) - (dist(a, q) + dist(q, to)));
+      if (!sides.length) break;
+      out.push(sides[0]);
+      a = sides[0];
+    }
+    return out;
   }
 
   /** Army strength: hit points times damage per second, summed. */
@@ -503,8 +572,15 @@ export class ComputerPlayer {
 
   private favourable(game: Game, home: Unit[], enemies: Array<Unit | Building>): boolean {
     if (!this.profile.assessStrength || home.length >= CONFIG.ai.attackAnyway) return true;
-    const theirs = enemies.filter((e): e is Unit => e.kind === 'unit' && !game.player(e.owner).neutral);
-    return this.strength(home) >= this.strength(theirs) * CONFIG.ai.attackAdvantage;
+    // What it sees now plus what it remembers seeing (no hidden information).
+    const seen = enemies.filter((e): e is Unit => e.kind === 'unit' && !game.player(e.owner).neutral);
+    let theirs = this.strength(seen);
+    for (const [id, m] of this.armySeen) {
+      if (seen.some((u) => u.id === id)) continue;
+      const a = CONFIG.units[m.type].attack;
+      theirs += m.hp * (a.damage / a.cooldown);
+    }
+    return this.strength(home) >= theirs * CONFIG.ai.attackAdvantage;
   }
 
   private endWave(grow = true): void {

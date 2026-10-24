@@ -184,7 +184,11 @@ function spawn(game: Game, b: Building, item: QueueItem): boolean {
     const rec = game.player(b.owner).hero;
     initHero(game, u, item.revive && rec ? rec.level : 1, item.revive && rec ? rec.xp : 0);
   }
-  if (!item.revive) game.player(b.owner).stats.unitsTrained++;
+  if (!item.revive) {
+    const stats = game.player(b.owner).stats;
+    stats.unitsTrained++;
+    stats.trained[type] = (stats.trained[type] ?? 0) + 1;
+  }
   game.emit({ type: 'unitTrained', player: b.owner, id: u.id, x: u.x, y: u.y });
   if (r) {
     const node = r.targetId >= 0 ? game.resource(r.targetId) : undefined;

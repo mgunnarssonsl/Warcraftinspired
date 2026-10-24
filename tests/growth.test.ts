@@ -29,6 +29,8 @@ const dist = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.
 describe('economic growth through the standard rules', () => {
   it('a scripted player grows from 5 to 15+ workers and expands to a second Keep', () => {
     const g = Game.create(11);
+    // An economy test: the camps guarding the natural are taken as cleared.
+    for (const u of g.units().filter((u) => g.player(u.owner).neutral)) g.removeEntity(u.id);
     const P = 0;
     const hq = g.buildings().find((b) => b.owner === P)!;
     const mines = g.resources().filter((r) => r.type === 'goldmine').sort((a, b) => dist(a, hq) - dist(b, hq));

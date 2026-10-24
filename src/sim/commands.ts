@@ -9,20 +9,20 @@ import { castProblem } from './hero';
 import { canAttack, isEnemy, targetable } from './combat';
 import { defeat } from './outcome';
 import { releaseFromNode, startGather, startReturnCargo } from './gathering';
-import type { Unit } from './types';
+import type { QueuedOrder, Unit } from './types';
 
 export type Command =
-  | { type: 'move'; player: number; units: number[]; x: number; y: number }
-  | { type: 'gather'; player: number; units: number[]; nodeId: number }
+  | { type: 'move'; player: number; units: number[]; x: number; y: number; queued?: boolean }
+  | { type: 'gather'; player: number; units: number[]; nodeId: number; queued?: boolean }
   | { type: 'returnCargo'; player: number; units: number[]; dropoffId?: number }
   | { type: 'stop'; player: number; units: number[] }
-  | { type: 'attack'; player: number; units: number[]; targetId: number }
-  | { type: 'attackMove'; player: number; units: number[]; x: number; y: number }
-  | { type: 'hold'; player: number; units: number[] }
+  | { type: 'attack'; player: number; units: number[]; targetId: number; queued?: boolean }
+  | { type: 'attackMove'; player: number; units: number[]; x: number; y: number; queued?: boolean }
+  | { type: 'hold'; player: number; units: number[]; queued?: boolean }
   | { type: 'surrender'; player: number }
   | { type: 'research'; player: number; buildingId: number; research: ResearchId }
   | { type: 'cast'; player: number; units: number[]; ability: AbilityId; targetId: number }
-  | { type: 'build'; player: number; units: number[]; buildingType: BuildingType; tx: number; ty: number }
+  | { type: 'build'; player: number; units: number[]; buildingType: BuildingType; tx: number; ty: number; queued?: boolean }
   | { type: 'resumeBuild'; player: number; units: number[]; buildingId: number }
   | { type: 'cancelBuild'; player: number; buildingId: number }
   | { type: 'train'; player: number; buildingId: number; unit: UnitType }
@@ -67,21 +67,21 @@ export function applyCommand(game: Game, cmd: Command): void {
   switch (cmd.type) {
     case 'move': {
       const slots = formationSlots(game, units, cmd.x, cmd.y);
-      units.forEach((u, i) => {
-        releaseFromNode(game, u);
-        u.order = { type: 'move', x: slots[i].x, y: slots[i].y };
-        u.move = null;
-      });
+      const pace = groupPace(units);
+      units.forEach((u, i) => give(game, u, { type: 'move', x: slots[i].x, y: slots[i].y, pace }, cmd.queued));
       return;
     }
     case 'gather': {
-      const node = game.resource(cmd.nodeId);
-      if (!node) return;
-      for (const u of units) if (u.type === 'worker') startGather(game, u, node);
+      if (!game.resource(cmd.nodeId)) return;
+      for (const u of units) if (u.type === 'worker') give(game, u, { type: 'gather', nodeId: cmd.nodeId }, cmd.queued);
       return;
     }
     case 'returnCargo': {
-      for (const u of units) if (u.type === 'worker') startReturnCargo(game, u, cmd.dropoffId ?? -1);
+      for (const u of units) {
+        if (u.type !== 'worker') continue;
+        u.orderQueue = [];
+        startReturnCargo(game, u, cmd.dropoffId ?? -1);
+      }
       return;
     }
     case 'build': {
@@ -97,36 +97,36 @@ export function applyCommand(game: Game, cmd: Command): void {
         game.emit({ type: 'cantBuild', player: cmd.player, reason: problem, x: cx, y: cy });
         return;
       }
-      // The nearest selected worker goes; the rest keep their orders.
-      const builder = workers.reduce((a, b) => (Math.hypot(a.x - cx, a.y - cy) <= Math.hypot(b.x - cx, b.y - cy) ? a : b));
-      startBuild(game, builder, cmd.buildingType, cmd.tx, cmd.ty);
+      // The nearest selected worker goes; the rest keep their orders. A
+      // queued build goes to a worker already building, so Shift-placed
+      // buildings line up for one builder.
+      const busy = cmd.queued ? workers.filter((u) => u.order?.type === 'build' || u.orderQueue.some((q) => q.type === 'build')) : [];
+      const pool = busy.length ? busy : workers;
+      const builder = pool.reduce((a, b) => (Math.hypot(a.x - cx, a.y - cy) <= Math.hypot(b.x - cx, b.y - cy) ? a : b));
+      give(game, builder, { type: 'build', buildingType: cmd.buildingType, tx: cmd.tx, ty: cmd.ty }, cmd.queued);
       return;
     }
     case 'resumeBuild': {
       const site = game.building(cmd.buildingId);
       if (!site) return;
-      for (const u of units) if (u.type === 'worker') resumeBuild(game, u, site);
+      for (const u of units) {
+        if (u.type !== 'worker') continue;
+        u.orderQueue = [];
+        resumeBuild(game, u, site);
+      }
       return;
     }
     case 'attack': {
       const t = game.get(cmd.targetId);
       if (!targetable(t) || !isEnemy(game, cmd.player, t.owner) || !game.vision.knows(cmd.player, t)) return;
-      for (const u of units) {
-        if (!canAttack(u)) continue;
-        releaseFromNode(game, u);
-        u.order = { type: 'attack', targetId: t.id, auto: false, anchorX: u.x, anchorY: u.y, lastX: t.x, lastY: t.y };
-        u.move = null;
-      }
+      for (const u of units) if (canAttack(u)) give(game, u, { type: 'attack', targetId: t.id }, cmd.queued);
       return;
     }
     case 'attackMove': {
       const fighters = units.filter(canAttack);
       const slots = formationSlots(game, fighters, cmd.x, cmd.y);
-      fighters.forEach((u, i) => {
-        releaseFromNode(game, u);
-        u.order = { type: 'attackMove', x: slots[i].x, y: slots[i].y, targetId: -1 };
-        u.move = null;
-      });
+      const pace = groupPace(fighters);
+      fighters.forEach((u, i) => give(game, u, { type: 'attackMove', x: slots[i].x, y: slots[i].y, pace }, cmd.queued));
       return;
     }
     case 'cast': {
@@ -144,15 +144,12 @@ export function applyCommand(game: Game, cmd: Command): void {
       return;
     }
     case 'hold': {
-      for (const u of units) {
-        releaseFromNode(game, u);
-        u.order = { type: 'hold', targetId: -1 };
-        u.move = null;
-      }
+      for (const u of units) give(game, u, { type: 'hold' }, cmd.queued);
       return;
     }
     case 'stop': {
       for (const u of units) {
+        u.orderQueue = [];
         releaseFromNode(game, u);
         u.order = null;
         u.move = null;
@@ -160,6 +157,68 @@ export function applyCommand(game: Game, cmd: Command): void {
       return;
     }
   }
+}
+
+/**
+ * Give a unit an instruction: now (replacing its order and clearing its
+ * queue), or, when Shift-queued and it is busy, after everything already queued.
+ */
+function give(game: Game, u: Unit, q: QueuedOrder, queued = false): void {
+  if (queued && (u.order !== null || u.orderQueue.length > 0)) {
+    u.orderQueue.push(q);
+    return;
+  }
+  u.orderQueue = [];
+  applyQueued(game, u, q);
+}
+
+/** Turn an instruction into the unit's current order. */
+export function applyQueued(game: Game, u: Unit, q: QueuedOrder): void {
+  switch (q.type) {
+    case 'move':
+      releaseFromNode(game, u);
+      u.order = { type: 'move', x: q.x, y: q.y, pace: q.pace };
+      u.move = null;
+      return;
+    case 'attackMove':
+      releaseFromNode(game, u);
+      u.order = { type: 'attackMove', x: q.x, y: q.y, targetId: -1, pace: q.pace };
+      u.move = null;
+      return;
+    case 'attack': {
+      const t = game.get(q.targetId);
+      if (!targetable(t) || !isEnemy(game, u.owner, t.owner) || !game.vision.knows(u.owner, t)) return; // gone by now
+      releaseFromNode(game, u);
+      u.order = { type: 'attack', targetId: t.id, auto: false, anchorX: u.x, anchorY: u.y, lastX: t.x, lastY: t.y };
+      u.move = null;
+      return;
+    }
+    case 'gather': {
+      const node = game.resource(q.nodeId);
+      if (node) startGather(game, u, node);
+      return;
+    }
+    case 'build':
+      startBuild(game, u, q.buildingType, q.tx, q.ty);
+      return;
+    case 'hold':
+      releaseFromNode(game, u);
+      u.order = { type: 'hold', targetId: -1 };
+      u.move = null;
+      return;
+  }
+}
+
+/**
+ * A compact group ordered together marches at its slowest member's speed so
+ * it arrives together; a scattered selection (or a lone unit) is not slowed.
+ */
+export function groupPace(units: Unit[]): number | undefined {
+  if (units.length < 2) return undefined;
+  const cx = units.reduce((s, u) => s + u.x, 0) / units.length;
+  const cy = units.reduce((s, u) => s + u.y, 0) / units.length;
+  if (units.some((u) => Math.hypot(u.x - cx, u.y - cy) > CONFIG.movement.groupRadius)) return undefined;
+  return Math.min(...units.map((u) => CONFIG.units[u.type].speed));
 }
 
 const SLOT_SPACING = 0.75;

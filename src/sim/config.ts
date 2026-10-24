@@ -269,7 +269,7 @@ export const CONFIG = {
       popProvided: 10,
       accepts: ['gold', 'wood'] as const,
       cost: { gold: 385, wood: 205 },
-      buildSeconds: 60,
+      buildSeconds: 110,
       hotkey: 'K',
       attack: null,
     },
@@ -427,6 +427,8 @@ export const CONFIG = {
         thinkSeconds: 2.0,
         workerTarget: 11,
         barracksAtWorkers: 9,
+        /** Workers before it adds Barracks beyond the first (up to maxBarracks). */
+        extraBarracksAtWorkers: 11,
         maxBarracks: 1,
         towers: 0,
         archerShare: 0.25,
@@ -449,6 +451,7 @@ export const CONFIG = {
         thinkSeconds: 1.0,
         workerTarget: 12,
         barracksAtWorkers: 8,
+        extraBarracksAtWorkers: 11,
         maxBarracks: 2,
         towers: 1,
         archerShare: 0.4,
@@ -466,6 +469,7 @@ export const CONFIG = {
         thinkSeconds: 0.5,
         workerTarget: 13,
         barracksAtWorkers: 7,
+        extraBarracksAtWorkers: 11,
         maxBarracks: 2,
         towers: 1,
         archerShare: 0.4,
@@ -485,6 +489,10 @@ export const CONFIG = {
     goldWorkersPerMine: 5,
     /** A wave falls back when reduced to this share of its launch size. */
     retreatShare: 0.35,
+    /** How long (seconds) it remembers enemy soldiers it saw. */
+    armyMemorySeconds: 120,
+    /** Waves route this far (tiles) around neutral camps they know of. */
+    campClearance: 9,
     /** Spare population it keeps ahead of demand before adding a Farm. */
     popBuffer: 4,
     /** Wood banked beyond this while gold-starved means: expand now. */
@@ -545,6 +553,8 @@ export const CONFIG = {
     /** Ticks without progress before a moving unit re-plans its path. */
     stuckTicks: 12,
     maxRepaths: 4,
+    /** Units within this distance (tiles) of their group's centre march together at the slowest one's pace. */
+    groupRadius: 5,
   },
 } as const;
 

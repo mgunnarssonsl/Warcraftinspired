@@ -83,12 +83,12 @@ export class Screens {
         <div>
           <h3>Controls</h3>
           <ul>
-            <li><b>Left-click / drag</b> select, <b>right-click</b> to act</li>
+            <li><b>Left-click / drag</b> select, <b>right-click</b> to act, <b>Shift</b> to queue orders</li>
             <li><b>A</b> attack-move, <b>H</b> hold, <b>S</b> stop</li>
             <li>With a Laborer: <b>F</b>arm, <b>B</b>arracks, <b>L</b>umber Mill, <b>T</b>ower</li>
             <li>With a Keep or Barracks: <b>Q</b> / <b>W</b> train</li>
             <li>Hero (<b>F2</b>): <b>Q</b> Stormhammer, <b>W</b> Battle Cry, <b>E</b> Mend</li>
-            <li><b>Arrows</b> or screen edges scroll, <b>wheel</b> zooms</li>
+            <li><b>Right-drag</b> grabs the map, <b>arrows</b> or edges scroll, <b>wheel</b> zooms</li>
             <li><b>F1</b> all controls, <b>F10</b> menu</li>
           </ul>
         </div>

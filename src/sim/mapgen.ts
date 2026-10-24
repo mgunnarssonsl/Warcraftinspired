@@ -41,7 +41,7 @@ const MINES: MinePlacement[] = [
   { tx: 11, ty: 47, amount: CONFIG.mines.small, role: 'small' },
   { tx: 36, ty: 60, amount: CONFIG.mines.natural, role: 'natural' },
   { tx: 8, ty: 25, amount: CONFIG.mines.far, role: 'far' },
-  { tx: 37, ty: 38, amount: CONFIG.mines.center, role: 'center' },
+  { tx: 34, ty: 29, amount: CONFIG.mines.center, role: 'center' }, // off the direct lane between the bases
 ];
 const FORESTS: Array<{ x0: number; y0: number; x1: number; y1: number }> = [
   { x0: 3, y0: 64, x1: 33, y1: 71 }, // south of the base

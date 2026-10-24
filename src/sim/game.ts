@@ -3,7 +3,7 @@
 // AI never mutate state directly; they submit Commands.
 
 import { CONFIG, type BuildingType, type UnitType } from './config';
-import { applyCommand, type Command } from './commands';
+import { applyCommand, applyQueued, type Command } from './commands';
 import { updateCombat, updateCombatOrder } from './combat';
 import { checkOutcome } from './outcome';
 import { updateCast, updateStatus } from './hero';
@@ -34,6 +34,8 @@ export const NEUTRAL_COLOR = '#8a5a2b';
 const CAMPS: Partial<Record<keyof typeof CONFIG.mines, UnitType[]>> = {
   center: ['chief', 'brigand', 'poacher'],
   far: ['brigand', 'poacher'],
+  // Even the natural expansion must be cleared first: no free second mine.
+  natural: ['brigand', 'poacher'],
 };
 
 export class Game {
@@ -292,6 +294,7 @@ export class Game {
       radius: def.radius,
       facing: Math.PI / 2,
       order: null,
+      orderQueue: [],
       move: null,
       carry: { res: null, amount: 0 },
       hidden: false,
@@ -386,6 +389,8 @@ export class Game {
         u.stun--;
         continue;
       }
+      // The current order finished: start the next Shift-queued one.
+      while (u.order === null && u.orderQueue.length) applyQueued(this, u, u.orderQueue.shift()!);
       if (u.order?.type === 'cast') {
         updateCast(this, u, u.order);
       } else if (u.order?.type === 'move') {

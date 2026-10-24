@@ -38,6 +38,7 @@ const computer = new ComputerPlayer(1, difficulty);
 game.player(1).name = `Computer (${difficulty})`;
 hud.onAlert = (x, y) => minimap.ping(x, y, '#ff4a3a', now());
 const objectives = new Objectives(game, client.player);
+objectives.onComplete = (text) => hud.notify(`Objective complete: ${text}`, 'good');
 const screens = new Screens(game, { seed, difficulty }, client.player);
 screens.onClose = () => {
   client.modalOpen = false;
