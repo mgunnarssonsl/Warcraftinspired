@@ -26,6 +26,8 @@ export function emptyGame(width = 32, height = 24): Game {
     projectiles: [],
     outcome: null,
     victoryRules: false,
+    explored: [],
+    starts: [],
   };
   return new Game(state);
 }

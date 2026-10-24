@@ -10,7 +10,7 @@ function match() {
   const k0 = g.addBuilding('hq', 0, 2, 2);
   const k1 = g.addBuilding('hq', 1, 30, 16);
   const u0 = g.addUnit('guard', 0, 10.5, 10.5);
-  const u1 = g.addUnit('guard', 1, 25.5, 10.5);
+  const u1 = g.addUnit('guard', 1, 17.5, 10.5);
   return { g, k0, k1, u0, u1 };
 }
 

@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { BuildingType, UnitType } from '../sim/config';
+import { withFog } from './fog';
 
 const matCache = new Map<string, THREE.MeshStandardMaterial>();
 
@@ -13,13 +14,15 @@ export function mat(color: string | number, opts: { emissive?: number; rough?: n
   const key = `${color}|${opts.emissive ?? ''}|${opts.rough ?? ''}`;
   let m = matCache.get(key);
   if (!m) {
-    m = new THREE.MeshStandardMaterial({
-      color,
-      flatShading: true,
-      roughness: opts.rough ?? 0.85,
-      metalness: 0,
-      emissive: opts.emissive ?? 0x000000,
-    });
+    m = withFog(
+      new THREE.MeshStandardMaterial({
+        color,
+        flatShading: true,
+        roughness: opts.rough ?? 0.85,
+        metalness: 0,
+        emissive: opts.emissive ?? 0x000000,
+      }),
+    );
     matCache.set(key, m);
   }
   return m;
@@ -215,7 +218,7 @@ export function makeMine(): MineParts {
   root.add(mesh(box(0.12, 0.85, 0.12), wood, -0.42, 0.42, 1.2));
   root.add(mesh(box(0.12, 0.85, 0.12), wood, 0.42, 0.42, 1.2));
   root.add(mesh(box(1.1, 0.12, 0.16), wood, 0, 0.88, 1.2));
-  const glow = new THREE.Mesh(new THREE.PlaneGeometry(0.72, 0.78), new THREE.MeshBasicMaterial({ color: '#1b1410' }));
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(0.72, 0.78), withFog(new THREE.MeshBasicMaterial({ color: '#1b1410' })));
   glow.position.set(0, 0.42, 1.17);
   root.add(glow);
   // Cart rails leading out.

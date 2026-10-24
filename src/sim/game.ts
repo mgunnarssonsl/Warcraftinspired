@@ -12,6 +12,7 @@ import { updateGatherer } from './gathering';
 import { generateMap } from './mapgen';
 import { planPath, updateMovement } from './movement';
 import { NavGrid } from './nav';
+import { Vision } from './vision';
 import { emptyStats } from './types';
 import type {
   Building,
@@ -40,9 +41,12 @@ export class Game {
   private pending: Command[] = [];
   private events: GameEvent[] = [];
 
+  vision: Vision;
+
   constructor(state: GameState) {
     this.state = state;
     this.nav = new NavGrid(state);
+    this.vision = new Vision(this);
   }
 
   /** Build the standard skirmish starting state for a seed. */
@@ -73,6 +77,8 @@ export class Game {
       projectiles: [],
       outcome: null,
       victoryRules: true,
+      explored: [],
+      starts: layout.starts.map((s) => ({ x: s.hq.tx + CONFIG.buildings.hq.size / 2, y: s.hq.ty + CONFIG.buildings.hq.size / 2 })),
     };
     const game = new Game(state);
     for (const i of layout.trees) {
@@ -255,6 +261,7 @@ export class Game {
       rally: null,
       cooldown: 0,
       targetId: -1,
+      seenBy: 1 << owner,
     };
     this.state.entities[b.id] = b;
     this.lists = null;
@@ -351,6 +358,7 @@ export class Game {
   }
 
   step(): void {
+    if (this.state.tick % CONFIG.vision.updateTicks === 0) this.vision.recompute();
     const cmds = this.pending;
     this.pending = [];
     for (const c of cmds) applyCommand(this, c);

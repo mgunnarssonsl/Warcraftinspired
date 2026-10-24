@@ -19,6 +19,8 @@ export interface ClientState {
   paused: boolean;
   /** A full-screen panel is open: world input is ignored. */
   modalOpen: boolean;
+  /** Lift the fog for this viewer (after the match, or ?fog=0 for debugging). */
+  revealAll: boolean;
   groups: Record<number, number[]>;
 }
 
@@ -33,6 +35,7 @@ export function createClientState(player: number): ClientState {
     debug: false,
     paused: false,
     modalOpen: false,
+    revealAll: false,
     groups: {},
   };
 }

@@ -124,6 +124,9 @@ export type Order =
       auto: boolean;
       anchorX: number;
       anchorY: number;
+      /** Where the target was last seen (chased into the fog). */
+      lastX: number;
+      lastY: number;
     }
   | {
       type: 'attackMove';
@@ -192,6 +195,8 @@ export interface Building extends EntityBase, Footprint {
   /** Defensive buildings: ticks until the next shot, and current target. */
   cooldown: number;
   targetId: number;
+  /** Bitmask of players who have seen this building (fog of war memory). */
+  seenBy: number;
 }
 
 export interface QueueItem {
@@ -243,6 +248,10 @@ export interface GameState {
   outcome: Outcome | null;
   /** Elimination rules active (skirmishes); off in rule-test sandboxes. */
   victoryRules: boolean;
+  /** Per player, per tile: 1 once ever seen (fog of war). */
+  explored: number[][];
+  /** Starting Keep centre per player: public map knowledge, like any 1v1 map. */
+  starts: Vec[];
 }
 
 export type GameEvent =

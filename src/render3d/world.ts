@@ -12,6 +12,7 @@ import { hash2 } from '../sim/rng';
 import type { Building, Entity, Footprint, GameEvent, ResourceNode, Unit } from '../sim/types';
 import { TERRAIN } from '../sim/types';
 import { CameraRig } from './cameraRig';
+import { FogTexture, withFog } from './fog';
 import { paintGround } from './groundTexture';
 import {
   makeBuilding,
@@ -78,6 +79,10 @@ export class World3D {
   private ghostBad = new THREE.MeshStandardMaterial({ color: '#ff5a4a', emissive: '#6a1f1f', transparent: true, opacity: 0.6, depthWrite: false });
   private previewTiles: THREE.InstancedMesh;
   private pickables: THREE.Object3D[] = [];
+  private fog: FogTexture;
+  /** Whose eyes the view uses, and whether fog is lifted (end of match, debug). */
+  private viewer = 0;
+  private reveal = false;
   private rallyFlag = new THREE.Group();
   private rallyCloth: THREE.Mesh;
   private debugTiles: THREE.InstancedMesh | null = null;
@@ -122,6 +127,7 @@ export class World3D {
     this.sun.shadow.normalBias = 0.03;
     this.scene.add(this.sun, this.sun.target);
 
+    this.fog = new FogTexture(W, H);
     this.buildTerrain();
     this.buildTrees();
 
@@ -171,13 +177,13 @@ export class World3D {
     tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(W, H).rotateX(-Math.PI / 2).translate(W / 2, 0, H / 2),
-      new THREE.MeshStandardMaterial({ map: tex, roughness: 1 }),
+      withFog(new THREE.MeshStandardMaterial({ map: tex, roughness: 1 })),
     );
     ground.receiveShadow = true;
     this.scene.add(ground);
     const outer = new THREE.Mesh(
       new THREE.PlaneGeometry(W * 4, H * 4).rotateX(-Math.PI / 2).translate(W / 2, -0.02, H / 2),
-      new THREE.MeshStandardMaterial({ color: '#2f4424', roughness: 1 }),
+      withFog(new THREE.MeshStandardMaterial({ color: '#2f4424', roughness: 1 })),
     );
     outer.receiveShadow = true;
     this.scene.add(outer);
@@ -195,7 +201,7 @@ export class World3D {
       const geo = mergeGeometries(quads)!;
       const water = new THREE.Mesh(
         geo,
-        new THREE.MeshStandardMaterial({ color: '#3d78a8', transparent: true, opacity: 0.72, roughness: 0.12, metalness: 0.1 }),
+        withFog(new THREE.MeshStandardMaterial({ color: '#3d78a8', transparent: true, opacity: 0.72, roughness: 0.12, metalness: 0.1 })),
       );
       water.receiveShadow = true;
       this.scene.add(water);
@@ -204,7 +210,7 @@ export class World3D {
     // Cliff ridges as clusters of low-poly boulders.
     const rocks = new THREE.InstancedMesh(
       new THREE.IcosahedronGeometry(0.62, 0),
-      new THREE.MeshStandardMaterial({ color: '#ffffff', flatShading: true, roughness: 0.95 }),
+      withFog(new THREE.MeshStandardMaterial({ color: '#ffffff', flatShading: true, roughness: 0.95 })),
       rockSpots.length * 2,
     );
     rocks.castShadow = true;
@@ -234,10 +240,10 @@ export class World3D {
   private buildTrees(): void {
     const trees = this.game.resources().filter((r) => r.type === 'tree');
     const { trunk, canopy } = makeTreeGeometries();
-    this.trunks = new THREE.InstancedMesh(trunk, new THREE.MeshStandardMaterial({ color: '#6b4a2b', flatShading: true }), trees.length);
+    this.trunks = new THREE.InstancedMesh(trunk, withFog(new THREE.MeshStandardMaterial({ color: '#6b4a2b', flatShading: true })), trees.length);
     this.canopies = new THREE.InstancedMesh(
       canopy,
-      new THREE.MeshStandardMaterial({ color: '#ffffff', flatShading: true, roughness: 0.9 }),
+      withFog(new THREE.MeshStandardMaterial({ color: '#ffffff', flatShading: true, roughness: 0.9 })),
       trees.length,
     );
     for (const m of [this.trunks, this.canopies]) {
@@ -320,6 +326,7 @@ export class World3D {
   }
 
   private burst(x: number, h: number, y: number, n: number, color: string, speed: number, now: number): void {
+    if (!this.tileVisible(x, y)) return; // no tell-tale sparks inside the fog
     const c = new THREE.Color(color);
     for (let i = 0; i < n && this.particles.length < MAX_PARTICLES; i++) {
       const a = Math.random() * Math.PI * 2;
@@ -385,7 +392,20 @@ export class World3D {
 
   // ---- per-frame sync ------------------------------------------------------------
 
+  /** Is this entity visible to the viewer (fog of war)? */
+  perceived(e: Entity): boolean {
+    if (this.reveal || e.owner === this.viewer || e.kind === 'resource') return true;
+    return e.kind === 'unit' ? this.game.vision.canSee(this.viewer, e) : this.game.vision.knows(this.viewer, e);
+  }
+
+  private tileVisible(x: number, y: number): boolean {
+    return this.reveal || this.game.vision.isVisible(this.viewer, Math.floor(x), Math.floor(y));
+  }
+
   render(client: ClientState, alpha: number, now: number): void {
+    this.viewer = client.player;
+    this.reveal = client.revealAll;
+    this.fog.update(this.reveal ? null : this.game.vision.grid(this.viewer), this.game.state.explored[this.viewer] ?? null);
     const game = this.game;
     const seen = new Set<number>();
     for (const e of Object.values(game.state.entities)) {
@@ -499,6 +519,7 @@ export class World3D {
     let i = 0;
     for (const p of ps) {
       if (i >= 200) break;
+      if (!this.tileVisible(p.x, p.y)) continue;
       const x = p.px + (p.x - p.px) * alpha;
       const y = p.py + (p.y - p.py) * alpha;
       this.p.set(x, 0.85, y);
@@ -523,8 +544,8 @@ export class World3D {
       this.units.set(u.id, v);
       this.scene.add(v.root);
     }
-    v.root.visible = !u.hidden;
-    if (u.hidden) return;
+    v.root.visible = !u.hidden && this.perceived(u);
+    if (!v.root.visible) return;
     const x = u.px + (u.x - u.px) * alpha;
     const y = u.py + (u.y - u.py) * alpha;
     v.root.position.set(x, 0, y);
@@ -570,6 +591,7 @@ export class World3D {
       this.scene.add(v.root);
       this.pickables.push(v.root);
     }
+    v.root.visible = this.perceived(b);
     const done = b.progress >= 1;
     v.scaffold.visible = !done;
     v.model.scale.y = done ? 1 : 0.08 + 0.92 * b.progress;
@@ -679,7 +701,7 @@ export class World3D {
     let best: Unit | undefined;
     let bestD = Infinity;
     for (const u of this.game.units()) {
-      if (u.hidden) continue;
+      if (u.hidden || !this.perceived(u)) continue;
       const c = rig.project(u.x, u.y, 0.5);
       if (!c.visible) continue;
       const edge = rig.project(u.x, u.y, 1.0);
@@ -703,7 +725,7 @@ export class World3D {
         const id = o.userData.entityId as number | undefined;
         if (id !== undefined) {
           const e = this.game.get(id);
-          if (e) return e;
+          if (e && this.perceived(e)) return e;
           break;
         }
       }
@@ -715,7 +737,8 @@ export class World3D {
       const ty = Math.floor(g.y);
       if (nav.inBounds(tx, ty)) {
         const id = nav.entityAt[ty * nav.w + tx];
-        if (id) return this.game.get(id);
+        const e = id ? this.game.get(id) : undefined;
+        if (e && this.perceived(e)) return e;
       }
     }
     return undefined;

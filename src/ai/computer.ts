@@ -2,9 +2,10 @@
 // pays the same costs and obeys the same rules; difficulty changes only its
 // decision timing and priorities (CONFIG.ai.profiles).
 //
-// Information: it reads the game state directly. There is no fog of war yet,
-// so this is the same information the human sees on screen and minimap. When
-// fog arrives (Milestone 5) `visible()` is the single place to restrict it.
+// Information: under the same fog of war as the human. It knows enemy units
+// it can currently see, enemy buildings it has seen, neutral camps it has
+// spotted (remembered), and the public start locations. All of it goes
+// through `visible()` and `campsSeen`.
 //
 // Its loop, every think interval:
 //   economy  - keep Keeps training Laborers, ~5 per mine on gold, the rest on wood
@@ -53,11 +54,31 @@ export class ComputerPlayer {
     this.think(game);
   }
 
-  /** Enemy entities this player may know about (everything until fog of war). */
+  /** Search points a wave has already visited without finding anything. */
+  private searched = new Set<string>();
+
+  private searchSpots(game: Game): Array<{ x: number; y: number }> {
+    const spots: Array<{ x: number; y: number }> = [];
+    game.state.starts.forEach((s, p) => {
+      if (p !== this.player && !game.player(p).neutral && !game.player(p).defeated) spots.push(s);
+    });
+    for (const m of game.resources()) if (m.type === 'goldmine') spots.push({ x: m.x, y: m.y });
+    return spots;
+  }
+
+  /** Neutral guards it has spotted: places not to send a lone builder. */
+  private campsSeen: Array<{ x: number; y: number }> = [];
+
+  /** Enemy units it sees now, and enemy buildings it has seen. */
   private visible(game: Game): Array<Unit | Building> {
     const out: Array<Unit | Building> = [];
-    for (const u of game.units()) if (isEnemy(game, this.player, u.owner) && !u.hidden) out.push(u);
-    for (const b of game.buildings()) if (isEnemy(game, this.player, b.owner)) out.push(b);
+    const v = game.vision;
+    for (const u of game.units()) if (isEnemy(game, this.player, u.owner) && !u.hidden && v.canSee(this.player, u)) out.push(u);
+    for (const b of game.buildings()) if (isEnemy(game, this.player, b.owner) && v.knows(this.player, b)) out.push(b);
+    for (const u of out) {
+      if (u.kind !== 'unit' || !game.player(u.owner).neutral || !u.home) continue;
+      if (!this.campsSeen.some((c) => dist(c, u.home!) < 4)) this.campsSeen.push({ ...u.home });
+    }
     return out;
   }
 
@@ -205,7 +226,7 @@ export class ComputerPlayer {
   private expansionMine(game: Game, buildings: Building[]): ResourceNode | undefined {
     const home = buildings.find((b) => b.type === 'hq') ?? buildings[0];
     if (!home) return undefined;
-    const hostiles = this.visible(game).filter((e) => e.kind === 'unit');
+    const hostiles = [...this.visible(game).filter((e) => e.kind === 'unit'), ...this.campsSeen];
     return game
       .resources()
       .filter((m) => m.type === 'goldmine' && m.amount > 2000)
@@ -365,7 +386,18 @@ export class ComputerPlayer {
     const idleWave = waveUnits.filter((u) => u.order === null || u.order.type === 'move');
     if (!idleWave.length) return;
     const c = centroid(waveUnits);
-    const targets = enemies.filter((e) => e.kind === 'building' && !game.player(e.owner).neutral);
+    const targets: Array<{ x: number; y: number }> = enemies.filter((e) => e.kind === 'building' && !game.player(e.owner).neutral);
+    // No known enemy building: search. Start locations first, then mine
+    // sites (where expansions go), skipping places a wave already checked.
+    if (!targets.length) {
+      for (const u of waveUnits) for (const p of this.searchSpots(game)) if (dist(u, p) < 5) this.searched.add(`${p.x},${p.y}`);
+      let spots = this.searchSpots(game).filter((p) => !this.searched.has(`${p.x},${p.y}`));
+      if (!spots.length) {
+        this.searched.clear();
+        spots = this.searchSpots(game);
+      }
+      targets.push(...spots);
+    }
     if (!targets.length) return;
     const t = targets.reduce((a, b) => (dist(b, c) < dist(a, c) ? b : a));
     this.lastWaveOrder = now;

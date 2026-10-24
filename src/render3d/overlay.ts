@@ -22,6 +22,8 @@ const WOOD = '#d9b07a';
 export class Overlay {
   private ctx: CanvasRenderingContext2D;
   private floats: FloatText[] = [];
+  /** Fog-of-war filter supplied by the 3D view. */
+  perceived: (e: import('../sim/types').Entity) => boolean = () => true;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -71,6 +73,7 @@ export class Overlay {
     const selected = new Set(client.selected);
 
     for (const e of Object.values(game.state.entities)) {
+      if (!this.perceived(e)) continue;
       if (e.kind === 'unit') {
         // Selected or wounded units show health, so fights stay readable.
         if (e.hidden || (!selected.has(e.id) && e.hp >= e.maxHp)) continue;

@@ -46,6 +46,8 @@ export class Minimap {
     return { x: ((clientX - r.left) / r.width) * width, y: ((clientY - r.top) / r.height) * height };
   }
 
+  private fogCanvas: HTMLCanvasElement | null = null;
+
   draw(rig: CameraRig, client: ClientState, now: number): void {
     const ctx = this.canvas.getContext('2d')!;
     const { width: W, height: H, terrain } = this.game.state.map;
@@ -66,7 +68,12 @@ export class Minimap {
     }
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(this.base, 0, 0, this.canvas.width, this.canvas.height);
+    const vision = this.game.vision;
+    const me = client.player;
+    const seen = (e: import('../sim/types').Entity) =>
+      client.revealAll || e.owner === me || (e.kind === 'unit' ? vision.canSee(me, e) : e.kind === 'building' ? vision.knows(me, e) : true);
     for (const e of Object.values(this.game.state.entities)) {
+      if (!seen(e)) continue;
       if (e.kind === 'resource') {
         ctx.fillStyle = e.type === 'tree' ? '#1f4526' : '#ffd84a';
         ctx.fillRect(e.tx * sx, e.ty * sy, Math.max(1, e.w * sx), Math.max(1, e.h * sy));
@@ -80,6 +87,22 @@ export class Minimap {
         ctx.fillStyle = client.selected.includes(e.id) ? '#ffffff' : this.game.player(e.owner).color;
         ctx.fillRect(e.x * sx - 1.5, e.y * sy - 1.5, 3, 3);
       }
+    }
+    // Fog: black where never explored, dimmed where not currently visible.
+    if (!client.revealAll) {
+      if (!this.fogCanvas) {
+        this.fogCanvas = document.createElement('canvas');
+        this.fogCanvas.width = W;
+        this.fogCanvas.height = H;
+      }
+      const fctx = this.fogCanvas.getContext('2d')!;
+      const img = fctx.createImageData(W, H);
+      const vis = vision.grid(me);
+      const exp = this.game.state.explored[me] ?? [];
+      for (let i = 0; i < W * H; i++) img.data[i * 4 + 3] = vis[i] ? 0 : exp[i] ? 110 : 235;
+      fctx.putImageData(img, 0, 0);
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(this.fogCanvas, 0, 0, this.canvas.width, this.canvas.height);
     }
     // Camera view: the ground trapezoid under the screen corners.
     const corners = [

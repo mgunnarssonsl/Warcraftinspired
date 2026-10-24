@@ -18,7 +18,7 @@ describe('damage and death', () => {
   it('an ordered melee attack chases, hits on the wind-up, and kills', () => {
     const g = emptyGame(30, 20);
     const a = g.addUnit('guard', 0, 4.5, 10.5);
-    const b = g.addUnit('worker', 1, 14.5, 10.5);
+    const b = g.addUnit('worker', 1, 11.5, 10.5); // within sight: fog hides anything further
     g.issue({ type: 'attack', player: 0, units: [a.id], targetId: b.id });
     const events: GameEvent[] = [];
     runUntil(g, () => (events.push(...g.drainEvents()), !g.unit(b.id)), 20 * 60);
@@ -87,7 +87,7 @@ describe('damage and death', () => {
   it('destroying a building frees its tiles and refunds its queue', () => {
     const g = emptyGame(30, 20);
     g.player(1).gold = 1000;
-    const rax = g.addBuilding('barracks', 1, 15, 8);
+    const rax = g.addBuilding('barracks', 1, 11, 8);
     g.issue({ type: 'train', player: 1, buildingId: rax.id, unit: 'guard' });
     g.step();
     expect(g.player(1).gold).toBe(1000 - GUARD.cost.gold);
@@ -97,7 +97,7 @@ describe('damage and death', () => {
     runUntil(g, () => (events.push(...g.drainEvents()), !g.building(rax.id)), 20 * 120);
     expect(events.some((e) => e.type === 'buildingDestroyed')).toBe(true);
     expect(g.player(1).gold).toBe(1000);
-    expect(g.nav.passable(16, 9)).toBe(true);
+    expect(g.nav.passable(12, 9)).toBe(true);
   });
 });
 
@@ -212,7 +212,7 @@ describe('orders and automatic behaviour', () => {
     for (let y = 0; y < 16; y++) setRock(g, 15, y);
     g = rebuild(g);
     const a = g.addUnit('guard', 0, 10.5, 5.5);
-    const b = g.addUnit('worker', 1, 20.5, 5.5);
+    const b = g.addUnit('worker', 1, 17.5, 5.5);
     g.issue({ type: 'attack', player: 0, units: [a.id], targetId: b.id });
     runUntil(g, () => !g.unit(b.id), 20 * 60);
   });

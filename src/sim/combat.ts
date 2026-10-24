@@ -65,7 +65,7 @@ export function findTarget(game: Game, u: Unit, range: number): Target | undefin
     for (const e of list) consider(e);
   };
   const consider = (e: Target) => {
-    if (!isEnemy(game, u.owner, e.owner) || !targetable(e)) return;
+    if (!isEnemy(game, u.owner, e.owner) || !targetable(e) || !game.vision.canSee(u.owner, e)) return;
     const d = gap(u, e);
     if (d > range) return;
     const tier = e.kind === 'unit' ? (canAttack(e) ? 0 : 1) : 2;
@@ -90,7 +90,7 @@ function targetOf(o: Order | null): number {
 /** Order an automatic engagement, remembering where to come back to. */
 export function engage(u: Unit, target: Target): void {
   const anchor = u.home ?? { x: u.x, y: u.y };
-  u.order = { type: 'attack', targetId: target.id, auto: true, anchorX: anchor.x, anchorY: anchor.y };
+  u.order = { type: 'attack', targetId: target.id, auto: true, anchorX: anchor.x, anchorY: anchor.y, lastX: target.x, lastY: target.y };
   u.move = null;
 }
 
@@ -100,7 +100,8 @@ export function engage(u: Unit, target: Target): void {
  */
 function fight(game: Game, u: Unit, targetId: number, mayMove: boolean): boolean {
   const t = game.get(targetId);
-  if (!targetable(t) || !isEnemy(game, u.owner, t.owner)) return false;
+  // Units out of sight are lost; buildings, once seen, stay known.
+  if (!targetable(t) || !isEnemy(game, u.owner, t.owner) || !game.vision.knows(u.owner, t)) return false;
   const def = attackDef(u);
   const d = gap(u, t);
   if (d <= def.range) {
@@ -150,6 +151,17 @@ export function updateCombatOrder(game: Game, u: Unit): void {
     if (o.auto) {
       const leash = u.home ? CONFIG.combat.campLeash : CONFIG.combat.leash;
       if (Math.hypot(u.x - o.anchorX, u.y - o.anchorY) > leash) return returnTo(u, o.anchorX, o.anchorY);
+    }
+    const t = game.get(o.targetId);
+    if (t?.kind === 'unit' && targetable(t) && isEnemy(game, u.owner, t.owner)) {
+      if (game.vision.canSee(u.owner, t)) {
+        o.lastX = t.x;
+        o.lastY = t.y;
+      } else if (!o.auto && Math.hypot(u.x - o.lastX, u.y - o.lastY) > 1) {
+        // Ordered pursuit: head for where the target was last seen.
+        if (!u.move || u.move.state !== 'moving') game.moveTo(u, { kind: 'point', x: o.lastX, y: o.lastY });
+        return;
+      }
     }
     if (fight(game, u, o.targetId, true)) return;
     // Target gone: auto-engaged units look for the next one nearby, then go home.
@@ -281,7 +293,7 @@ function towerTarget(game: Game, b: Building, range: number): Target | undefined
   let best: Target | undefined;
   let bestD = Infinity;
   for (const u of game.units()) {
-    if (!isEnemy(game, b.owner, u.owner) || !targetable(u)) continue;
+    if (!isEnemy(game, b.owner, u.owner) || !targetable(u) || !game.vision.canSee(b.owner, u)) continue;
     const d = towerGap(b, u);
     if (d <= range && d < bestD) {
       bestD = d;

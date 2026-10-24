@@ -24,6 +24,8 @@ export const CONFIG = {
       hp: 220,
       speed: 3.0, // tiles per second
       radius: 0.3, // tiles
+      /** Vision radius in tiles. */
+      sight: 8,
       pop: 1,
       carryGold: 10,
       carryWood: 10,
@@ -46,6 +48,8 @@ export const CONFIG = {
       hp: 420,
       speed: 2.7,
       radius: 0.35,
+      /** Vision radius in tiles. */
+      sight: 8,
       pop: 2,
       cost: { gold: 135, wood: 0 },
       trainSeconds: 20,
@@ -60,6 +64,8 @@ export const CONFIG = {
       hp: 260,
       speed: 2.9,
       radius: 0.3,
+      /** Vision radius in tiles. */
+      sight: 9,
       pop: 2,
       cost: { gold: 130, wood: 10 },
       trainSeconds: 18,
@@ -76,6 +82,8 @@ export const CONFIG = {
       hp: 300,
       speed: 2.6,
       radius: 0.35,
+      /** Vision radius in tiles. */
+      sight: 7,
       pop: 0,
       cost: { gold: 0, wood: 0 },
       trainSeconds: 0,
@@ -90,6 +98,8 @@ export const CONFIG = {
       hp: 200,
       speed: 2.6,
       radius: 0.3,
+      /** Vision radius in tiles. */
+      sight: 8,
       pop: 0,
       cost: { gold: 0, wood: 0 },
       trainSeconds: 0,
@@ -99,6 +109,14 @@ export const CONFIG = {
       armor: 0,
       attack: { damage: 10, range: 5, cooldown: 1.7, windup: 0.5, acquire: 6, projectileSpeed: 11 },
     },
+  },
+
+  vision: {
+    /** Ticks between visibility updates. 1 keeps save/load exact: a loaded game
+     *  rebuilds visibility from the same positions the original used. */
+    updateTicks: 1,
+    /** Unfinished buildings see only this far. */
+    foundationSight: 4,
   },
 
   combat: {
@@ -138,6 +156,7 @@ export const CONFIG = {
       name: 'Keep',
       hp: 1500,
       size: 4,
+      sight: 10,
       popProvided: 10,
       accepts: ['gold', 'wood'] as const,
       cost: { gold: 385, wood: 205 },
@@ -149,6 +168,7 @@ export const CONFIG = {
       name: 'Farm',
       hp: 400,
       size: 2,
+      sight: 6,
       popProvided: 6,
       accepts: [] as const,
       cost: { gold: 80, wood: 20 },
@@ -160,6 +180,7 @@ export const CONFIG = {
       name: 'Barracks',
       hp: 1000,
       size: 3,
+      sight: 7,
       popProvided: 0,
       accepts: [] as const,
       cost: { gold: 160, wood: 60 },
@@ -171,6 +192,7 @@ export const CONFIG = {
       name: 'Lumber Mill',
       hp: 600,
       size: 3,
+      sight: 7,
       popProvided: 0,
       accepts: ['wood'] as const,
       cost: { gold: 120, wood: 0 },
@@ -182,6 +204,7 @@ export const CONFIG = {
       name: 'Watch Tower',
       hp: 500,
       size: 2,
+      sight: 11,
       popProvided: 0,
       accepts: [] as const,
       cost: { gold: 110, wood: 80 },

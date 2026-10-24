@@ -28,6 +28,8 @@ const game = Game.create(seed);
 const client = createClientState(0);
 const world = new World3D(canvas, game);
 const overlay = new Overlay(overlayCanvas, game, world.rig);
+overlay.perceived = (e) => world.perceived(e);
+if (params.get('fog') === '0') client.revealAll = true;
 const minimap = new Minimap(minimapCanvas, game);
 const now = () => performance.now() / 1000;
 const input = new InputController(canvas, game, world, client, minimap, now);
@@ -37,7 +39,11 @@ game.player(1).name = `Computer (${difficulty})`;
 hud.onAlert = (x, y) => minimap.ping(x, y, '#ff4a3a', now());
 const objectives = new Objectives(game, client.player);
 const screens = new Screens(game, { seed, difficulty }, client.player);
-screens.onClose = () => (client.modalOpen = false);
+screens.onClose = () => {
+  client.modalOpen = false;
+  // After the match, "Keep watching" lifts the fog so the whole map can be seen.
+  if (game.state.outcome) client.revealAll = true;
+};
 screens.onSurrender = () => game.issue({ type: 'surrender', player: client.player });
 document.getElementById('subtitle')!.textContent = `skirmish vs ${difficulty} computer`;
 const openMenu = () => {

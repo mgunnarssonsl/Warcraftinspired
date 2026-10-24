@@ -192,8 +192,16 @@ export class Hud {
         if (now - this.lastAlert.t > 10000 || (far && now - this.lastAlert.t > 3000)) {
           this.lastAlert = { t: now, x: e.x, y: e.y };
           const victim = this.game.get(e.id);
-          const civil = !victim || victim.kind === 'building' || victim.type === 'worker';
-          this.notify(civil ? 'Your base is under attack! (Space: jump there)' : 'Your forces are under attack! (Space: jump there)', 'alert');
+          const atBase = this.game
+            .buildings()
+            .some((b) => b.owner === this.client.player && Math.hypot(b.x - e.x, b.y - e.y) < 15);
+          const what =
+            atBase && (!victim || victim.kind === 'building' || victim.type === 'worker')
+              ? 'Your base is'
+              : victim?.kind === 'unit' && victim.type === 'worker'
+                ? 'A Laborer is'
+                : 'Your forces are';
+          this.notify(`${what} under attack! (Space: jump there)`, 'alert');
           this.onAlert(e.x, e.y);
         }
         continue;
@@ -235,8 +243,13 @@ export class Hud {
     setText(this.idleCount, String(idle));
     this.idleBtn.classList.toggle('none', idle === 0);
 
-    // Prune dead entities from the selection.
-    const alive = this.client.selected.filter((id) => this.game.get(id));
+    // Prune dead entities, and enemies that slipped into the fog, from the selection.
+    const alive = this.client.selected.filter((id) => {
+      const e = this.game.get(id);
+      if (!e) return false;
+      if (this.client.revealAll || e.owner === this.client.player || e.kind === 'resource') return true;
+      return e.kind === 'unit' ? this.game.vision.canSee(this.client.player, e) : this.game.vision.knows(this.client.player, e);
+    });
     if (alive.length !== this.client.selected.length) {
       this.client.selected = alive;
       this.panelDirty = true;

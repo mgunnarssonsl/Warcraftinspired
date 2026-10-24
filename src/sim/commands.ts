@@ -104,11 +104,11 @@ export function applyCommand(game: Game, cmd: Command): void {
     }
     case 'attack': {
       const t = game.get(cmd.targetId);
-      if (!targetable(t) || !isEnemy(game, cmd.player, t.owner)) return;
+      if (!targetable(t) || !isEnemy(game, cmd.player, t.owner) || !game.vision.knows(cmd.player, t)) return;
       for (const u of units) {
         if (!canAttack(u)) continue;
         releaseFromNode(game, u);
-        u.order = { type: 'attack', targetId: t.id, auto: false, anchorX: u.x, anchorY: u.y };
+        u.order = { type: 'attack', targetId: t.id, auto: false, anchorX: u.x, anchorY: u.y, lastX: t.x, lastY: t.y };
         u.move = null;
       }
       return;
