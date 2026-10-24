@@ -21,6 +21,8 @@ export function emptyGame(width = 32, height = 24): Game {
       neutral: false,
       defeated: false,
       stats: emptyStats(),
+      research: {},
+      hero: null,
     })),
     entities: {},
     projectiles: [],

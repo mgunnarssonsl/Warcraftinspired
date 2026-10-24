@@ -5,6 +5,7 @@
 
 import { CONFIG, secondsToTicks } from './config';
 import type { Game } from './game';
+import { woodCarry } from './tech';
 import { atRect, closestAround, distToRect } from './movement';
 import type { Building, Order, ResourceKind, ResourceNode, Unit } from './types';
 
@@ -14,10 +15,9 @@ export function nodeResource(node: ResourceNode): ResourceKind {
   return node.type === 'goldmine' ? 'gold' : 'wood';
 }
 
-/** Worker carry limits (the unit argument keeps call sites unit-specific for later). */
-export function carryCapacity(_u: Unit, res: ResourceKind): number {
-  const def = CONFIG.units.worker;
-  return res === 'gold' ? def.carryGold : def.carryWood;
+/** Worker carry limits; Bow Saws raise the wood load. */
+export function carryCapacity(game: Game, u: Unit, res: ResourceKind): number {
+  return res === 'wood' ? woodCarry(game, u.owner) : CONFIG.units.worker.carryGold;
 }
 
 function rectGoal(f: { tx: number; ty: number; w: number; h: number }) {
@@ -58,7 +58,7 @@ export function startGather(game: Game, u: Unit, node: ResourceNode): void {
   };
   // Deliver incompatible or complete loads first. Gold always comes in whole loads.
   const c = u.carry;
-  if (c.amount > 0 && (c.res !== res || res === 'gold' || c.amount >= carryCapacity(u, res))) {
+  if (c.amount > 0 && (c.res !== res || res === 'gold' || c.amount >= carryCapacity(game, u, res))) {
     o.phase = 'toDropoff';
     o.res = c.res!;
   }
@@ -154,7 +154,7 @@ function retarget(game: Game, u: Unit, o: GatherOrder, excludeId = -1): Resource
       o.nodeId = t.id;
       o.lastX = t.x;
       o.lastY = t.y;
-      o.phase = u.carry.amount >= carryCapacity(u, 'wood') ? 'toDropoff' : 'toNode';
+      o.phase = u.carry.amount >= carryCapacity(game, u, 'wood') ? 'toDropoff' : 'toNode';
       u.move = null;
       return t;
     }
@@ -250,7 +250,7 @@ export function updateGatherer(game: Game, u: Unit, o: GatherOrder): void {
       const node = game.resource(o.nodeId);
       if (o.res === 'gold') {
         if (--o.timer > 0) return;
-        const take = node ? Math.min(carryCapacity(u, 'gold'), node.amount) : 0;
+        const take = node ? Math.min(carryCapacity(game, u, 'gold'), node.amount) : 0;
         u.hidden = false;
         if (node) {
           node.amount -= take;
@@ -271,7 +271,7 @@ export function updateGatherer(game: Game, u: Unit, o: GatherOrder): void {
         return;
       }
       if (--o.timer > 0) return;
-      const cap = carryCapacity(u, 'wood');
+      const cap = carryCapacity(game, u, 'wood');
       if (u.carry.res !== 'wood') u.carry = { res: 'wood', amount: 0 };
       const take = Math.min(CONFIG.units.worker.woodPerChop, node.amount, cap - u.carry.amount);
       u.carry.amount += take;

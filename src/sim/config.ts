@@ -40,6 +40,9 @@ export const CONFIG = {
       requires: null,
       hotkey: 'Q',
       armor: 0,
+      /** Experience granted to the killer's nearby hero, and gold bounty to the killer. */
+      xp: 15,
+      bounty: 0,
       // Laborers fight only when ordered to (acquire 0: no auto-targeting).
       attack: { damage: 6, range: 0.4, cooldown: 1.6, windup: 0.45, acquire: 0, projectileSpeed: 0 },
     },
@@ -57,6 +60,9 @@ export const CONFIG = {
       requires: null,
       hotkey: 'Q',
       armor: 2,
+      /** Experience granted to the killer's nearby hero, and gold bounty to the killer. */
+      xp: 35,
+      bounty: 0,
       attack: { damage: 14, range: 0.45, cooldown: 1.3, windup: 0.4, acquire: 6, projectileSpeed: 0 },
     },
     archer: {
@@ -74,6 +80,9 @@ export const CONFIG = {
       requires: 'lumbermill',
       hotkey: 'W',
       armor: 0,
+      /** Experience granted to the killer's nearby hero, and gold bounty to the killer. */
+      xp: 35,
+      bounty: 0,
       attack: { damage: 13, range: 5.5, cooldown: 1.5, windup: 0.45, acquire: 7, projectileSpeed: 12 },
     },
     // Hostile neutrals that guard expansions. Not trainable by anyone.
@@ -91,6 +100,9 @@ export const CONFIG = {
       requires: null,
       hotkey: '',
       armor: 1,
+      /** Experience granted to the killer's nearby hero, and gold bounty to the killer. */
+      xp: 40,
+      bounty: 25,
       attack: { damage: 11, range: 0.45, cooldown: 1.4, windup: 0.4, acquire: 5, projectileSpeed: 0 },
     },
     poacher: {
@@ -107,7 +119,104 @@ export const CONFIG = {
       requires: null,
       hotkey: '',
       armor: 0,
+      /** Experience granted to the killer's nearby hero, and gold bounty to the killer. */
+      xp: 30,
+      bounty: 20,
       attack: { damage: 10, range: 5, cooldown: 1.7, windup: 0.5, acquire: 6, projectileSpeed: 11 },
+    },
+    chief: {
+      name: 'Brigand Chief',
+      hp: 650,
+      speed: 2.6,
+      radius: 0.45,
+      sight: 8,
+      pop: 0,
+      cost: { gold: 0, wood: 0 },
+      trainSeconds: 0,
+      trainedAt: null,
+      requires: null,
+      hotkey: '',
+      armor: 3,
+      xp: 90,
+      bounty: 60,
+      attack: { damage: 20, range: 0.5, cooldown: 1.6, windup: 0.45, acquire: 6, projectileSpeed: 0 },
+    },
+    hero: {
+      name: 'Marshal',
+      hp: 650,
+      speed: 3.0,
+      radius: 0.4,
+      sight: 10,
+      pop: 3,
+      cost: { gold: 250, wood: 50 },
+      trainSeconds: 30,
+      trainedAt: 'altar',
+      requires: null,
+      hotkey: 'Q',
+      armor: 3,
+      xp: 0, // a slain hero is worth CONFIG.hero.killXpPerLevel x level
+      bounty: 0,
+      attack: { damage: 22, range: 0.5, cooldown: 1.5, windup: 0.4, acquire: 7, projectileSpeed: 0 },
+    },
+  },
+
+  /**
+   * The hero. One per player (alive, training or awaiting revival). Gains
+   * experience when its owner kills enemies within xpRadius of it, levels up
+   * to maxLevel, and grows stronger per level. A fallen hero keeps its level
+   * and can be revived at an Altar for a level-scaled cost and time.
+   */
+  hero: {
+    maxLevel: 5,
+    /** Total experience needed for each level (index 0 = level 1). */
+    xpForLevel: [0, 200, 500, 900, 1400],
+    xpRadius: 12,
+    killXpPerLevel: 60,
+    hpPerLevel: 60,
+    damagePerLevel: 3,
+    armorPerLevel: 0.5,
+    mana: 200,
+    manaPerLevel: 30,
+    manaRegen: 0.6, // per second
+    revive: { goldBase: 100, goldPerLevel: 50, secondsBase: 20, secondsPerLevel: 5 },
+    abilities: {
+      hammer: {
+        name: 'Stormhammer',
+        hotkey: 'Q',
+        learnLevel: 1,
+        target: 'enemy',
+        range: 6,
+        mana: 75,
+        cooldown: 10,
+        /** Per rank (rank 1 at levels 1-2, 2 at 3-4, 3 at 5). */
+        damage: [90, 140, 190],
+        stun: [1.5, 2, 2.5],
+        projectileSpeed: 14,
+        desc: 'Hurls a hammer that damages and stuns an enemy unit.',
+      },
+      cry: {
+        name: 'Battle Cry',
+        hotkey: 'W',
+        learnLevel: 2,
+        target: 'none',
+        radius: 8,
+        mana: 60,
+        cooldown: 30,
+        duration: 12,
+        bonus: [0.15, 0.25, 0.35],
+        desc: 'Nearby allies deal more damage for a while.',
+      },
+      mend: {
+        name: 'Mend',
+        hotkey: 'E',
+        learnLevel: 3,
+        target: 'ally',
+        range: 6,
+        mana: 50,
+        cooldown: 8,
+        heal: [150, 225, 300],
+        desc: 'Heals one of your units.',
+      },
     },
   },
 
@@ -212,6 +321,99 @@ export const CONFIG = {
       hotkey: 'T',
       attack: { damage: 16, range: 7, cooldown: 1.2, windup: 0, acquire: 7, projectileSpeed: 14 },
     },
+    altar: {
+      name: 'Hall of Valor',
+      hp: 800,
+      size: 3,
+      sight: 7,
+      popProvided: 0,
+      accepts: [] as const,
+      cost: { gold: 180, wood: 50 },
+      buildSeconds: 40,
+      hotkey: 'V',
+      attack: null,
+    },
+    smithy: {
+      name: 'Blacksmith',
+      hp: 700,
+      size: 3,
+      sight: 7,
+      popProvided: 0,
+      accepts: [] as const,
+      cost: { gold: 140, wood: 60 },
+      buildSeconds: 40,
+      hotkey: 'N',
+      attack: null,
+    },
+  },
+
+  /**
+   * Research: queued at a building like a unit (same payment, cancel and
+   * refund rules), completes once per player and lasts the whole match even
+   * if the building is later lost. `requires` lists research that must be done.
+   */
+  research: {
+    weapons1: {
+      name: 'Forged Blades',
+      at: 'smithy',
+      cost: { gold: 100, wood: 50 },
+      seconds: 40,
+      requires: [] as string[],
+      hotkey: 'Q',
+      desc: '+2 attack damage for Guards, Archers and your hero.',
+    },
+    weapons2: {
+      name: 'Tempered Blades',
+      at: 'smithy',
+      cost: { gold: 175, wood: 100 },
+      seconds: 55,
+      requires: ['weapons1', 'castle'] as string[],
+      hotkey: 'Q',
+      desc: 'Another +2 attack damage for Guards, Archers and your hero.',
+    },
+    armor1: {
+      name: 'Studded Armor',
+      at: 'smithy',
+      cost: { gold: 100, wood: 50 },
+      seconds: 40,
+      requires: [] as string[],
+      hotkey: 'W',
+      desc: '+2 armor for Guards, Archers and your hero.',
+    },
+    armor2: {
+      name: 'Plate Armor',
+      at: 'smithy',
+      cost: { gold: 175, wood: 100 },
+      seconds: 55,
+      requires: ['armor1', 'castle'] as string[],
+      hotkey: 'W',
+      desc: 'Another +2 armor for Guards, Archers and your hero.',
+    },
+    saws: {
+      name: 'Bow Saws',
+      at: 'lumbermill',
+      cost: { gold: 75, wood: 50 },
+      seconds: 30,
+      requires: [] as string[],
+      hotkey: 'Q',
+      desc: 'Laborers carry 15 wood instead of 10.',
+    },
+    castle: {
+      name: 'Fortify to Castle',
+      at: 'hq',
+      cost: { gold: 300, wood: 200 },
+      seconds: 60,
+      requires: [] as string[],
+      hotkey: 'W',
+      desc: 'This Keep gains 500 health. Unlocks tier II research.',
+    },
+  },
+
+  tech: {
+    weaponBonus: 2,
+    armorBonus: 2,
+    sawsCarry: 5,
+    castleHp: 500,
   },
 
   /**
@@ -234,6 +436,12 @@ export const CONFIG = {
         expandSeconds: 900,
         /** Compare its army with the enemy's before launching a wave. */
         assessStrength: false,
+        /** Builds a Blacksmith and researches upgrades. */
+        upgrades: false,
+        /** When (seconds) it fortifies to a Castle; null = never. */
+        castleSeconds: null as number | null,
+        /** Takes its army and hero to clear neutral camps for experience. */
+        creeps: false,
         /** Simultaneous constructions it will manage. */
         builders: 1,
       },
@@ -249,6 +457,9 @@ export const CONFIG = {
         waveGrowth: 3,
         expandSeconds: 600,
         assessStrength: true,
+        upgrades: true,
+        castleSeconds: 720 as number | null,
+        creeps: true,
         builders: 1,
       },
       hard: {
@@ -263,6 +474,9 @@ export const CONFIG = {
         waveGrowth: 3,
         expandSeconds: 420,
         assessStrength: true,
+        upgrades: true,
+        castleSeconds: 540 as number | null,
+        creeps: true,
         builders: 2,
       },
     },
@@ -279,6 +493,10 @@ export const CONFIG = {
     attackAdvantage: 1.15,
     /** ...unless the army is already this large (prevents endless turtling). */
     attackAnyway: 24,
+    /** Smallest army (hero included) it takes camp-clearing. */
+    creepParty: 6,
+    /** Gold it keeps for the army before spending on research. */
+    researchBuffer: 150,
   },
 
   construction: {
@@ -332,3 +550,5 @@ export const CONFIG = {
 
 export type UnitType = keyof typeof CONFIG.units;
 export type BuildingType = keyof typeof CONFIG.buildings;
+export type ResearchId = keyof typeof CONFIG.research;
+export type AbilityId = keyof typeof CONFIG.hero.abilities;

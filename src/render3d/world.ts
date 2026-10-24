@@ -20,6 +20,7 @@ import {
   makeMine,
   makeTreeGeometries,
   makeArrowGeometry,
+  makeHammerGeometry,
   makeUnit,
   type BuildingParts,
   type MineParts,
@@ -56,7 +57,7 @@ export class World3D {
   readonly rig: CameraRig;
   private sun: THREE.DirectionalLight;
   private units = new Map<number, WorkerParts>();
-  private buildings = new Map<number, BuildingParts & { type: BuildingType }>();
+  private buildings = new Map<number, BuildingParts & { type: BuildingType; tier: number }>();
   private mines = new Map<number, MineParts>();
   private trunks!: THREE.InstancedMesh;
   private canopies!: THREE.InstancedMesh;
@@ -72,6 +73,7 @@ export class World3D {
   private particles: Particle[] = [];
   private particleMesh: THREE.InstancedMesh;
   private arrows: THREE.InstancedMesh;
+  private hammers: THREE.InstancedMesh;
   /** Views of units/buildings that just died, animated out before removal. */
   private dying: Array<{ root: THREE.Object3D; t0: number; building: boolean }> = [];
   private ghosts = new Map<BuildingType, THREE.Group>();
@@ -144,6 +146,14 @@ export class World3D {
     this.arrows.frustumCulled = false;
     this.arrows.count = 0;
     this.scene.add(this.arrows);
+    this.hammers = new THREE.InstancedMesh(
+      makeHammerGeometry(),
+      new THREE.MeshStandardMaterial({ color: '#d9e4ff', emissive: '#4a6aff', emissiveIntensity: 0.8 }),
+      20,
+    );
+    this.hammers.frustumCulled = false;
+    this.hammers.count = 0;
+    this.scene.add(this.hammers);
 
     this.rallyFlag.add(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.3, 5).translate(0, 0.65, 0), new THREE.MeshStandardMaterial({ color: '#5b4126' })));
     this.rallyCloth = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.28, 0.03).translate(0.24, 1.12, 0), new THREE.MeshStandardMaterial({ color: '#ffffff' }));
@@ -317,6 +327,12 @@ export class World3D {
       } else if (e.type === 'buildingDestroyed') {
         this.burst(e.x, 1.0, e.y, 40, '#8d8272', 3.5, now);
         this.burst(e.x, 1.4, e.y, 16, '#3a3028', 2.5, now);
+      } else if (e.type === 'levelUp') {
+        this.burst(e.x, 1.2, e.y, 30, '#ffd84a', 2.4, now);
+      } else if (e.type === 'cast' && e.ability === 'cry') {
+        this.burst(e.x, 0.6, e.y, 36, '#ff9a3a', 4.5, now);
+      } else if (e.type === 'cast' && e.ability === 'mend') {
+        this.burst(e.x, 0.8, e.y, 20, '#7dff8a', 1.6, now);
       } else if (e.type === 'buildingComplete') {
         this.burst(e.x, 1.2, e.y, 14, '#ffe9a8', 2.5, now);
       } else if (e.type === 'deliver') {
@@ -434,7 +450,7 @@ export class World3D {
       this.buildings.delete(id);
     }
     this.updateDying(now);
-    this.updateArrows(alpha);
+    this.updateArrows(alpha, now);
     for (const [id, v] of this.mines) if (!seen.has(id)) (this.removePickable(v.root), this.mines.delete(id));
     this.updateTrees(now);
     this.updateRings(client, alpha, now);
@@ -514,21 +530,33 @@ export class World3D {
     });
   }
 
-  private updateArrows(alpha: number): void {
+  private updateArrows(alpha: number, now: number): void {
     const ps = this.game.state.projectiles;
-    let i = 0;
+    let a = 0;
+    let h = 0;
     for (const p of ps) {
-      if (i >= 200) break;
       if (!this.tileVisible(p.x, p.y)) continue;
       const x = p.px + (p.x - p.px) * alpha;
       const y = p.py + (p.y - p.py) * alpha;
-      this.p.set(x, 0.85, y);
-      this.q.setFromEuler(this.e.set(0, Math.atan2(p.x - p.px, p.y - p.py), 0));
-      this.s.set(1, 1, 1);
-      this.arrows.setMatrixAt(i++, this.m4.compose(this.p, this.q, this.s));
+      const heading = Math.atan2(p.x - p.px, p.y - p.py);
+      if (p.kind === 'hammer') {
+        if (h >= 20) continue;
+        this.p.set(x, 1.0, y);
+        this.q.setFromEuler(this.e.set(now * 18, heading, 0, 'YXZ')); // tumbling
+        this.s.set(1, 1, 1);
+        this.hammers.setMatrixAt(h++, this.m4.compose(this.p, this.q, this.s));
+      } else {
+        if (a >= 200) continue;
+        this.p.set(x, 0.85, y);
+        this.q.setFromEuler(this.e.set(0, heading, 0));
+        this.s.set(1, 1, 1);
+        this.arrows.setMatrixAt(a++, this.m4.compose(this.p, this.q, this.s));
+      }
     }
-    this.arrows.count = i;
+    this.arrows.count = a;
     this.arrows.instanceMatrix.needsUpdate = true;
+    this.hammers.count = h;
+    this.hammers.instanceMatrix.needsUpdate = true;
   }
 
   private removePickable(o: THREE.Object3D): void {
@@ -582,9 +610,10 @@ export class World3D {
 
   private syncBuilding(b: Building): void {
     let v = this.buildings.get(b.id);
-    if (!v || v.type !== b.type) {
-      const parts = makeBuilding(b.type, this.game.player(b.owner).color, b.w);
-      v = { ...parts, type: b.type };
+    if (!v || v.type !== b.type || v.tier !== b.tier) {
+      if (v) this.removePickable(v.root); // e.g. a Keep fortified into a Castle
+      const parts = makeBuilding(b.type, this.game.player(b.owner).color, b.w, b.tier);
+      v = { ...parts, type: b.type, tier: b.tier };
       v.root.position.set(b.x, 0, b.y);
       v.root.userData.entityId = b.id;
       this.buildings.set(b.id, v);
@@ -636,6 +665,8 @@ export class World3D {
       const color = e.kind === 'resource' ? RING_COLORS.neutral : e.owner === client.player ? RING_COLORS.own : RING_COLORS.enemy;
       ringFor(e, color, 0.95);
     }
+    // Battle Cry: an orange glow under every inspired unit.
+    for (const u of this.game.units()) if (u.buffs.length && this.perceived(u)) ringFor(u, '#ff9a3a', 0.6, 1.25);
     if (client.hoverId && !client.selected.includes(client.hoverId)) {
       const e = this.game.get(client.hoverId);
       if (e) ringFor(e, RING_COLORS.hover, 0.45);

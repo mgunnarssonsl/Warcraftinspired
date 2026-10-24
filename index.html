@@ -38,8 +38,9 @@
             <li><b>Double-click</b> a unit: select all of that type on screen</li>
             <li><b>Right-click</b> ground: move · enemy: attack · mine/tree: gather · Keep: return cargo · unfinished building: resume</li>
             <li><b>M</b> move · <b>S</b> stop · <b>A</b> attack / attack-move · <b>H</b> hold position · <b>G</b> gather · <b>R</b> return cargo</li>
-            <li>With a Laborer: <b>F</b> Farm · <b>L</b> Lumber Mill · <b>B</b> Barracks · <b>T</b> Watch Tower · <b>K</b> Keep, then click to place (Shift: keep placing)</li>
-            <li>With a Keep / Barracks: <b>Q</b>, <b>W</b> train · right-click sets the rally point · <b>X</b> cancels the last unit (or a construction)</li>
+            <li>With a Laborer: <b>F</b> Farm · <b>L</b> Lumber Mill · <b>B</b> Barracks · <b>T</b> Watch Tower · <b>V</b> Hall of Valor · <b>N</b> Blacksmith · <b>K</b> Keep</li>
+            <li>With a building: <b>Q</b>, <b>W</b> train or research · right-click sets the rally point · <b>X</b> cancels the last item (or a construction)</li>
+            <li>Hero (<b>F2</b> selects it): <b>Q</b> Stormhammer (stun) · <b>W</b> Battle Cry (level 2) · <b>E</b> Mend (level 3)</li>
             <li><b>.</b> next idle worker · <b>Space</b> jump to last alert / selection</li>
             <li><b>Ctrl+1–9</b> set group · <b>1–9</b> recall (twice to center)</li>
             <li><b>Arrows</b>, screen edges or <b>middle-drag</b> to scroll · <b>wheel</b> zoom</li>
@@ -53,6 +54,7 @@
         <div class="mini-wrap">
           <canvas id="minimap" width="160" height="120"></canvas>
           <button id="idle-btn" title="Select next idle worker (.)">Idle workers: <b id="idle-count">0</b></button>
+          <button id="hero-btn" class="hidden" title="Select your hero (F2)">Hero</button>
         </div>
         <div id="selection"></div>
         <div id="commands"></div>

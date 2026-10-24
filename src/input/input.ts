@@ -4,11 +4,12 @@
 // conversion and picking are delegated to the 3D view.
 
 import type { World3D } from '../render3d/world';
-import { CONFIG, type BuildingType, type UnitType } from '../sim/config';
+import { CONFIG, type AbilityId, type BuildingType, type ResearchId, type UnitType } from '../sim/config';
 import { canAfford, checkPlacement, shortfall, snapFootprint } from '../sim/construction';
 import type { Game } from '../sim/game';
 import { acceptsResource } from '../sim/gathering';
 import { trainableAt } from '../sim/production';
+import { researchAt, researched } from '../sim/tech';
 import { canAttack, isEnemy, targetable } from '../sim/combat';
 import type { Entity, Unit } from '../sim/types';
 import type { Minimap } from '../ui/minimap';
@@ -18,7 +19,7 @@ const EDGE = 10; // px from the view edge that triggers scrolling
 const PAN_SPEED = 900; // px per second
 const DRAG_THRESHOLD = 5;
 
-export type Action = 'move' | 'stop' | 'attack' | 'hold' | 'gather' | 'return' | 'cancel' | `build:${BuildingType}` | `train:${UnitType}`;
+export type Action = 'move' | 'stop' | 'attack' | 'hold' | 'gather' | 'return' | 'cancel' | `build:${BuildingType}` | `train:${UnitType}` | `research:${ResearchId}` | `cast:${AbilityId}`;
 
 export class InputController {
   private mouse = { x: -1, y: -1, inside: false, moved: true };
@@ -332,6 +333,19 @@ export class InputController {
     const units = this.ownSelectedUnits();
     const player = this.client.player;
     const now = this.now();
+    if (mode === 'cast:hammer' || mode === 'cast:mend') {
+      const ability = mode.slice(5) as AbilityId;
+      const hero = units.find((u) => u.hero);
+      const target = this.world.pick(sx, sy);
+      if (!hero || target?.kind !== 'unit') {
+        this.onMessage(ability === 'hammer' ? 'Target an enemy unit.' : 'Target one of your units.');
+        return;
+      }
+      this.game.issue({ type: 'cast', player, units: [hero.id], ability, targetId: target.id });
+      this.world.flashEntity(target.id, now);
+      if (!shift) this.client.targetMode = null;
+      return;
+    }
     if (mode === 'attack') {
       // Enemy under the cursor: attack it. Otherwise attack-move to the point.
       const target = this.world.pick(sx, sy);
@@ -389,6 +403,19 @@ export class InputController {
       else if (b && b.queue.length) this.cancelQueued(b.id, b.queue.length - 1);
       return;
     }
+    if (name.startsWith('research:')) {
+      const b = this.selectedOwnBuilding();
+      if (b) this.game.issue({ type: 'research', player, buildingId: b.id, research: name.slice(9) as ResearchId });
+      return;
+    }
+    if (name.startsWith('cast:')) {
+      const ability = name.slice(5) as AbilityId;
+      const hero = this.ownSelectedUnits().find((u) => u.hero);
+      if (!hero) return;
+      if (CONFIG.hero.abilities[ability].target === 'none') this.game.issue({ type: 'cast', player, units: [hero.id], ability, targetId: -1 });
+      else this.client.targetMode = name as 'cast:hammer' | 'cast:mend';
+      return;
+    }
     if (name.startsWith('train:')) {
       const b = this.selectedOwnBuilding();
       if (b) this.game.issue({ type: 'train', player, buildingId: b.id, unit: name.slice(6) as UnitType });
@@ -429,6 +456,14 @@ export class InputController {
     this.rig.centerOn(next.x, next.y);
   }
 
+  selectHero(): void {
+    const rec = this.game.player(this.client.player).hero;
+    const h = rec?.alive ? this.game.unit(rec.unitId) : undefined;
+    if (!h) return;
+    this.setSelection([h.id]);
+    this.rig.centerOn(h.x, h.y);
+  }
+
   centerOnSelection(): void {
     const es = this.client.selected.map((id) => this.game.get(id)).filter((e): e is Entity => !!e);
     if (!es.length) return;
@@ -458,6 +493,25 @@ export class InputController {
           return;
         }
       }
+      // Research: the first not-yet-done level on that key.
+      const next = researchAt(building.type).find((r) => CONFIG.research[r].hotkey.toLowerCase() === k && !researched(this.game, this.client.player, r));
+      if (next) {
+        this.action(`research:${next}`);
+        return;
+      }
+    }
+    if (this.ownSelectedUnits().some((u) => u.hero)) {
+      for (const [a, def] of Object.entries(CONFIG.hero.abilities)) {
+        if (k === def.hotkey.toLowerCase()) {
+          this.action(`cast:${a as AbilityId}`);
+          return;
+        }
+      }
+    }
+    if (e.key === 'F2') {
+      e.preventDefault();
+      this.selectHero();
+      return;
     }
     const hasWorkers = this.selectedWorkers().length > 0;
     for (const [type, def] of Object.entries(CONFIG.buildings)) {

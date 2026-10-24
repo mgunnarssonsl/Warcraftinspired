@@ -27,7 +27,7 @@ body {
 
 #app {
   display: grid;
-  grid-template-rows: 40px 1fr 168px;
+  grid-template-rows: 40px 1fr 188px;
   height: 100vh;
 }
 
@@ -585,4 +585,44 @@ table.stats td {
 table.stats td:first-child {
   text-align: left;
   color: var(--muted);
+}
+
+/* ---- hero & abilities ------------------------------------------------------- */
+.cmd.ability {
+  background: linear-gradient(#2c3a5a, #1c2438);
+}
+.cmd-cost.mana {
+  color: #8fb0ff;
+}
+.cmd-cost.mana::before {
+  content: '◆ ';
+}
+.cmd-cd {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: #fff;
+  pointer-events: none;
+}
+.cmd-cd:empty {
+  display: none;
+}
+.cmd:disabled .cmd-cd {
+  background: rgba(0, 0, 0, 0.45);
+}
+#hero-btn {
+  width: 160px;
+  background: linear-gradient(#3a3320, #29230f);
+  color: #f0d68a;
+  border: 1px solid #c9a35a;
+  border-radius: 4px;
+  padding: 4px;
+  cursor: pointer;
+}
+#hero-btn.fallen {
+  color: var(--alert);
+  border-color: var(--alert);
 }

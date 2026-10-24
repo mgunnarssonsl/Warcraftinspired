@@ -158,9 +158,36 @@ function makeArcher(team: string): WorkerParts {
   return { ...base, tool, ...noTools() };
 }
 
+/** The Marshal: a larger armoured champion with cape, plume and a war hammer. */
+function makeHero(team: string): WorkerParts {
+  const base = soldierBase(team, 1.85, '#3b3f46');
+  const { body } = base;
+  const gold = mat('#d9b44a', { rough: 0.35, emissive: 0x2a1e00 });
+  const steel = mat('#b8bec8', { rough: 0.35 });
+  body.add(mesh(new THREE.SphereGeometry(0.13, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), steel, 0, 0.67, 0));
+  body.add(mesh(new THREE.ConeGeometry(0.04, 0.22, 5), mat(team), 0, 0.86, -0.02)); // plume
+  body.add(mesh(box(0.4, 0.08, 0.22), gold, 0, 0.54, 0)); // pauldrons
+  const cape = mesh(box(0.3, 0.42, 0.03), mat(tint(team, -0.3)), 0, 0.36, -0.17);
+  cape.rotation.x = 0.15;
+  body.add(cape);
+  const tool = new THREE.Group();
+  tool.position.set(0.21, 0.44, 0.04);
+  tool.add(mesh(box(0.035, 0.42, 0.035), mat('#5b4126'), 0, 0.16, 0));
+  tool.add(mesh(box(0.16, 0.1, 0.1), steel, 0, 0.38, 0));
+  tool.add(mesh(box(0.17, 0.02, 0.11), gold, 0, 0.38, 0));
+  body.add(tool);
+  return { ...base, tool, ...noTools() };
+}
+
+/** Hammer projectile for Stormhammer, pointing along +Z. */
+export function makeHammerGeometry(): THREE.BufferGeometry {
+  return mergeGeometries([new THREE.BoxGeometry(0.06, 0.06, 0.4), new THREE.BoxGeometry(0.22, 0.16, 0.16).translate(0, 0, 0.2)])!;
+}
+
 export function makeUnit(type: UnitType, team: string): WorkerParts {
+  if (type === 'hero') return makeHero(team);
   // Camp creeps reuse the soldier silhouettes in their own drab colours.
-  if (type === 'guard' || type === 'brigand') return makeGuard(team);
+  if (type === 'guard' || type === 'brigand' || type === 'chief') return makeGuard(team);
   if (type === 'archer' || type === 'poacher') return makeArcher(team);
   return makeWorker(team);
 }
@@ -352,11 +379,63 @@ function tower(team: string): THREE.Group {
   return g;
 }
 
-const BUILDERS: Record<BuildingType, (team: string) => THREE.Group> = { hq: keep, farm, lumbermill, barracks, tower };
+/** A fortified Keep: the Keep plus a tall central donjon. */
+function castle(team: string): THREE.Group {
+  const g = keep(team);
+  const stone = mat('#bfb196');
+  g.add(mesh(new THREE.CylinderGeometry(0.55, 0.65, 1.6, 8), stone, 0, 3.0, -0.1));
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    g.add(mesh(box(0.16, 0.2, 0.12), stone, Math.cos(a) * 0.58, 3.9, -0.1 + Math.sin(a) * 0.58));
+  }
+  g.add(mesh(new THREE.ConeGeometry(0.62, 0.9, 8), mat(team), 0, 4.45, -0.1));
+  return g;
+}
 
-export function makeBuilding(type: BuildingType, team: string, size: number): BuildingParts {
+function altar(team: string): THREE.Group {
+  const g = new THREE.Group();
+  const stone = mat('#a69c8c');
+  g.add(mesh(new THREE.CylinderGeometry(1.35, 1.45, 0.25, 8), mat('#8a8070'), 0, 0.12, 0));
+  g.add(mesh(new THREE.CylinderGeometry(1.05, 1.15, 0.2, 8), stone, 0, 0.35, 0));
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+    g.add(mesh(new THREE.CylinderGeometry(0.11, 0.13, 1.5, 6), stone, Math.cos(a) * 0.95, 1.2, Math.sin(a) * 0.95));
+  }
+  const ring = mesh(new THREE.TorusGeometry(0.95, 0.08, 4, 6), mat(team), 0, 1.98, 0);
+  ring.rotation.x = Math.PI / 2;
+  g.add(ring);
+  // Statue of a champion with raised hammer
+  g.add(mesh(new THREE.CylinderGeometry(0.25, 0.3, 0.5, 6), stone, 0, 0.7, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.5, 6), mat('#c9c0ae'), 0, 1.2, 0));
+  g.add(mesh(new THREE.SphereGeometry(0.13, 8, 6), mat('#c9c0ae'), 0, 1.55, 0));
+  g.add(mesh(box(0.05, 0.6, 0.05), mat('#c9c0ae'), 0.18, 1.7, 0));
+  g.add(mesh(box(0.2, 0.12, 0.12), mat('#e8d27a', { emissive: 0x3a2a00 }), 0.18, 2.0, 0));
+  return g;
+}
+
+function smithy(team: string): THREE.Group {
+  const g = new THREE.Group();
+  g.add(mesh(box(2.7, 0.12, 2.7), mat('#6d5a43'), 0, 0.06, 0));
+  g.add(mesh(box(1.9, 1.0, 1.5), mat('#9a8e7a'), -0.2, 0.6, -0.4));
+  const roof = mesh(new THREE.CylinderGeometry(0.9, 0.9, 2.0, 3), mat(team), -0.2, 1.3, -0.4);
+  roof.rotation.z = Math.PI / 2;
+  roof.scale.set(1, 1, 0.8);
+  g.add(roof);
+  // Chimney with a glowing forge mouth
+  g.add(mesh(box(0.4, 1.6, 0.4), mat('#7a6e5e'), 0.75, 1.1, -0.8));
+  g.add(mesh(box(0.5, 0.35, 0.05), mat('#ff8a2a', { emissive: 0xc04a00 }), 0.2, 0.45, 0.36));
+  // Anvil out front
+  g.add(mesh(box(0.2, 0.25, 0.15), mat('#4a4a50'), 0.7, 0.18, 0.75));
+  g.add(mesh(box(0.42, 0.1, 0.18), mat('#5a5a62', { rough: 0.4 }), 0.7, 0.35, 0.75));
+  g.add(mesh(box(0.6, 0.06, 0.06), mat('#7a5733'), -0.6, 0.25, 0.95));
+  return g;
+}
+
+const BUILDERS: Record<BuildingType, (team: string) => THREE.Group> = { hq: keep, farm, lumbermill, barracks, tower, altar, smithy };
+
+export function makeBuilding(type: BuildingType, team: string, size: number, tier = 1): BuildingParts {
   const root = new THREE.Group();
-  const model = BUILDERS[type](team);
+  const model = type === 'hq' && tier > 1 ? castle(team) : BUILDERS[type](team);
   root.add(model);
   const scaffold = new THREE.Group();
   const pole = mat('#a07a4a');

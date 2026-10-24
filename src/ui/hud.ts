@@ -4,10 +4,12 @@
 
 import type { ClientState } from '../input/client';
 import type { Action, InputController } from '../input/input';
-import { CONFIG, TICK_RATE, type BuildingType, type UnitType } from '../sim/config';
+import { CONFIG, TICK_RATE, type AbilityId, type BuildingType, type ResearchId, type UnitType } from '../sim/config';
 import { canAfford } from '../sim/construction';
 import type { Game } from '../sim/game';
-import { missingRequirement, trainableAt } from '../sim/production';
+import { rank } from '../sim/hero';
+import { missingRequirement, trainableAt, trainCost } from '../sim/production';
+import { armorValue, attackDamage, researchAt, researched, researchPending, researchProblem } from '../sim/tech';
 import type { Building, Entity, GameEvent, Unit } from '../sim/types';
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
@@ -28,6 +30,7 @@ export function unitStatus(game: Game, u: Unit): string {
     return u.carry.amount > 0 ? `Idle, holding ${u.carry.amount} ${u.carry.res}` : 'Idle';
   }
   if (o.type === 'move') return 'Moving';
+  if (o.type === 'cast') return `Casting ${CONFIG.hero.abilities[o.ability].name}`;
   if (o.type === 'hold') return o.targetId >= 0 ? 'Holding position, fighting' : 'Holding position';
   if (o.type === 'attackMove') return o.targetId >= 0 ? 'Attack-moving, fighting' : 'Attack-moving';
   if (o.type === 'attack') {
@@ -48,7 +51,7 @@ export function unitStatus(game: Game, u: Unit): string {
     case 'waiting':
       return node?.type === 'goldmine' ? 'Waiting: mine is full' : 'Waiting for a free tree';
     case 'working':
-      return o.res === 'gold' ? 'Mining gold (inside)' : `Chopping wood (${u.carry.amount}/${CONFIG.units.worker.carryWood})`;
+      return o.res === 'gold' ? 'Mining gold (inside)' : `Chopping wood (${u.carry.amount})`;
     case 'toDropoff':
       return `Returning ${u.carry.amount} ${u.carry.res ?? ''}`.trim();
   }
@@ -61,6 +64,8 @@ interface ActionDef {
   tip: string;
   build?: BuildingType;
   train?: UnitType;
+  research?: ResearchId;
+  ability?: AbilityId;
 }
 
 const BUILD_TIPS: Record<BuildingType, string> = {
@@ -69,6 +74,8 @@ const BUILD_TIPS: Record<BuildingType, string> = {
   lumbermill: 'Lumber Mill: accepts wood. Build it beside a forest to shorten wood trips. Enables Archers.',
   barracks: 'Barracks: trains Guards and Archers.',
   tower: 'Watch Tower: shoots enemies within 7 tiles.',
+  altar: 'Hall of Valor: trains and revives your hero.',
+  smithy: 'Blacksmith: researches weapon and armor upgrades.',
 };
 
 const TRAIN_TIPS: Record<UnitType, string> = {
@@ -77,6 +84,8 @@ const TRAIN_TIPS: Record<UnitType, string> = {
   archer: 'Archer: fragile ranged soldier.',
   brigand: '',
   poacher: '',
+  chief: '',
+  hero: 'Marshal: your hero. Gains levels from kills nearby; learns Stormhammer, Battle Cry and Mend. Only one; revive it here if it falls.',
 };
 
 const ACTIONS: ActionDef[] = [
@@ -107,6 +116,27 @@ const ACTIONS: ActionDef[] = [
       tip: `${TRAIN_TIPS[t]} Cost: ${d.cost.gold} gold, ${d.cost.wood} wood, ${d.pop} population. Train time ${d.trainSeconds}s.${req}`,
     };
   }),
+  ...(Object.keys(CONFIG.research) as ResearchId[]).map((r) => {
+    const d = CONFIG.research[r];
+    const req = (d.requires as ResearchId[]).map((x) => CONFIG.research[x].name);
+    return {
+      id: `research:${r}` as Action,
+      label: d.name,
+      key: d.hotkey,
+      research: r,
+      tip: `${d.desc} Cost: ${d.cost.gold} gold, ${d.cost.wood} wood. Research time ${d.seconds}s.${req.length ? ` Requires ${req.join(' and ')}.` : ''}`,
+    };
+  }),
+  ...(Object.keys(CONFIG.hero.abilities) as AbilityId[]).map((a) => {
+    const d = CONFIG.hero.abilities[a];
+    return {
+      id: `cast:${a}` as Action,
+      label: d.name,
+      key: d.hotkey,
+      ability: a,
+      tip: `${d.desc} ${d.mana} mana, ${d.cooldown}s cooldown. Learned at hero level ${d.learnLevel}; stronger at levels 3 and 5.`,
+    };
+  }),
 ];
 
 export class Hud {
@@ -132,17 +162,28 @@ export class Hud {
     private input: InputController,
   ) {
     this.idleBtn.addEventListener('click', () => input.selectIdleWorker());
+    this.heroBtn?.addEventListener('click', () => input.selectHero());
     this.cancelBtn.innerHTML = '<span class="cmd-label">Cancel</span><span class="cmd-key">X</span>';
     this.cancelBtn.title = `Cancel construction (${CONFIG.construction.cancelRefund * 100}% refund) or the last queued unit (${CONFIG.production.cancelRefund * 100}% refund). [X]`;
     this.cancelBtn.addEventListener('click', () => input.action('cancel'));
     this.card.appendChild(this.cancelBtn);
     for (const a of ACTIONS) {
       const b = el('button', 'cmd');
-      const cost = a.build ? CONFIG.buildings[a.build].cost : a.train ? CONFIG.units[a.train].cost : null;
+      const cost = a.build
+        ? CONFIG.buildings[a.build].cost
+        : a.train
+          ? CONFIG.units[a.train].cost
+          : a.research
+            ? CONFIG.research[a.research].cost
+            : null;
       b.innerHTML =
         `<span class="cmd-label">${a.label}</span><span class="cmd-key">${a.key}</span>` +
         (cost ? `<span class="cmd-cost"><i class="g">${cost.gold}</i> <i class="w">${cost.wood}</i></span>` : '');
-      if (a.build || a.train) b.classList.add('build');
+      if (a.build || a.train || a.research) b.classList.add('build');
+      if (a.ability) {
+        b.classList.add('ability');
+        b.innerHTML += `<span class="cmd-cost mana">${CONFIG.hero.abilities[a.ability].mana}</span><span class="cmd-cd"></span>`;
+      }
       b.title = `${a.tip} [${a.key}]`;
       b.addEventListener('click', () => input.action(a.id));
       this.buttons.set(a.id, b);
@@ -221,6 +262,15 @@ export class Hud {
         this.notify('Not enough population: build more Farms.', 'alert');
       } else if (e.type === 'cantTrain' && e.player === this.client.player) {
         this.notify(`Cannot train: ${e.reason}`, 'alert');
+      } else if (e.type === 'cantCast' && e.player === this.client.player) {
+        this.notify(e.reason, 'alert');
+      } else if (e.type === 'researchComplete' && e.player === this.client.player) {
+        this.notify(`Research complete: ${CONFIG.research[e.research].name}.`);
+      } else if (e.type === 'levelUp' && e.player === this.client.player) {
+        const learned = (Object.keys(CONFIG.hero.abilities) as AbilityId[]).find((a) => CONFIG.hero.abilities[a].learnLevel === e.level);
+        this.notify(`Your hero reached level ${e.level}!${learned ? ` Learned ${CONFIG.hero.abilities[learned].name}.` : ''}`);
+      } else if (e.type === 'heroFallen' && e.player === this.client.player) {
+        this.notify(`Your ${CONFIG.units.hero.name} has fallen. Revive at the ${CONFIG.buildings.altar.name}.`, 'alert');
       } else if (e.type === 'buildingDestroyed' && e.player === this.client.player) {
         const refund = e.refundGold || e.refundWood ? ` Queue refunded: ${e.refundGold} gold, ${e.refundWood} wood.` : '';
         this.notify(`${CONFIG.buildings[e.building].name} destroyed.${refund}`, 'alert');
@@ -265,15 +315,51 @@ export class Hud {
     const ownB = b && b.owner === p.id ? b : undefined;
     const showCancel = !!ownB && (ownB.progress < 1 || ownB.queue.length > 0);
     const trainable = ownB && ownB.progress >= 1 ? trainableAt(ownB.type) : [];
-    this.card.classList.toggle('hidden', own.length === 0 && !showCancel && trainable.length === 0);
+    const researchable = ownB && ownB.progress >= 1 ? researchAt(ownB.type) : [];
+    const hero = own.find((u) => u.hero);
+    this.card.classList.toggle('hidden', own.length === 0 && !showCancel && trainable.length === 0 && researchable.length === 0);
     this.cancelBtn.classList.toggle('hidden', !showCancel);
     for (const a of ACTIONS) {
       const btn = this.buttons.get(a.id)!;
       if (a.train) {
         btn.classList.toggle('hidden', !trainable.includes(a.train));
-        const c = CONFIG.units[a.train].cost;
+        const c = trainCost(this.game, p.id, a.train);
+        if (a.train === 'hero') {
+          // The hero button turns into "Revive" while the hero is dead.
+          const rec = p.hero;
+          const label = rec && !rec.alive ? `Revive (Lv ${rec.level})` : CONFIG.units.hero.name;
+          setText(btn.querySelector('.cmd-label')!, label);
+          setText(btn.querySelector('.cmd-cost .g')!, String(c.gold));
+          setText(btn.querySelector('.cmd-cost .w')!, String(c.wood));
+          btn.disabled = !!rec?.alive || this.game.buildings().some((x) => x.owner === p.id && x.queue.some((q) => q.unit === 'hero'));
+        } else btn.disabled = !!missingRequirement(this.game, p.id, a.train);
         btn.classList.toggle('poor', p.gold < c.gold || p.wood < c.wood);
-        btn.disabled = !!missingRequirement(this.game, p.id, a.train);
+        continue;
+      }
+      if (a.research) {
+        const r = a.research;
+        // Show one button per hotkey: the next level that is not yet done.
+        const sameKey = researchable.filter((x) => CONFIG.research[x].hotkey === CONFIG.research[r].hotkey && !researched(this.game, p.id, x));
+        const show = researchable.includes(r) && sameKey[0] === r;
+        btn.classList.toggle('hidden', !show);
+        if (show && ownB) {
+          const problem = researchProblem(this.game, p.id, ownB, r);
+          btn.disabled = !!problem && !problem.startsWith('Not enough');
+          btn.classList.toggle('poor', !!problem && problem.startsWith('Not enough'));
+          btn.title = `${CONFIG.research[r].desc}${problem ? ` (${researchPending(this.game, p.id, r) ? 'In progress' : problem})` : ''} [${a.key}]`;
+        }
+        continue;
+      }
+      if (a.ability) {
+        btn.classList.toggle('hidden', !hero);
+        if (hero) {
+          const def = CONFIG.hero.abilities[a.ability];
+          const learned = hero.hero!.level >= def.learnLevel;
+          const cd = Math.max(0, ((hero.hero!.ready[a.ability] ?? 0) - this.game.state.tick) / TICK_RATE);
+          setText(btn.querySelector('.cmd-cd')!, !learned ? `Lv ${def.learnLevel}` : cd > 0 ? `${Math.ceil(cd)}s` : '');
+          btn.disabled = !learned || cd > 0 || hero.hero!.mana < def.mana;
+          btn.classList.toggle('active', this.client.targetMode === a.id);
+        }
         continue;
       }
       const workerOnly = !!a.build || a.id === 'gather' || a.id === 'return';
@@ -283,6 +369,20 @@ export class Hud {
     }
     this.buttons.get('gather')!.disabled = !workers;
     this.buttons.get('return')!.disabled = !own.some((u) => u.carry.amount > 0);
+    this.updateHeroButton();
+  }
+
+  private heroBtn = document.getElementById('hero-btn') as HTMLButtonElement | null;
+
+  private updateHeroButton(): void {
+    const b = this.heroBtn;
+    if (!b) return;
+    const rec = this.game.player(this.client.player).hero;
+    b.classList.toggle('hidden', !rec);
+    if (!rec) return;
+    const u = rec.alive ? this.game.unit(rec.unitId) : undefined;
+    setText(b, u?.hero ? `Hero · Lv ${u.hero.level} (F2)` : 'Hero fallen: revive at the Hall');
+    b.classList.toggle('fallen', !u);
   }
 
   private renderPanel(): void {
@@ -338,8 +438,22 @@ export class Hud {
       if (e.type === 'worker') row('Carrying', e.carry.amount ? `${e.carry.amount} ${e.carry.res}` : 'nothing');
       const def = CONFIG.units[e.type];
       const at = def.attack;
-      row('Attack', `${at.damage} ${at.projectileSpeed ? 'ranged' : 'melee'}, every ${at.cooldown}s${at.projectileSpeed ? `, range ${at.range}` : ''}`);
-      row('Armor', String(def.armor));
+      const dmg = attackDamage(this.game, e);
+      const arm = armorValue(this.game, e);
+      const plus = (v: number, b: number) => (v !== b ? `${v} (${v > b ? '+' : ''}${Math.round((v - b) * 10) / 10})` : String(v));
+      row('Attack', `${plus(dmg, at.damage)} ${at.projectileSpeed ? 'ranged' : 'melee'}, every ${at.cooldown}s${at.projectileSpeed ? `, range ${at.range}` : ''}`);
+      row('Armor', plus(arm, def.armor));
+      if (e.hero) {
+        const h = e.hero;
+        const next = CONFIG.hero.xpForLevel[h.level];
+        row('Level', `${h.level}${next !== undefined ? ` (${h.xp} / ${next} xp)` : ' (max)'}`);
+        row('Mana', `${Math.floor(h.mana)} / ${h.maxMana}`);
+        const known = (Object.keys(CONFIG.hero.abilities) as AbilityId[])
+          .filter((a) => h.level >= CONFIG.hero.abilities[a].learnLevel)
+          .map((a) => `${CONFIG.hero.abilities[a].name} ${'I'.repeat(rank(h.level) + 1)}`);
+        row('Abilities', known.join(', ') || 'none yet');
+      }
+      if (e.stun > 0) row('Stunned', `${Math.ceil(e.stun / TICK_RATE)}s`);
       if (e.owner !== this.client.player) row('Owner', this.game.player(e.owner).name);
     } else if (e.kind === 'building') {
       const def = CONFIG.buildings[e.type];
@@ -354,7 +468,10 @@ export class Hud {
       if (def.attack) row('Attack', `${def.attack.damage}, every ${def.attack.cooldown}s, range ${def.attack.range}`);
       if (def.popProvided) row('Population', `+${def.popProvided}`);
       if (e.owner !== this.client.player) row('Owner', this.game.player(e.owner).name);
-      else if (e.progress >= 1 && trainableAt(e.type).length) this.production(box, e, row);
+      else if (e.progress >= 1 && (trainableAt(e.type).length || researchAt(e.type).length)) this.production(box, e, row);
+      if (e.tier > 1) row('Fortified', 'Castle (tier II research unlocked)');
+      const done = researchAt(e.type).filter((r) => researched(this.game, e.owner, r));
+      if (done.length && e.owner === this.client.player) row('Researched', done.map((r) => CONFIG.research[r].name).join(', '));
     } else if (e.type === 'goldmine') {
       box.appendChild(el('div', 'sel-title', CONFIG.resources.goldmine.name));
       row('Gold left', `${e.amount} / ${e.maxAmount}`);
@@ -378,19 +495,21 @@ export class Hud {
   private production(box: HTMLElement, b: Building, row: (k: string, v: string) => void): void {
     const head = b.queue[0];
     let status = 'Idle';
+    const nameOf = (q: (typeof b.queue)[number]) => (q.research ? CONFIG.research[q.research].name : CONFIG.units[q.unit!].name);
     if (head) {
-      const name = CONFIG.units[head.unit].name;
-      status = head.started ? `Training ${name} ${Math.floor(head.progress * 100)}%` : `${name} waiting for population (build Farms)`;
+      const name = nameOf(head);
+      const verb = head.research ? 'Researching' : head.revive ? 'Reviving' : 'Training';
+      status = head.started ? `${verb} ${name} ${Math.floor(head.progress * 100)}%` : `${name} waiting for population (build Farms)`;
     }
     row('Production', status);
-    row('Rally point', b.rally ? 'set (right-click to move it)' : 'none (right-click to set)');
+    if (trainableAt(b.type).length) row('Rally point', b.rally ? 'set (right-click to move it)' : 'none (right-click to set)');
     const slots = el('div', 'queue');
     for (let i = 0; i < CONFIG.production.queueSize; i++) {
       const q = b.queue[i];
       const slot = el('button', `slot${q ? '' : ' empty'}`);
       if (q) {
-        slot.textContent = CONFIG.units[q.unit].name[0];
-        slot.title = `${CONFIG.units[q.unit].name}: click to cancel (full refund)`;
+        slot.textContent = nameOf(q)[0];
+        slot.title = `${nameOf(q)}: click to cancel (full refund)`;
         const fill = el('div', 'fill');
         fill.style.width = `${q.progress * 100}%`;
         slot.appendChild(fill);

@@ -92,7 +92,7 @@ export function updateMovement(game: Game, units: Unit[]): void {
   const tick = game.state.tick;
   for (const u of units) {
     const mv = u.move;
-    if (!mv || mv.state !== 'moving' || u.hidden) continue;
+    if (!mv || mv.state !== 'moving' || u.hidden || u.stun > 0) continue;
     if (mv.navVersion !== game.nav.version) {
       // Terrain changed (tree felled, building placed); paths may be stale.
       planPath(game, u);

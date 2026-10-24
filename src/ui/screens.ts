@@ -77,6 +77,8 @@ export class Screens {
           Two Laborers fit inside a mine at once; about five keep one busy.</p>
           <h3>Base</h3>
           <p>Farms raise your population limit. A Lumber Mill by the forest shortens wood trips. The Barracks trains Guards and Archers.</p>
+          <h3>Heroes and the map</h3>
+          <p>The Hall of Valor raises one hero who levels up from kills nearby. Brigand camps guard the richer mines and pay a bounty. You only see what your units see: scout.</p>
         </div>
         <div>
           <h3>Controls</h3>
@@ -85,6 +87,7 @@ export class Screens {
             <li><b>A</b> attack-move, <b>H</b> hold, <b>S</b> stop</li>
             <li>With a Laborer: <b>F</b>arm, <b>B</b>arracks, <b>L</b>umber Mill, <b>T</b>ower</li>
             <li>With a Keep or Barracks: <b>Q</b> / <b>W</b> train</li>
+            <li>Hero (<b>F2</b>): <b>Q</b> Stormhammer, <b>W</b> Battle Cry, <b>E</b> Mend</li>
             <li><b>Arrows</b> or screen edges scroll, <b>wheel</b> zooms</li>
             <li><b>F1</b> all controls, <b>F10</b> menu</li>
           </ul>

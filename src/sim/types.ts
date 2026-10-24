@@ -2,7 +2,7 @@
 // (numbers, strings, arrays, records) so JSON round-trips are lossless.
 // Derived caches (navigation grid etc.) live outside it, in Game.
 
-import type { BuildingType, UnitType } from './config';
+import type { AbilityId, BuildingType, ResearchId, UnitType } from './config';
 
 export type ResourceKind = 'gold' | 'wood';
 export type NodeType = 'goldmine' | 'tree';
@@ -45,6 +45,33 @@ export interface Player {
   neutral: boolean;
   defeated: boolean;
   stats: PlayerStats;
+  /** Completed research (permanent for the match). */
+  research: Partial<Record<ResearchId, boolean>>;
+  /** The player's hero, once trained: kept while dead so it can be revived. */
+  hero: HeroRecord | null;
+}
+
+export interface HeroRecord {
+  unitId: number;
+  alive: boolean;
+  level: number;
+  xp: number;
+}
+
+export interface HeroState {
+  level: number;
+  xp: number;
+  mana: number;
+  maxMana: number;
+  /** Tick at which each ability is ready again. */
+  ready: Partial<Record<AbilityId, number>>;
+}
+
+export interface Buff {
+  kind: 'cry';
+  until: number;
+  /** Damage multiplier bonus, e.g. 0.25 = +25%. */
+  amount: number;
 }
 
 export interface PlayerStats {
@@ -135,7 +162,8 @@ export type Order =
       /** Enemy currently engaged on the way, or -1. */
       targetId: number;
     }
-  | { type: 'hold'; targetId: number };
+  | { type: 'hold'; targetId: number }
+  | { type: 'cast'; ability: AbilityId; targetId: number };
 
 interface EntityBase {
   id: number;
@@ -166,6 +194,11 @@ export interface Unit extends EntityBase {
   swingTarget: number;
   /** Home position for camp guards (neutral hostiles), else null. */
   home: Vec | null;
+  /** Hero progression and mana; null for ordinary units. */
+  hero: HeroState | null;
+  /** Ticks of stun remaining: a stunned unit cannot act or move. */
+  stun: number;
+  buffs: Buff[];
 }
 
 export interface Projectile {
@@ -179,6 +212,9 @@ export interface Projectile {
   py: number;
   speed: number;
   damage: number;
+  kind: 'arrow' | 'hammer';
+  /** Stun applied on hit, in ticks. */
+  stun: number;
 }
 
 export interface Building extends EntityBase, Footprint {
@@ -197,10 +233,19 @@ export interface Building extends EntityBase, Footprint {
   targetId: number;
   /** Bitmask of players who have seen this building (fog of war memory). */
   seenBy: number;
+  /** 2 once a Keep has been fortified to a Castle. */
+  tier: number;
 }
 
 export interface QueueItem {
-  unit: UnitType;
+  /** Exactly one of unit / research is set. */
+  unit: UnitType | null;
+  research: ResearchId | null;
+  /** Reviving the fallen hero rather than training a new one. */
+  revive: boolean;
+  /** What was paid (refunds use it) and how long it takes. */
+  cost: { gold: number; wood: number };
+  ticks: number;
   /** Training progress in [0, 1]. */
   progress: number;
   /** Population has been reserved (training has started). */
@@ -266,9 +311,15 @@ export type GameEvent =
   | { type: 'unitTrained'; player: number; id: number; x: number; y: number }
   | { type: 'popBlocked'; player: number; buildingId: number }
   | { type: 'cantTrain'; player: number; reason: string }
+  | { type: 'cantCast'; player: number; reason: string }
   | { type: 'buildingDestroyed'; player: number; building: BuildingType; refundGold: number; refundWood: number; x: number; y: number }
   | { type: 'attack'; id: number }
   | { type: 'hit'; id: number; attacker: number; attackerOwner: number; owner: number; damage: number; x: number; y: number }
   | { type: 'death'; id: number; owner: number; unit: UnitType; x: number; y: number }
   | { type: 'playerDefeated'; player: number; reason: 'eliminated' | 'surrendered' }
-  | { type: 'matchOver'; winner: number | null };
+  | { type: 'matchOver'; winner: number | null }
+  | { type: 'researchComplete'; player: number; research: ResearchId }
+  | { type: 'levelUp'; player: number; id: number; level: number; x: number; y: number }
+  | { type: 'cast'; player: number; id: number; ability: AbilityId; targetId: number; x: number; y: number }
+  | { type: 'bounty'; player: number; amount: number; x: number; y: number }
+  | { type: 'heroFallen'; player: number; x: number; y: number };

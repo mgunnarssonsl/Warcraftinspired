@@ -14,6 +14,7 @@ computer opponents. No campaign or story.
 - 2: base construction and production
 - 3: combat foundation
 - 4: complete skirmish against a computer opponent
+- 5: strategic depth (fog of war, upgrades and tech, a hero, rewarding camps)
 
 See [Roadmap](#roadmap).
 
@@ -40,8 +41,10 @@ npm run build      # typecheck + production bundle in dist/
 | M, S, G, R | Move, Stop, Gather, Return cargo (also on the command card) |
 | A, then click | Click an enemy to attack it, or the ground to attack-move: walk there and fight anything on the way |
 | H | Hold position: never move, and fight whatever comes within weapon range |
-| F, L, B, T, K (Laborer selected) | Place a Farm, Lumber Mill, Barracks, Watch Tower or Keep. Click to place, Shift+click to keep placing, right-click or Esc to cancel. |
-| Q, W (Keep or Barracks selected) | Train a Laborer (Keep), or a Guard or Archer (Barracks) |
+| F, L, B, T, V, N, K (Laborer selected) | Place a Farm, Lumber Mill, Barracks, Watch Tower, Hall of Valor, Blacksmith or Keep. Click to place, Shift+click to keep placing, right-click or Esc to cancel. |
+| Q, W (building selected) | Train or research what that building offers (Keep: Laborer / Castle · Barracks: Guard / Archer · Hall: hero · Blacksmith: weapons / armor · Lumber Mill: Bow Saws) |
+| F2 or the Hero button | Select your hero |
+| Q, W, E (hero selected) | Stormhammer (click an enemy), Battle Cry, Mend (click one of your units) |
 | Right-click (Keep or Barracks selected) | Set the rally point. On a mine or tree, newly trained Laborers start gathering there. |
 | Click a queue slot | Cancel that unit (full refund) |
 | X | Cancel construction (75% refund), or the last queued unit (full refund) |
@@ -102,9 +105,25 @@ These are the rules as implemented. All numbers live in `src/sim/config.ts`.
 
 - **Same rules as you.** It acts only through the same commands you use. It
   pays the same costs, has the same population limits and build times, and
-  gets no extra resources. There is no fog of war yet, so it sees what you
-  see on screen and on the minimap. All of its information comes through one
-  method (`visible()`), which fog of war will restrict.
+  gets no extra resources. It plays under the same fog of war. It knows:
+  - enemy units it currently sees;
+  - enemy buildings it has seen;
+  - camps it has spotted;
+  - the public start locations.
+
+  When it knows of no enemy building, its waves search start locations and
+  mine sites.
+- **Heroes and upgrades:**
+  - It builds a Hall of Valor after its first Barracks, then trains its hero
+    and revives it when it falls.
+  - In fights the hero heals the most wounded ally with Mend, stuns the enemy
+    hero (or the toughest fighter) with Stormhammer, and uses Battle Cry when
+    3 or more allies are close.
+  - Between attacks, Normal and Hard take the army and hero to clear camps on
+    their own half of the map for experience and bounty.
+  - Normal and Hard build a Blacksmith. They research Forged Blades, Studded
+    Armor and Bow Saws, then fortify to a Castle (Normal at 12:00, Hard at
+    9:00) and research the tier II upgrades.
 - **Economy:**
   - About 5 Laborers per mine next to one of its Keeps, plus a small wood
     crew that shrinks when wood is plentiful.
@@ -248,15 +267,97 @@ All numbers are in `CONFIG.units[*].attack`, `CONFIG.combat` and
   A building at 0 HP collapses and frees its tiles, and its training queue
   is refunded. If it was unfinished, its construction cost is lost. Units
   inside a gold mine can't be targeted.
-- **Neutral camps:** hostile Brigands guard each contested mine (2 Brigands
-  and a Poacher) and each far expansion (a Brigand and a Poacher). The camps
-  are mirror-symmetric. They stay home until you come near, so expanding
-  there means clearing them first. The nearby natural expansion is
+- **Neutral camps:** hostile camps guard the richer mines, mirror-symmetric
+  on both halves of the map:
+  - **Contested centre mines:** a Brigand Chief, a Brigand and a Poacher,
+    worth 105 gold in bounty and 160 hero experience.
+  - **Far expansions:** a Brigand and a Poacher.
+
+  Camps stay home until you come near, so expanding there means clearing
+  them first. Killing a camp unit pays its bounty, and your hero earns its
+  experience if within 12 tiles. The nearby natural expansion is
   unguarded.
 - **Alerts:** when any of your units or buildings is hit, you get "under
   attack" notices with a red minimap ping. They are throttled to one per
   10 s unless the attack is somewhere else. Space jumps to the latest alert.
   In fights, health bars show on every wounded unit.
+
+## Fog of war
+
+- **What you see:** each unit and building sees a circle around it. Sight
+  ranges in tiles: Laborer 8, Guard 8, Archer 9, hero 10, Keep 10, Watch
+  Tower 11, most other buildings 7. A building under construction sees only
+  4.
+- **Three states on the map:**
+  - **Visible:** what you see right now.
+  - **Explored:** ground you have seen before, drawn dimmed.
+  - **Unexplored:** black.
+
+  The minimap shows the same.
+- **What fog hides:** enemy units are shown only while you can see them.
+  Enemy buildings stay shown, and attackable, once you have seen them.
+- **The same rules for everyone:** auto-targeting, towers and attack orders
+  only work on what the owner can see. A unit ordered to chase a target out
+  of sight runs to where it was last seen, and picks the chase back up if it
+  spots it again.
+- **Saved state:** explored ground is part of the saved game. Visibility is
+  recomputed every tick, so a loaded game continues exactly.
+- **Watching after the match** lifts the fog. `?fog=0` disables it for
+  debugging.
+
+## Upgrades and tech
+
+Research shares the building's training queue, under the same rules: paid
+when queued, full refund on cancel, refunded if the building is destroyed. It
+is permanent and player-wide, even if the building is later lost.
+
+| Research | At | Cost | Time | Effect | Requires |
+| --- | --- | --- | --- | --- | --- |
+| Forged Blades | Blacksmith | 100 gold, 50 wood | 40 s | +2 damage: Guards, Archers, hero | — |
+| Tempered Blades | Blacksmith | 175 gold, 100 wood | 55 s | another +2 damage | Forged Blades, Castle |
+| Studded Armor | Blacksmith | 100 gold, 50 wood | 40 s | +2 armor: Guards, Archers, hero | — |
+| Plate Armor | Blacksmith | 175 gold, 100 wood | 55 s | another +2 armor | Studded Armor, Castle |
+| Bow Saws | Lumber Mill | 75 gold, 50 wood | 30 s | Laborers carry 15 wood instead of 10 | — |
+| Fortify to Castle | Keep | 300 gold, 200 wood | 60 s | that Keep gets +500 HP; unlocks tier II | — |
+
+The Blacksmith (hotkey N) costs 140 gold and 60 wood.
+
+## Hero
+
+- **Training:** the Marshal is trained at the Hall of Valor (hotkey V; 180
+  gold, 50 wood). The hero costs 250 gold and 50 wood and uses 3 population.
+  You can have only one, counting a hero in training or one waiting to be
+  revived.
+- **Experience:** when you kill an enemy unit, your hero gains its
+  experience if it is within 12 tiles. The experience is split if several
+  heroes are close.
+
+  | Kill | Experience |
+  | --- | --- |
+  | Laborer | 15 |
+  | Guard or Archer | 35 |
+  | Brigand | 40 |
+  | Poacher | 30 |
+  | Brigand Chief | 90 |
+  | Enemy hero | 60 × its level |
+
+  Levels need 200, 500, 900 and 1400 total experience, up to level 5.
+- **Each level adds** +60 health, +3 damage, +0.5 armor and +30 maximum mana.
+  Mana regenerates at 0.6 per second. Abilities get stronger at levels 3 and
+  5.
+
+  | Ability | Key | Learned | Mana / cooldown | Effect (rank I / II / III) |
+  | --- | --- | --- | --- | --- |
+  | Stormhammer | Q, click an enemy | level 1 | 75 / 10 s | Thrown hammer: 90 / 140 / 190 damage and a 1.5 / 2 / 2.5 s stun |
+  | Battle Cry | W | level 2 | 60 / 30 s | Your units within 8 tiles deal +15 / 25 / 35% damage for 12 s |
+  | Mend | E, click one of your units | level 3 | 50 / 8 s | Heals 150 / 225 / 300 |
+
+  The hero walks into range before casting. A stunned unit can't move,
+  attack or cast, and stunning a unit interrupts its swing.
+- **Death and revival:** a fallen hero keeps its level and experience. Its
+  Hall of Valor button becomes "Revive". Revival costs 100 + 50 × level gold
+  and takes 20 + 5 × level seconds. The hero comes back at full health and
+  mana. A revival does not count as a new unit in the statistics.
 
 ## Architecture
 
@@ -279,11 +380,15 @@ src/sim/      deterministic simulation (no DOM access)
   production.ts training queues, population reservation, rally, refunds
   combat.ts     targeting, attack orders, wind-up/cooldown, projectiles, armor, death
   outcome.ts    defeat, victory, draw, surrender
+  vision.ts     fog of war: per-player visibility, explored tiles, seen buildings
+  tech.ts       research rules and effective damage / armor / carry
+  hero.ts       experience, levels, bounty, abilities, stun and buffs
 src/render3d/ three.js view (reads state, never writes it)
   cameraRig.ts  angled RTS camera; screen <-> ground conversion
   world.ts      scene, terrain props, entity views and animation, picking, previews
   models.ts     low-poly primitive models (Laborer, Keep, Farm, Mill, mine, trees)
-  overlay.ts    2D overlay: health/progress bars, mine pips, floating numbers
+  overlay.ts    2D overlay: health/mana/progress bars, mine pips, floating numbers
+  fog.ts        fog-of-war texture injected into every lit material's shader
   groundTexture.ts  procedurally painted ground texture
 src/input/    mouse/keyboard → selection, camera, placement, Commands
 src/ui/       DOM HUD, command card, minimap, objectives checklist, start/menu/end screens
@@ -394,6 +499,25 @@ which are never shipped to players.
     - A full Hard-vs-Easy match ends decisively, and resources never go
       negative.
     - Deterministic.
+  - **Fog of war:**
+    - Sight circles, and explored ground remembered.
+    - Unseen units can't be targeted, while remembered buildings can be
+      attacked.
+    - Ordered pursuit chases to the last-seen spot.
+    - Each side starts seeing only its own base.
+    - Every unit can see as far as it can acquire and shoot.
+    - Save/load continues exactly with fog.
+  - **Strategic depth:**
+    - Research: pay on queue, effects on current and future units, tier II
+      needing tier I and the Castle (which adds HP), no duplicates, cancel
+      refunds, permanent after the building is lost, Bow Saws carry.
+    - Hero: one per player; revived at its level for the scaled cost and
+      time; experience and level-ups from nearby kills only; bounty.
+    - Stormhammer: walks into range, spends mana, damages, stuns (no moving
+      or attacking), cooldown enforced.
+    - Battle Cry: level-gated, nearby allies only, expires.
+    - Mend: heals own units only.
+    - Camps include a Brigand Chief.
   - **Growth (integration):** a scripted build order on the real map, using
     only player commands, goes from 5 to 21 Laborers, builds a Farm, and
     expands with a second Keep at the nearby expansion mine, which then
@@ -442,6 +566,24 @@ which are never shipped to players.
   - A Normal AI beat a passive player at 7:40 and showed the elimination
     screen, and "Keep watching" works.
   - No console errors.
+- **AI-vs-AI with Milestone 5 (headless, outside the test suite):** in 6
+  games, every one ended decisively in 15–16 minutes.
+  - Hard beat Easy twice, Hard beat Normal twice, and Normal beat Easy.
+  - Both AIs reached hero level 4–5, and Normal and Hard researched up to
+    tier II.
+  - In one Hard-vs-Normal game, both heroes cast all three abilities, fell 3
+    times each and were revived, and both sides earned camp bounties.
+- **Scripted browser checks for Milestone 5:**
+  - Fog renders as visible, dimmed and black, on the minimap too, and a
+    scout reveals the map as it moves.
+  - Through the real UI: building a Hall of Valor (V) and a Blacksmith (N),
+    training the hero (Q), Forged Blades (Q), Fortify to Castle (W), and
+    seeing the Castle model.
+  - F2 selects the hero, and Battle Cry and Mend show as locked at level 1.
+  - Stormhammer is cast with Q and a click, shows its cooldown, and spends
+    mana.
+  - Clearing a camp gave 160 experience and 105 gold in bounty.
+  - No console errors.
 - **Not yet done:** human playtesting of feel and pacing, and frame-rate
   measurement on real GPUs. Software WebGL only manages ~2–3 fps, which says
   nothing about real hardware.
@@ -454,5 +596,9 @@ which are never shipped to players.
 2. ~~Base construction and production~~ (done)
 3. ~~Combat foundation~~ (done)
 4. ~~Complete skirmish~~ (done)
-5. Strategic depth: hero, experience, abilities, neutral camps, fog of war,
-   upgrades
+5. ~~Strategic depth~~ (done): fog of war, upgrades and tech, a hero with
+   levels and abilities, rewarding neutral camps.
+
+Next is the long-term roadmap, starting with Phase A: refining pathfinding
+and group movement, controls, pacing and balance, informed by real
+playtesting.

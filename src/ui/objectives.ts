@@ -45,8 +45,13 @@ const STEPS: Step[] = [
     done: (g, p) => own(g, p).filter((u) => u.type !== 'worker').length >= 4,
   },
   {
+    text: 'Raise a hero',
+    hint: 'With a Laborer press V to build a Hall of Valor, then train the Marshal there. Clear Brigand camps to level it up.',
+    done: (g, p) => !!g.player(p).hero,
+  },
+  {
     text: 'Destroy the enemy base',
-    hint: 'The enemy Keep is in the north-east (red on the minimap). Select your army, press A and click there.',
+    hint: 'The enemy starts in the north-east. Scout to find it, then select your army, press A and click there.',
     done: (g, p) => g.state.outcome?.winner === p,
   },
 ];

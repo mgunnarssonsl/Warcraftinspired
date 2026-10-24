@@ -16,7 +16,9 @@
 import { CONFIG, secondsToTicks, TICK_SECONDS, type UnitType } from './config';
 import type { Game } from './game';
 import { distToRect } from './movement';
+import { onHeroDeath, onKill } from './hero';
 import { destroyBuilding } from './production';
+import { armorValue, attackDamage } from './tech';
 import type { Building, Entity, Order, Unit } from './types';
 
 type Target = Unit | Building;
@@ -46,9 +48,6 @@ export function gap(u: Unit, t: Target): number {
   return distToRect(u.x, u.y, t) - u.radius;
 }
 
-function armorOf(t: Target): number {
-  return t.kind === 'unit' ? CONFIG.units[t.type].armor : CONFIG.combat.buildingArmor;
-}
 
 export function damageAfterArmor(raw: number, armor: number): number {
   return Math.max(1, Math.round(raw / (1 + armor * CONFIG.combat.armorFactor)));
@@ -218,7 +217,7 @@ export function updateCombatOrder(game: Game, u: Unit): void {
 
 /** Apply damage, emit feedback, trigger retaliation, and kill at 0 HP. */
 export function dealDamage(game: Game, attackerId: number, attackerOwner: number, t: Target, raw: number): void {
-  const dmg = damageAfterArmor(raw, armorOf(t));
+  const dmg = damageAfterArmor(raw, armorValue(game, t));
   t.hp -= dmg;
   game.emit({ type: 'hit', id: t.id, attacker: attackerId, attackerOwner, owner: t.owner, damage: dmg, x: t.x, y: t.y });
   if (t.hp <= 0) {
@@ -237,10 +236,12 @@ export function kill(game: Game, t: Target, attackerOwner: number): void {
   const killer = game.state.players[attackerOwner];
   if (killer) killer.stats.kills++;
   if (victim) victim.stats[t.kind === 'building' ? 'buildingsLost' : 'unitsLost']++;
+  onKill(game, attackerOwner, t);
   if (t.kind === 'building') {
     destroyBuilding(game, t.id);
     return;
   }
+  if (t.hero) onHeroDeath(game, t);
   game.emit({ type: 'death', id: t.id, owner: t.owner, unit: t.type as UnitType, x: t.x, y: t.y });
   game.removeEntity(t.id);
 }
@@ -251,6 +252,10 @@ export function updateCombat(game: Game, units: Unit[]): void {
     if (!game.state.entities[u.id]) continue;
     if (u.cooldown > 0) u.cooldown--;
     if (u.swing === 0) continue;
+    if (u.stun > 0) {
+      u.swing = 0; // a stun interrupts the attack
+      continue;
+    }
     // A swing is abandoned if the unit's orders moved on to something else.
     if (targetOf(u.order) !== u.swingTarget) {
       u.swing = 0;
@@ -261,8 +266,9 @@ export function updateCombat(game: Game, units: Unit[]): void {
     u.cooldown = Math.max(1, secondsToTicks(def.cooldown) - secondsToTicks(def.windup));
     const t = game.get(u.swingTarget);
     if (!targetable(t) || gap(u, t) > def.range + CONFIG.combat.swingSlack) continue;
-    if (def.projectileSpeed > 0) launch(game, u.id, u.owner, u.x, u.y, t.id, def.projectileSpeed, def.damage);
-    else dealDamage(game, u.id, u.owner, t, def.damage);
+    const damage = attackDamage(game, u);
+    if (def.projectileSpeed > 0) launch(game, u.id, u.owner, u.x, u.y, t.id, def.projectileSpeed, damage);
+    else dealDamage(game, u.id, u.owner, t, damage);
   }
 
   for (const b of game.buildings()) {
@@ -304,7 +310,7 @@ function towerTarget(game: Game, b: Building, range: number): Target | undefined
 }
 
 function launch(game: Game, sourceId: number, owner: number, x: number, y: number, targetId: number, speed: number, damage: number): void {
-  game.state.projectiles.push({ id: game.state.nextId++, owner, sourceId, targetId, x, y, px: x, py: y, speed, damage });
+  game.state.projectiles.push({ id: game.state.nextId++, owner, sourceId, targetId, x, y, px: x, py: y, speed, damage, kind: 'arrow', stun: 0 });
 }
 
 function updateProjectiles(game: Game): void {
@@ -321,6 +327,10 @@ function updateProjectiles(game: Game): void {
     if (d <= step + (t.kind === 'unit' ? t.radius : 0.5)) {
       p.x = t.x;
       p.y = t.y;
+      if (p.stun > 0 && t.kind === 'unit') {
+        t.stun = Math.max(t.stun, p.stun);
+        t.swing = 0;
+      }
       dealDamage(game, p.sourceId, p.owner, t, p.damage);
       continue;
     }

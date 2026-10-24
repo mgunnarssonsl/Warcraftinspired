@@ -6,6 +6,7 @@ import { CONFIG, type BuildingType, type UnitType } from './config';
 import { applyCommand, type Command } from './commands';
 import { updateCombat, updateCombatOrder } from './combat';
 import { checkOutcome } from './outcome';
+import { updateCast, updateStatus } from './hero';
 import { updateBuilder } from './construction';
 import { updateProduction } from './production';
 import { updateGatherer } from './gathering';
@@ -31,7 +32,7 @@ export const NEUTRAL_COLOR = '#8a5a2b';
 
 /** Guards per camp, by the role of the mine they protect. */
 const CAMPS: Partial<Record<keyof typeof CONFIG.mines, UnitType[]>> = {
-  center: ['brigand', 'brigand', 'poacher'],
+  center: ['chief', 'brigand', 'poacher'],
   far: ['brigand', 'poacher'],
 };
 
@@ -71,6 +72,8 @@ export class Game {
           neutral: false,
           defeated: false,
           stats: emptyStats(),
+          research: {},
+          hero: null,
         }),
       ),
       entities: {},
@@ -105,6 +108,8 @@ export class Game {
       neutral: true,
       defeated: false,
       stats: emptyStats(),
+      research: {},
+      hero: null,
     });
     for (let i = 0; i < layout.mines.length; i += 2) {
       const guards = CAMPS[layout.mines[i].role];
@@ -195,7 +200,7 @@ export class Game {
     for (const e of Object.values(this.state.entities)) {
       if (e.owner !== player) continue;
       if (e.kind === 'unit') n += CONFIG.units[e.type].pop;
-      else if (e.kind === 'building') for (const q of e.queue) if (q.started) n += CONFIG.units[q.unit].pop;
+      else if (e.kind === 'building') for (const q of e.queue) if (q.started && q.unit) n += CONFIG.units[q.unit].pop;
     }
     return n;
   }
@@ -262,6 +267,7 @@ export class Game {
       cooldown: 0,
       targetId: -1,
       seenBy: 1 << owner,
+      tier: 1,
     };
     this.state.entities[b.id] = b;
     this.lists = null;
@@ -293,6 +299,9 @@ export class Game {
       swing: 0,
       swingTarget: -1,
       home: null,
+      hero: null,
+      stun: 0,
+      buffs: [],
     };
     this.state.entities[u.id] = u;
     this.lists = null;
@@ -369,9 +378,17 @@ export class Game {
       u.px = u.x;
       u.py = u.y;
     }
+    updateStatus(this, units);
     for (const u of units) {
       if (!this.state.entities[u.id]) continue;
-      if (u.order?.type === 'move') {
+      if (u.stun > 0) {
+        // Stunned: no orders progress this tick (they resume afterwards).
+        u.stun--;
+        continue;
+      }
+      if (u.order?.type === 'cast') {
+        updateCast(this, u, u.order);
+      } else if (u.order?.type === 'move') {
         if (!u.move) this.moveTo(u, { kind: 'point', x: u.order.x, y: u.order.y });
         else if (u.move.state !== 'moving') {
           u.order = null;

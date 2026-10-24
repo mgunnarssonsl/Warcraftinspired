@@ -4,7 +4,7 @@
 
 import type { BuildingType } from '../sim/config';
 
-export type TargetMode = null | 'move' | 'gather' | 'attack';
+export type TargetMode = null | 'move' | 'gather' | 'attack' | 'cast:hammer' | 'cast:mend';
 
 export interface ClientState {
   player: number;

@@ -42,6 +42,10 @@ export class Overlay {
     for (const e of events) {
       if (e.type === 'deliver' && e.player === viewer) {
         this.floats.push({ x: e.x, y: e.y + 0.5, text: `+${e.amount}`, color: e.res === 'gold' ? GOLD : WOOD, t0: now });
+      } else if (e.type === 'bounty' && e.player === viewer) {
+        this.floats.push({ x: e.x, y: e.y, text: `+${e.amount}`, color: GOLD, t0: now });
+      } else if (e.type === 'levelUp' && e.player === viewer) {
+        this.floats.push({ x: e.x, y: e.y, text: `Level ${e.level}!`, color: '#ffe9a8', t0: now });
       }
     }
   }
@@ -67,6 +71,19 @@ export class Overlay {
     }
   }
 
+  private marker(x: number, y: number, h: number, text: string, color: string): void {
+    const p = this.rig.project(x, y, h);
+    if (!p.visible) return;
+    const ctx = this.ctx;
+    ctx.font = 'bold 13px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+    ctx.strokeText(text, p.x, p.y);
+    ctx.fillStyle = color;
+    ctx.fillText(text, p.x, p.y);
+  }
+
   draw(client: ClientState, alpha: number, now: number): void {
     const { ctx, canvas, game } = this;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -75,10 +92,19 @@ export class Overlay {
     for (const e of Object.values(game.state.entities)) {
       if (!this.perceived(e)) continue;
       if (e.kind === 'unit') {
-        // Selected or wounded units show health, so fights stay readable.
-        if (e.hidden || (!selected.has(e.id) && e.hp >= e.maxHp)) continue;
+        if (e.hidden) continue;
         const x = e.px + (e.x - e.px) * alpha;
         const y = e.py + (e.y - e.py) * alpha;
+        if (e.stun > 0) this.marker(x, y, 1.75, '✦ ✦', '#ffe36a');
+        if (e.hero) {
+          // Heroes always show health, mana and level.
+          const head = e.type === 'hero' ? 1.7 : 1.25;
+          this.bar(x, y, head, 40, e.hp / e.maxHp, hpColor(e.hp / e.maxHp), `Lv ${e.hero.level}`);
+          this.bar(x, y, head - 0.12, 40, e.hero.mana / e.hero.maxMana, '#5a8cff');
+          continue;
+        }
+        // Selected or wounded units show health, so fights stay readable.
+        if (!selected.has(e.id) && e.hp >= e.maxHp) continue;
         this.bar(x, y, 1.25, 30, e.hp / e.maxHp, hpColor(e.hp / e.maxHp));
       } else if (e.kind === 'building') {
         const top = e.w * 0.75 + 0.6;
@@ -90,7 +116,8 @@ export class Overlay {
         const q = e.queue[0];
         if (q && e.owner === client.player) {
           // Training progress just above the roof; red label when waiting for population.
-          const label = q.started ? CONFIG.units[q.unit].name : 'Need Farms';
+          const name = q.research ? CONFIG.research[q.research].name : CONFIG.units[q.unit!].name;
+          const label = q.started ? (q.revive ? `Reviving ${name}` : name) : 'Need Farms';
           this.bar(e.x, e.y, top + 0.55, 50, q.progress, q.started ? '#6ab0ff' : '#ff5a4a', label);
         }
       } else if (e.type === 'goldmine') {

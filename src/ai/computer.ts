@@ -15,11 +15,13 @@
 //   military - defend anything near its buildings; launch attack waves that
 //              grow each time; fall back when a wave is mostly lost
 
-import { CONFIG, secondsToTicks, type BuildingType, type UnitType } from '../sim/config';
+import { CONFIG, secondsToTicks, type AbilityId, type BuildingType, type ResearchId, type UnitType } from '../sim/config';
 import { isEnemy } from '../sim/combat';
 import type { Game } from '../sim/game';
 import { distToRect } from '../sim/movement';
-import { hasCompleted } from '../sim/production';
+import { castProblem } from '../sim/hero';
+import { hasCompleted, trainCost } from '../sim/production';
+import { researched, researchPending, researchProblem } from '../sim/tech';
 import type { Building, Entity, ResourceNode, Unit } from '../sim/types';
 import { findSite } from './placement';
 
@@ -53,6 +55,10 @@ export class ComputerPlayer {
     if (!me || me.defeated || game.state.outcome) return;
     this.think(game);
   }
+
+  /** Camp-clearing target of the current wave, if it is a creeping party. */
+  private creepAt: { x: number; y: number } | null = null;
+  private cleared = new Set<string>();
 
   /** Search points a wave has already visited without finding anything. */
   private searched = new Set<string>();
@@ -198,14 +204,16 @@ export class ComputerPlayer {
     const unfinished = buildings.filter((b) => b.progress < 1).length + workers.filter((w) => w.order?.type === 'build' && w.order.siteId < 0).length;
     if (count('hq') === 0) return 'hq'; // lost the base: rebuild before anything else
     if (unfinished >= this.profile.builders) return null;
-    const pending = buildings.reduce((n, b) => n + b.queue.filter((q) => !q.started).reduce((s, q) => s + CONFIG.units[q.unit].pop, 0), 0);
+    const pending = buildings.reduce((n, b) => n + b.queue.filter((q) => !q.started).reduce((s, q) => s + (q.unit ? CONFIG.units[q.unit].pop : 0), 0), 0);
     const spare = game.popCap(P) - game.popUsed(P) - pending;
     const farmsBuilding = buildings.some((b) => b.type === 'farm' && b.progress < 1) || workers.some((w) => w.order?.type === 'build' && w.order.buildingType === 'farm');
     const buffer = CONFIG.ai.popBuffer + 2 * count('barracks');
     if (spare < buffer && game.popCap(P) < CONFIG.match.maxPop && !farmsBuilding) return 'farm';
     if (count('barracks') === 0 && workers.length >= this.profile.barracksAtWorkers) return 'barracks';
     if (count('barracks') > 0 && count('lumbermill') === 0) return 'lumbermill';
+    if (count('barracks') > 0 && count('altar') === 0) return 'altar';
     if (count('tower') < this.profile.towers && hasCompleted(game, P, 'barracks')) return 'tower';
+    if (this.profile.upgrades && count('smithy') === 0 && hasCompleted(game, P, 'lumbermill')) return 'smithy';
     const me = game.player(P);
     if (count('barracks') < this.profile.maxBarracks && workers.length >= 11 && me.gold >= 300) return 'barracks';
     const seconds = game.state.tick / 20;
@@ -247,7 +255,7 @@ export class ComputerPlayer {
       const tree = this.nearestTree(game, home);
       return tree ? findSite(game, P, type, tree.x + Math.sign(home.x - tree.x) * 2, tree.y + Math.sign(home.y - tree.y) * 2) : null;
     }
-    if (type === 'tower' || type === 'barracks') {
+    if (type === 'tower' || type === 'barracks' || type === 'altar' || type === 'smithy') {
       const s = this.staging(game, home);
       return findSite(game, P, type, (s.x + home.x) / 2, (s.y + home.y) / 2);
     }
@@ -307,6 +315,21 @@ export class ComputerPlayer {
     const P = this.player;
     const me = game.player(P);
     const home = keeps[0];
+    // The hero comes first: train it, or revive it when it falls.
+    const altar = buildings.find((b) => b.type === 'altar' && b.progress >= 1);
+    const rec = me.hero;
+    if (altar && (!rec || !rec.alive) && !buildings.some((b) => b.queue.some((q) => q.unit === 'hero'))) {
+      const c = trainCost(game, P, 'hero');
+      if (me.gold >= c.gold && me.wood >= c.wood) {
+        if (home && !altar.rally) {
+          const s = this.staging(game, home);
+          game.issue({ type: 'setRally', player: P, buildingId: altar.id, x: s.x, y: s.y, targetId: -1 });
+        }
+        game.issue({ type: 'train', player: P, buildingId: altar.id, unit: 'hero' });
+        return;
+      }
+    }
+    this.research(game, buildings, reserve);
     const archers = army.filter((u) => u.type === 'archer').length;
     for (const b of buildings) {
       if (b.type !== 'barracks' || b.progress < 1) continue;
@@ -323,6 +346,46 @@ export class ComputerPlayer {
     }
   }
 
+  /** Upgrades in a fixed order, when the economy can spare it. */
+  private research(game: Game, buildings: Building[], reserve: { gold: number; wood: number }): void {
+    if (!this.profile.upgrades) return;
+    const P = this.player;
+    const me = game.player(P);
+    const seconds = game.state.tick / 20;
+    const order: ResearchId[] = ['weapons1', 'armor1', 'saws'];
+    if (this.profile.castleSeconds !== null && seconds >= this.profile.castleSeconds) order.push('castle', 'weapons2', 'armor2');
+    for (const id of order) {
+      const def = CONFIG.research[id];
+      if (researched(game, P, id) || researchPending(game, P, id)) continue;
+      const b = buildings.find((x) => x.type === def.at && x.progress >= 1 && x.queue.length === 0);
+      if (!b || researchProblem(game, P, b, id)) continue;
+      if (me.gold - reserve.gold - CONFIG.ai.researchBuffer < def.cost.gold || me.wood - reserve.wood < def.cost.wood) return;
+      game.issue({ type: 'research', player: P, buildingId: b.id, research: id });
+      return; // one new research per think
+    }
+  }
+
+  /** Hero ability use: heal the hurt, stun the dangerous, rally in a fight. */
+  private heroTactics(game: Game, army: Unit[], enemies: Array<Unit | Building>): void {
+    const h = army.find((u) => u.hero);
+    if (!h || h.stun > 0 || h.order?.type === 'cast') return;
+    const P = this.player;
+    const foes = enemies.filter((e): e is Unit => e.kind === 'unit' && dist(e, h) < 9);
+    const allies = army.filter((u) => dist(u, h) < 8);
+    const hurt = allies.filter((u) => u.hp < u.maxHp * 0.5).sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
+    const tryCast = (ability: AbilityId, targetId: number) => {
+      if (castProblem(game, h, ability, targetId)) return false;
+      game.issue({ type: 'cast', player: P, units: [h.id], ability, targetId });
+      return true;
+    };
+    if (hurt && foes.length && tryCast('mend', hurt.id)) return;
+    if (!foes.length) return;
+    // Stun the enemy hero if present, else the healthiest fighter in reach.
+    const target = foes.find((f) => f.hero) ?? foes.filter((f) => f.type !== 'worker').sort((a, b) => b.hp - a.hp)[0];
+    if (target && tryCast('hammer', target.id)) return;
+    if (allies.length >= 3) tryCast('cry', -1);
+  }
+
   // ---- military ---------------------------------------------------------------
 
   private military(game: Game, army: Unit[], workers: Unit[], buildings: Building[], keeps: Building[]): void {
@@ -334,6 +397,7 @@ export class ComputerPlayer {
     );
     this.wave = this.wave.filter((id) => game.unit(id));
     const home = army.filter((u) => !this.wave.includes(u.id));
+    this.heroTactics(game, army, enemies);
 
     if (threats.length) {
       if (now - this.lastDefend >= secondsToTicks(3)) {
@@ -365,6 +429,13 @@ export class ComputerPlayer {
         this.wave = home.map((u) => u.id);
         this.waveLaunched = this.wave.length;
         this.lastWaveOrder = -1e9;
+        this.creepAt = null;
+      } else if (this.profile.creeps && home.some((u) => u.hero) && home.length >= CONFIG.ai.creepParty && this.creepTarget(game, keeps)) {
+        // Between attacks: take the army and hero to clear a camp for experience.
+        this.creepAt = this.creepTarget(game, keeps);
+        this.wave = home.map((u) => u.id);
+        this.waveLaunched = this.wave.length;
+        this.lastWaveOrder = -1e9;
       } else if (keeps[0]) {
         // Keep the home army gathered at the staging point.
         const s = this.staging(game, keeps[0]);
@@ -375,14 +446,29 @@ export class ComputerPlayer {
     }
     if (!this.wave.length) return;
 
-    if (this.wave.length <= Math.floor(this.waveLaunched * CONFIG.ai.retreatShare)) {
+    const waveUnits = this.wave.map((id) => game.unit(id)!).filter(Boolean);
+    const goHome = (grow: boolean) => {
       const s = keeps[0] ? this.staging(game, keeps[0]) : null;
       if (s) game.issue({ type: 'move', player: P, units: this.wave, x: s.x, y: s.y });
-      this.endWave();
+      this.endWave(grow);
+    };
+    if (this.wave.length <= Math.floor(this.waveLaunched * CONFIG.ai.retreatShare)) return goHome(!this.creepAt);
+    if (this.creepAt) {
+      const at = this.creepAt;
+      const arrived = waveUnits.some((u) => dist(u, at) < 5);
+      const guards = enemies.some((e) => e.kind === 'unit' && game.player(e.owner).neutral && dist(e, at) < 9);
+      if (arrived && !guards) {
+        this.cleared.add(`${at.x},${at.y}`);
+        this.campsSeen = this.campsSeen.filter((c) => dist(c, at) > 8);
+        return goHome(false);
+      }
+      if (now - this.lastWaveOrder < secondsToTicks(4)) return;
+      const idle = waveUnits.filter((u) => u.order === null || u.order.type === 'move');
+      if (idle.length) game.issue({ type: 'attackMove', player: P, units: idle.map((u) => u.id), x: at.x, y: at.y });
+      this.lastWaveOrder = now;
       return;
     }
     if (now - this.lastWaveOrder < secondsToTicks(4)) return;
-    const waveUnits = this.wave.map((id) => game.unit(id)!).filter(Boolean);
     const idleWave = waveUnits.filter((u) => u.order === null || u.order.type === 'move');
     if (!idleWave.length) return;
     const c = centroid(waveUnits);
@@ -421,9 +507,26 @@ export class ComputerPlayer {
     return this.strength(home) >= this.strength(theirs) * CONFIG.ai.attackAdvantage;
   }
 
-  private endWave(): void {
+  private endWave(grow = true): void {
     this.wave = [];
-    this.waveSize += this.profile.waveGrowth;
+    this.creepAt = null;
+    if (grow) this.waveSize += this.profile.waveGrowth;
+  }
+
+  /** Nearest uncleared mine on its own half of the map, away from any known Keep. */
+  private creepTarget(game: Game, keeps: Building[]): { x: number; y: number } | null {
+    const home = keeps[0];
+    if (!home) return null;
+    const mine = game.state.starts[this.player];
+    const enemyStarts = game.state.starts.filter((_, p) => p !== this.player);
+    const keepsKnown = game.buildings().filter((b) => b.type === 'hq' && (b.owner === this.player || game.vision.knows(this.player, b)));
+    const options = game
+      .resources()
+      .filter((m) => m.type === 'goldmine' && !this.cleared.has(`${m.x},${m.y}`))
+      .filter((m) => !keepsKnown.some((k) => distToRect(m.x, m.y, k) < 12))
+      .filter((m) => enemyStarts.every((e) => dist(m, mine) < dist(m, e)))
+      .sort((a, b) => dist(a, home) - dist(b, home));
+    return options[0] ? { x: options[0].x, y: options[0].y } : null;
   }
 }
 

@@ -1,10 +1,11 @@
 // Commands are the only way players (human or AI) affect the simulation.
 // They are validated here: a player can only command their own living units.
 
-import { CONFIG, type BuildingType, type UnitType } from './config';
+import { CONFIG, type AbilityId, type BuildingType, type ResearchId, type UnitType } from './config';
 import { cancelConstruction, checkPlacement, resumeBuild, shortfall, startBuild } from './construction';
 import type { Game } from './game';
-import { cancelTraining, enqueue, setRally } from './production';
+import { cancelTraining, enqueue, enqueueResearch, setRally } from './production';
+import { castProblem } from './hero';
 import { canAttack, isEnemy, targetable } from './combat';
 import { defeat } from './outcome';
 import { releaseFromNode, startGather, startReturnCargo } from './gathering';
@@ -19,6 +20,8 @@ export type Command =
   | { type: 'attackMove'; player: number; units: number[]; x: number; y: number }
   | { type: 'hold'; player: number; units: number[] }
   | { type: 'surrender'; player: number }
+  | { type: 'research'; player: number; buildingId: number; research: ResearchId }
+  | { type: 'cast'; player: number; units: number[]; ability: AbilityId; targetId: number }
   | { type: 'build'; player: number; units: number[]; buildingType: BuildingType; tx: number; ty: number }
   | { type: 'resumeBuild'; player: number; units: number[]; buildingId: number }
   | { type: 'cancelBuild'; player: number; buildingId: number }
@@ -53,6 +56,9 @@ export function applyCommand(game: Game, cmd: Command): void {
       return setRally(game, cmd.player, cmd.buildingId, cmd.x, cmd.y, cmd.targetId);
     case 'surrender':
       return defeat(game, cmd.player, 'surrendered');
+    case 'research':
+      if (!(cmd.research in CONFIG.research) || game.state.players[cmd.player]?.defeated) return;
+      return enqueueResearch(game, cmd.player, cmd.buildingId, cmd.research);
   }
   // A decided match accepts no further orders from defeated players.
   if (game.state.players[cmd.player]?.defeated) return;
@@ -121,6 +127,20 @@ export function applyCommand(game: Game, cmd: Command): void {
         u.order = { type: 'attackMove', x: slots[i].x, y: slots[i].y, targetId: -1 };
         u.move = null;
       });
+      return;
+    }
+    case 'cast': {
+      if (!(cmd.ability in CONFIG.hero.abilities)) return;
+      for (const u of units) {
+        const problem = castProblem(game, u, cmd.ability, cmd.targetId);
+        if (problem) {
+          if (u.hero) game.emit({ type: 'cantCast', player: cmd.player, reason: problem });
+          continue;
+        }
+        releaseFromNode(game, u);
+        u.order = { type: 'cast', ability: cmd.ability, targetId: cmd.targetId };
+        u.move = null;
+      }
       return;
     }
     case 'hold': {
