@@ -2,13 +2,15 @@
 // number used by the rules goes through here, so upgrades, hero levels and
 // buffs apply consistently to every player.
 
-import { CONFIG, type ArmorType, type AttackType, type BuildingType, type ResearchId } from './config';
+import { CONFIG, isHeroType, type ArmorType, type AttackType, type BuildingType, type ResearchId } from './config';
+import { buffAmount } from './hero';
+import { itemBonus } from './items';
 import type { Game } from './game';
 import type { Building, Unit } from './types';
 
 /** Unit types that benefit from Blacksmith weapon and armor upgrades. */
-const WEAPONS = new Set(['guard', 'archer', 'lancer', 'hero']);
-const ARMORED = new Set(['guard', 'archer', 'lancer', 'cleric', 'hero']);
+const WEAPONS = new Set(['guard', 'archer', 'lancer', 'hero', 'ranger', 'sage']);
+const ARMORED = new Set(['guard', 'archer', 'lancer', 'cleric', 'hero', 'ranger', 'sage']);
 
 export function researched(game: Game, player: number, id: ResearchId): boolean {
   return !!game.state.players[player]?.research[id];
@@ -58,17 +60,16 @@ function levels(game: Game, owner: number, ids: ResearchId[]): number {
 export function attackDamage(game: Game, u: Unit): number {
   let dmg = CONFIG.units[u.type].attack.damage;
   if (WEAPONS.has(u.type)) dmg += CONFIG.tech.weaponBonus * levels(game, u.owner, ['weapons1', 'weapons2', 'weapons3']);
-  if (u.hero) dmg += CONFIG.hero.damagePerLevel * (u.hero.level - 1);
-  const bonus = u.buffs.reduce((s, b) => s + b.amount, 0);
-  return Math.round(dmg * (1 + bonus));
+  if (u.hero && isHeroType(u.type)) dmg += CONFIG.heroTypes[u.type].damagePerLevel * (u.hero.level - 1) + itemBonus(u, 'damage');
+  return Math.round(dmg * (1 + buffAmount(u, 'cry')));
 }
 
 export function armorValue(game: Game, t: Unit | Building): number {
   if (t.kind === 'building') return CONFIG.combat.buildingArmor;
   let a: number = CONFIG.units[t.type].armor;
   if (ARMORED.has(t.type)) a += CONFIG.tech.armorBonus * levels(game, t.owner, ['armor1', 'armor2', 'armor3']);
-  if (t.hero) a += CONFIG.hero.armorPerLevel * (t.hero.level - 1);
-  return a;
+  if (t.hero && isHeroType(t.type)) a += CONFIG.heroTypes[t.type].armorPerLevel * (t.hero.level - 1) + itemBonus(t, 'armor');
+  return a + buffAmount(t, 'ward');
 }
 
 export function woodCarry(game: Game, owner: number): number {

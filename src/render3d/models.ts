@@ -179,6 +179,83 @@ function makeHero(team: string): WorkerParts {
   return { ...base, tool, ...noTools() };
 }
 
+/** Pathfinder: a tall hooded ranger with a long cloak and a longbow. */
+function makeRanger(team: string): WorkerParts {
+  const base = soldierBase(team, 1.8, '#3b3226');
+  const { body } = base;
+  body.add(mesh(new THREE.ConeGeometry(0.16, 0.28, 8), mat('#2f5a2a'), 0, 0.78, -0.01)); // hood
+  const cloak = mesh(box(0.32, 0.46, 0.03), mat('#2f5a2a'), 0, 0.36, -0.17);
+  cloak.rotation.x = 0.12;
+  body.add(cloak);
+  body.add(mesh(box(0.36, 0.05, 0.2), mat('#d9b44a', { emissive: 0x2a1e00 }), 0, 0.53, 0)); // gold clasp line
+  body.add(mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.32, 6), mat('#6b4a2b'), 0.07, 0.48, -0.18));
+  const tool = new THREE.Group();
+  tool.position.set(-0.21, 0.42, 0.06);
+  const bow = mesh(new THREE.TorusGeometry(0.3, 0.018, 4, 14, Math.PI), mat('#5b3a1e'), 0, 0, 0);
+  bow.rotation.set(0, Math.PI / 2, Math.PI / 2);
+  tool.add(bow);
+  tool.add(mesh(box(0.004, 0.6, 0.004), mat('#e8e2d0'), 0, 0, 0));
+  body.add(tool);
+  return { ...base, tool, ...noTools() };
+}
+
+/** Sage: a robed caster with a tall pointed hat and a staff of fire. */
+function makeSage(team: string): WorkerParts {
+  const base = soldierBase(team, 1.8, '#3a2f4a');
+  const { body } = base;
+  body.add(mesh(new THREE.ConeGeometry(0.24, 0.46, 8), mat('#4a3a6a'), 0, 0.3, 0)); // robe
+  body.add(mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.03, 10), mat('#3a2e55'), 0, 0.71, 0)); // brim
+  body.add(mesh(new THREE.ConeGeometry(0.11, 0.34, 8), mat('#3a2e55'), 0, 0.89, 0)); // hat
+  body.add(mesh(box(0.06, 0.36, 0.02), mat(team), 0, 0.38, 0.19)); // sash
+  const tool = new THREE.Group();
+  tool.position.set(0.22, 0.36, 0.05);
+  tool.add(mesh(box(0.03, 0.68, 0.03), mat('#5b4126'), 0, 0.2, 0));
+  tool.add(mesh(new THREE.OctahedronGeometry(0.08, 0), mat('#ffb060', { emissive: 0xc04a00, rough: 0.3 }), 0, 0.58, 0));
+  body.add(tool);
+  return { ...base, tool, ...noTools() };
+}
+
+/** Timber Wolf: a low grey quadruped. */
+function makeWolf(): WorkerParts {
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  body.scale.setScalar(1.3);
+  root.add(body);
+  const fur = mat('#7a7468');
+  const legGeo = box(0.06, 0.2, 0.06).translate(0, -0.1, 0);
+  const legL = mesh(legGeo, fur, -0.08, 0.2, 0.15);
+  const legR = mesh(legGeo, fur, 0.08, 0.2, 0.15);
+  const hindL = mesh(legGeo, fur, -0.08, 0.2, -0.15);
+  const hindR = mesh(legGeo, fur, 0.08, 0.2, -0.15);
+  legL.userData.partner = hindR;
+  legR.userData.partner = hindL;
+  body.add(legL, legR, hindL, hindR);
+  body.add(mesh(box(0.2, 0.16, 0.46), fur, 0, 0.27, 0));
+  body.add(mesh(box(0.15, 0.14, 0.18), fur, 0, 0.34, 0.27)); // head
+  body.add(mesh(box(0.08, 0.07, 0.12), mat('#5a554c'), 0, 0.31, 0.39)); // snout
+  for (const x of [-0.05, 0.05]) body.add(mesh(new THREE.ConeGeometry(0.03, 0.08, 4), fur, x, 0.44, 0.24));
+  const tail = mesh(box(0.05, 0.05, 0.22), fur, 0, 0.3, -0.31);
+  tail.rotation.x = 0.5;
+  body.add(tail);
+  const tool = new THREE.Group(); // the bite: the head lunges
+  tool.position.set(0, 0.34, 0.3);
+  body.add(tool);
+  return { root, body, legL, legR, tool, ...noTools() };
+}
+
+/** Bog Brute: a hulking, mossy club-wielder. */
+function makeBrute(): WorkerParts {
+  const base = soldierBase('#5d6b3a', 2.3, '#4a5230');
+  const { body } = base;
+  body.add(mesh(new THREE.SphereGeometry(0.2, 8, 6), mat('#6b7a44'), 0, 0.42, 0.04)); // belly
+  body.add(mesh(new THREE.SphereGeometry(0.07, 6, 4), mat('#ffd84a', { emissive: 0x3a2a00 }), 0.04, 0.66, 0.09)); // eye
+  const tool = new THREE.Group();
+  tool.position.set(0.23, 0.42, 0.04);
+  tool.add(mesh(new THREE.CylinderGeometry(0.03, 0.07, 0.5, 6), mat('#5b3a1e'), 0, 0.2, 0));
+  body.add(tool);
+  return { ...base, tool, ...noTools() };
+}
+
 /** Lancer: a rider on a barded horse with a long lance couched forward. */
 function makeLancer(team: string): WorkerParts {
   const root = new THREE.Group();
@@ -263,6 +340,10 @@ export function makeHammerGeometry(): THREE.BufferGeometry {
 export function makeUnit(type: UnitType, team: string): WorkerParts {
   if (type === 'hero') return makeHero(team);
   if (type === 'lancer') return makeLancer(team);
+  if (type === 'ranger') return makeRanger(team);
+  if (type === 'sage') return makeSage(team);
+  if (type === 'wolf') return makeWolf();
+  if (type === 'brute') return makeBrute();
   if (type === 'cleric') return makeCleric(team);
   if (type === 'mangonel') return makeMangonel(team);
   // Camp creeps reuse the soldier silhouettes in their own drab colours.
@@ -567,7 +648,47 @@ function workshop(team: string): THREE.Group {
   return g;
 }
 
-const BUILDERS: Record<BuildingType, (team: string) => THREE.Group> = { hq: keep, farm, lumbermill, barracks, tower, altar, smithy, chapel, workshop };
+/** Trading Post: a striped market stall with crates and a hanging sign. */
+function shop(): THREE.Group {
+  const g = new THREE.Group();
+  const wood = mat('#8a6440');
+  g.add(mesh(box(2.7, 0.1, 2.7), mat('#7d6648'), 0, 0.05, 0));
+  for (const [x, z] of [[-1.05, -0.8], [1.05, -0.8], [-1.05, 0.8], [1.05, 0.8]]) g.add(mesh(box(0.1, 1.4, 0.1), wood, x, 0.75, z));
+  for (let i = 0; i < 5; i++) {
+    const stripe = mesh(box(0.46, 0.06, 1.9), mat(i % 2 ? '#e8d9b0' : '#b8442e'), -0.92 + i * 0.46, 1.48, 0);
+    stripe.rotation.x = -0.15;
+    g.add(stripe);
+  }
+  g.add(mesh(box(2.0, 0.5, 0.5), wood, 0, 0.3, 0.55)); // counter
+  g.add(mesh(box(0.4, 0.4, 0.4), mat('#a0703f'), -0.6, 0.25, -0.45));
+  g.add(mesh(box(0.3, 0.3, 0.3), mat('#8a5f34'), 0.55, 0.2, -0.5));
+  g.add(mesh(new THREE.SphereGeometry(0.12, 8, 6), mat('#ffd84a', { emissive: 0x4a3200, rough: 0.35 }), 0.2, 0.65, 0.55));
+  g.add(mesh(box(0.6, 0.3, 0.04), mat('#5b4126'), 0, 1.15, 0.95)); // sign
+  g.add(mesh(new THREE.OctahedronGeometry(0.09, 0), mat('#ffd84a', { emissive: 0x4a3200 }), 0, 1.15, 0.98));
+  return g;
+}
+
+/** Healing Fountain: a stone basin with a glowing spring. */
+function fountain(): THREE.Group {
+  const g = new THREE.Group();
+  const stone = mat('#a69c8c');
+  g.add(mesh(new THREE.CylinderGeometry(0.95, 1.0, 0.35, 10), stone, 0, 0.17, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.8, 0.8, 0.05, 10), mat('#5ec8e8', { emissive: 0x1a5a70, rough: 0.2 }), 0, 0.33, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.14, 0.18, 0.9, 6), stone, 0, 0.6, 0));
+  g.add(mesh(new THREE.SphereGeometry(0.2, 8, 6), mat('#9af0ff', { emissive: 0x2a8aa0, rough: 0.2 }), 0, 1.15, 0));
+  return g;
+}
+
+const BUILDERS: Record<BuildingType, (team: string) => THREE.Group> = { hq: keep, farm, lumbermill, barracks, tower, altar, smithy, chapel, workshop, shop, fountain };
+
+/** An item on the ground: a small chest with a glowing gem, colored by tier. */
+export function makeGroundItem(tier: number): THREE.Group {
+  const g = new THREE.Group();
+  g.add(mesh(box(0.34, 0.22, 0.24), mat('#7a5733'), 0, 0.11, 0));
+  g.add(mesh(box(0.36, 0.06, 0.26), mat('#d9b44a', { emissive: 0x2a1e00 }), 0, 0.24, 0));
+  g.add(mesh(new THREE.OctahedronGeometry(0.1, 0), mat(tier > 1 ? '#c49aff' : '#7dffb0', { emissive: tier > 1 ? 0x5a2aa0 : 0x1a8a4a }), 0, 0.46, 0));
+  return g;
+}
 
 export function makeBuilding(type: BuildingType, team: string, size: number, tier = 1): BuildingParts {
   const root = new THREE.Group();

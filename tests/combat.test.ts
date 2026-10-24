@@ -241,7 +241,7 @@ describe('battles', () => {
     const g = Game.create(4);
     const neutral = g.state.players.find((p) => p.neutral)!;
     const camp = g.units().filter((u) => u.owner === neutral.id);
-    expect(camp.length).toBe(14);
+    expect(camp.length).toBe(2 * Object.values(CONFIG.camps).reduce((n, c) => n + c.guards.length, 0));
     const W = g.state.map.width;
     const H = g.state.map.height;
     for (const u of camp) {

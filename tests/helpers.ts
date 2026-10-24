@@ -22,7 +22,7 @@ export function emptyGame(width = 32, height = 24): Game {
       defeated: false,
       stats: emptyStats(),
       research: {},
-      hero: null,
+      heroes: [],
     })),
     entities: {},
     projectiles: [],
@@ -30,6 +30,9 @@ export function emptyGame(width = 32, height = 24): Game {
     victoryRules: false,
     explored: [],
     starts: [],
+    items: [],
+    camps: [],
+    reveals: [],
   };
   return new Game(state);
 }

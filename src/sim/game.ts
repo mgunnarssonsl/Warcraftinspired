@@ -2,12 +2,13 @@
 // and advances the simulation one fixed tick at a time. Rendering, input and
 // AI never mutate state directly; they submit Commands.
 
-import { CONFIG, type BuildingType, type UnitType } from './config';
+import { CONFIG, type BuildingType, type CampRole, type ItemId, type UnitType } from './config';
 import { applyCommand, applyQueued, type Command } from './commands';
 import { updateCombat, updateCombatOrder } from './combat';
 import { checkOutcome } from './outcome';
 import { updateCast, updateStatus } from './hero';
 import { updatePrayers } from './support';
+import { updateFountains, updatePickup } from './items';
 import { updateBuilder } from './construction';
 import { updateProduction } from './production';
 import { updateGatherer } from './gathering';
@@ -31,13 +32,6 @@ import type {
 export const PLAYER_COLORS = ['#3a7bd5', '#c0392b', '#27ae60', '#8e44ad'];
 export const NEUTRAL_COLOR = '#8a5a2b';
 
-/** Guards per camp, by the role of the mine they protect. */
-const CAMPS: Partial<Record<keyof typeof CONFIG.mines, UnitType[]>> = {
-  center: ['chief', 'brigand', 'poacher'],
-  far: ['brigand', 'poacher'],
-  // Even the natural expansion must be cleared first: no free second mine.
-  natural: ['brigand', 'poacher'],
-};
 
 export class Game {
   state: GameState;
@@ -76,7 +70,7 @@ export class Game {
           defeated: false,
           stats: emptyStats(),
           research: {},
-          hero: null,
+          heroes: [],
         }),
       ),
       entities: {},
@@ -85,6 +79,9 @@ export class Game {
       victoryRules: true,
       explored: [],
       starts: layout.starts.map((s) => ({ x: s.hq.tx + CONFIG.buildings.hq.size / 2, y: s.hq.ty + CONFIG.buildings.hq.size / 2 })),
+      items: [],
+      camps: [],
+      reveals: [],
     };
     const game = new Game(state);
     for (const i of layout.trees) {
@@ -112,24 +109,89 @@ export class Game {
       defeated: false,
       stats: emptyStats(),
       research: {},
-      hero: null,
+      heroes: [],
     });
+    // Each camp of a mirrored pair has the same guards and drops the same item.
+    const dropsUsed: Record<number, number> = {};
     for (let i = 0; i < layout.mines.length; i += 2) {
-      const guards = CAMPS[layout.mines[i].role];
-      if (!guards) continue;
+      const role = layout.mines[i].role as CampRole;
+      const def = CONFIG.camps[role];
+      if (!def) continue;
+      const pool = CONFIG.campDrops[def.level as 1 | 2 | 3] as readonly ItemId[];
+      const n = (dropsUsed[def.level] = (dropsUsed[def.level] ?? 0) + 1);
+      const drop = pool[(n - 1 + (seed >>> 0)) % pool.length];
       const m = layout.mines[i];
       const size = CONFIG.resources.goldmine.size;
-      const spots = game.freeTilesAround({ tx: m.tx, ty: m.ty, w: size, h: size }, guards.length);
-      guards.forEach((type, k) => {
+      const spots = game.freeTilesAround({ tx: m.tx, ty: m.ty, w: size, h: size }, def.guards.length);
+      const camps = [
+        { level: def.level, x: m.tx + size / 2, y: m.ty + size / 2, drop, cleared: false },
+        { level: def.level, x: layout.width - m.tx - size / 2, y: layout.height - m.ty - size / 2, drop, cleared: false },
+      ];
+      const first = state.camps.length;
+      state.camps.push(...camps);
+      def.guards.forEach((type, k) => {
         const s = spots[k];
         if (!s) return;
-        for (const [x, y] of [[s.x + 0.5, s.y + 0.5], [layout.width - s.x - 0.5, layout.height - s.y - 0.5]]) {
+        [[s.x + 0.5, s.y + 0.5], [layout.width - s.x - 0.5, layout.height - s.y - 0.5]].forEach(([x, y], side) => {
           const u = game.addUnit(type, neutral, x, y);
           u.home = { x, y };
-        }
+          u.camp = first + side;
+        });
       });
     }
+    game.placeObjectives(neutral);
     return game;
+  }
+
+  /**
+   * Trading Posts and Healing Fountains: mirrored pairs on the line of points
+   * equally far from both starts, so neither side is closer to any of them.
+   */
+  private placeObjectives(owner: number): void {
+    const { width: W, height: H } = this.state.map;
+    const [a, b] = this.state.starts;
+    if (!a || !b) return;
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    const dir = { x: -(b.y - a.y) / len, y: (b.x - a.x) / len };
+    const home = this.nav.component(Math.floor(a.x), Math.floor(a.y + 3));
+    for (const [type, offset] of [['shop', 15], ['fountain', 8]] as const) {
+      const size = CONFIG.buildings[type].size;
+      const px = W / 2 + dir.x * offset;
+      const py = H / 2 + dir.y * offset;
+      const site = this.findOpenSite(size, px, py, home);
+      if (!site) continue;
+      // Public map knowledge, like the mines: every player knows where they are.
+      for (const b of [this.addBuilding(type, owner, site.tx, site.ty), this.addBuilding(type, owner, W - site.tx - size, H - site.ty - size)])
+        b.seenBy = (1 << this.state.players.length) - 1;
+    }
+  }
+
+  /** Nearest footprint around (x, y) with a free border, whose mirror is free too. */
+  private findOpenSite(size: number, x: number, y: number, component: number): { tx: number; ty: number } | null {
+    const { width: W, height: H } = this.state.map;
+    const free = (tx: number, ty: number) => {
+      for (let j = ty - 1; j <= ty + size; j++) for (let i = tx - 1; i <= tx + size; i++) if (!this.nav.passable(i, j) || this.nav.entityAt[j * this.nav.w + i]) return false;
+      return true;
+    };
+    const cx = Math.round(x - size / 2);
+    const cy = Math.round(y - size / 2);
+    for (let r = 0; r < 14; r++)
+      for (let dy = -r; dy <= r; dy++)
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const tx = cx + dx;
+          const ty = cy + dy;
+          if (!this.nav.inBounds(tx - 1, ty - 1) || !this.nav.inBounds(tx + size, ty + size)) continue;
+          if (!free(tx, ty) || !free(W - tx - size, H - ty - size)) continue;
+          if (this.nav.component(tx - 1, ty - 1) !== component) continue;
+          // Keep clear of mines and the camps guarding them: shopping should
+          // not mean fighting a camp.
+          const cx2 = tx + size / 2;
+          const cy2 = ty + size / 2;
+          if (this.resources().some((m) => m.type === 'goldmine' && Math.min(Math.hypot(m.x - cx2, m.y - cy2), Math.hypot(m.x - (W - cx2), m.y - (H - cy2))) < 9)) continue;
+          return { tx, ty };
+        }
+    return null;
   }
 
   static fromJSON(json: string): Game {
@@ -306,6 +368,7 @@ export class Game {
       hero: null,
       stun: 0,
       buffs: [],
+      camp: -1,
       mana: type === 'cleric' ? CONFIG.cleric.mana : 0,
       prayerReady: 0,
     };
@@ -394,6 +457,7 @@ export class Game {
     }
     updateStatus(this, units);
     updatePrayers(this, units);
+    updateFountains(this);
     for (const u of units) {
       if (!this.state.entities[u.id]) continue;
       if (u.stun > 0) {
@@ -405,6 +469,8 @@ export class Game {
       while (u.order === null && u.orderQueue.length) applyQueued(this, u, u.orderQueue.shift()!);
       if (u.order?.type === 'cast') {
         updateCast(this, u, u.order);
+      } else if (u.order?.type === 'pickup') {
+        updatePickup(this, u, u.order);
       } else if (u.order?.type === 'move') {
         if (!u.move) this.moveTo(u, { kind: 'point', x: u.order.x, y: u.order.y });
         else if (u.move.state !== 'moving') {

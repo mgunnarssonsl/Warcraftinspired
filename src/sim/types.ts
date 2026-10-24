@@ -2,7 +2,7 @@
 // (numbers, strings, arrays, records) so JSON round-trips are lossless.
 // Derived caches (navigation grid etc.) live outside it, in Game.
 
-import type { AbilityId, AttackType, BuildingType, ResearchId, UnitType } from './config';
+import type { AbilityId, AttackType, BuildingType, HeroType, ItemId, ResearchId, UnitType } from './config';
 
 export type ResourceKind = 'gold' | 'wood';
 export type NodeType = 'goldmine' | 'tree';
@@ -48,14 +48,18 @@ export interface Player {
   /** Completed research (permanent for the match). */
   research: Partial<Record<ResearchId, boolean>>;
   /** The player's hero, once trained: kept while dead so it can be revived. */
-  hero: HeroRecord | null;
+  /** Every hero this player has raised, alive or awaiting revival. */
+  heroes: HeroRecord[];
 }
 
 export interface HeroRecord {
+  type: HeroType;
   unitId: number;
   alive: boolean;
   level: number;
   xp: number;
+  /** Carried items, kept while the hero is dead (null = empty slot). */
+  items: Array<ItemId | null>;
 }
 
 export interface HeroState {
@@ -65,13 +69,44 @@ export interface HeroState {
   maxMana: number;
   /** Tick at which each ability is ready again. */
   ready: Partial<Record<AbilityId, number>>;
+  /** Inventory slots (null = empty). */
+  items: Array<ItemId | null>;
 }
 
+/**
+ * Timed effects on a unit. cry: +amount damage share. mark: takes +amount
+ * more damage. slow: moves and attacks amount slower. ward: +amount armor.
+ */
 export interface Buff {
-  kind: 'cry';
+  kind: 'cry' | 'mark' | 'slow' | 'ward';
   until: number;
-  /** Damage multiplier bonus, e.g. 0.25 = +25%. */
   amount: number;
+}
+
+/** An item lying on the ground, waiting for a hero to pick it up. */
+export interface GroundItem {
+  id: number;
+  type: ItemId;
+  x: number;
+  y: number;
+}
+
+/** A neutral camp: its guards and the item the last one drops. */
+export interface Camp {
+  level: number;
+  x: number;
+  y: number;
+  drop: ItemId;
+  cleared: boolean;
+}
+
+/** A temporary view of the map (Far Sight). */
+export interface Reveal {
+  owner: number;
+  x: number;
+  y: number;
+  radius: number;
+  until: number;
 }
 
 export interface PlayerStats {
@@ -174,7 +209,8 @@ export type Order =
       pace?: number;
     }
   | { type: 'hold'; targetId: number }
-  | { type: 'cast'; ability: AbilityId; targetId: number };
+  | { type: 'cast'; ability: AbilityId; targetId: number; x: number; y: number }
+  | { type: 'pickup'; itemId: number };
 
 /** A Shift-queued instruction, turned into a real order when its turn comes. */
 export type QueuedOrder =
@@ -221,6 +257,8 @@ export interface Unit extends EntityBase {
   /** Ticks of stun remaining: a stunned unit cannot act or move. */
   stun: number;
   buffs: Buff[];
+  /** Index into GameState.camps for neutral camp guards, else -1. */
+  camp: number;
   /** Mana of non-hero casters (Clerics); 0 for everyone else. */
   mana: number;
   /** Tick from which a Cleric's next prayer (heal) is ready. */
@@ -331,9 +369,21 @@ export interface GameState {
   explored: number[][];
   /** Starting Keep centre per player: public map knowledge, like any 1v1 map. */
   starts: Vec[];
+  /** Items lying on the map. */
+  items: GroundItem[];
+  camps: Camp[];
+  /** Active Far Sight reveals. */
+  reveals: Reveal[];
 }
 
 export type GameEvent =
+  | { type: 'itemDropped'; id: number; item: ItemId; x: number; y: number }
+  | { type: 'itemPicked'; player: number; hero: number; item: ItemId; x: number; y: number }
+  | { type: 'itemUsed'; player: number; hero: number; item: ItemId; x: number; y: number }
+  | { type: 'itemBought'; player: number; hero: number; item: ItemId }
+  | { type: 'cantItem'; player: number; reason: string }
+  | { type: 'campCleared'; level: number; x: number; y: number }
+  | { type: 'teleport'; player: number; id: number; fromX: number; fromY: number; x: number; y: number }
   | { type: 'impact'; x: number; y: number; radius: number }
   | { type: 'heal'; player: number; id: number; source: number; amount: number; x: number; y: number }
   | { type: 'deliver'; player: number; res: ResourceKind; amount: number; x: number; y: number }

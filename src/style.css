@@ -259,6 +259,22 @@ body {
 .detail .k {
   color: var(--muted);
   width: 100px;
+  flex: none;
+}
+/* Heroes and other long panels: two columns so every row fits. */
+.detail.wide {
+  column-count: 2;
+  column-gap: 18px;
+}
+.detail.wide .sel-title,
+.detail.wide .sel-head {
+  column-span: all;
+}
+.detail.wide .row {
+  break-inside: avoid;
+}
+.detail.wide .k {
+  width: 72px;
 }
 .portraits {
   display: flex;

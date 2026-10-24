@@ -15,12 +15,13 @@
 //   military - defend anything near its buildings; launch attack waves that
 //              grow each time; fall back when a wave is mostly lost
 
-import { CONFIG, secondsToTicks, type AbilityId, type ArmyMix, type BuildingType, type ResearchId, type UnitType } from '../sim/config';
+import { CONFIG, isHeroType, secondsToTicks, type AbilityId, type ArmyMix, type BuildingType, type ItemId, type ResearchId, type UnitType } from '../sim/config';
 import { isEnemy } from '../sim/combat';
 import type { Game } from '../sim/game';
 import { distToRect } from '../sim/movement';
-import { castProblem } from '../sim/hero';
-import { hasCompleted, missingRequirement, trainableAt, trainCost } from '../sim/production';
+import { abilitiesOf, castProblem } from '../sim/hero';
+import { buyProblem, freeSlot } from '../sim/items';
+import { hasCompleted, heroProblem, missingRequirement, trainableAt, trainCost } from '../sim/production';
 import { researched, researchPending, researchProblem } from '../sim/tech';
 import type { Building, Entity, ResourceNode, Unit } from '../sim/types';
 import { findSite } from './placement';
@@ -361,17 +362,19 @@ export class ComputerPlayer {
     const P = this.player;
     const me = game.player(P);
     const home = keeps[0];
-    // The hero comes first: train it, or revive it when it falls.
+    // Heroes come first: train its chosen heroes (a second once fortified),
+    // and revive any that fall.
     const altar = buildings.find((b) => b.type === 'altar' && b.progress >= 1);
-    const rec = me.hero;
-    if (altar && (!rec || !rec.alive) && !buildings.some((b) => b.queue.some((q) => q.unit === 'hero'))) {
-      const c = trainCost(game, P, 'hero');
-      if (me.gold >= c.gold && me.wood >= c.wood) {
+    if (altar) {
+      for (const type of this.profile.heroes) {
+        if (heroProblem(game, P, type)) continue;
+        const c = trainCost(game, P, type);
+        if (me.gold < c.gold || me.wood < c.wood) break;
         if (home && !altar.rally) {
           const s = this.staging(game, home);
           game.issue({ type: 'setRally', player: P, buildingId: altar.id, x: s.x, y: s.y, targetId: -1 });
         }
-        game.issue({ type: 'train', player: P, buildingId: altar.id, unit: 'hero' });
+        game.issue({ type: 'train', player: P, buildingId: altar.id, unit: type });
         return;
       }
     }
@@ -455,26 +458,144 @@ export class ComputerPlayer {
     }
   }
 
-  /** Hero ability use: heal the hurt, stun the dangerous, rally in a fight. */
-  private heroTactics(game: Game, army: Unit[], enemies: Array<Unit | Building>): void {
-    const h = army.find((u) => u.hero);
-    if (!h || h.stun > 0 || h.order?.type === 'cast') return;
+  /** A hero sent shopping, and the Trading Post it is heading for. */
+  private shopping: { hero: number; shop: number } | null = null;
+
+  /**
+   * Between fights, heroes pick up items lying near them (camp drops), and
+   * with spare gold one walks to the nearest Trading Post to buy.
+   */
+  private heroErrands(game: Game, army: Unit[], enemies: Array<Unit | Building>, keeps: Building[]): void {
     const P = this.player;
-    const foes = enemies.filter((e): e is Unit => e.kind === 'unit' && dist(e, h) < 9);
-    const allies = army.filter((u) => dist(u, h) < 8);
-    const hurt = allies.filter((u) => u.hp < u.maxHp * 0.5).sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
-    const tryCast = (ability: AbilityId, targetId: number) => {
-      if (castProblem(game, h, ability, targetId)) return false;
-      game.issue({ type: 'cast', player: P, units: [h.id], ability, targetId });
-      return true;
+    const me = game.player(P);
+    const heroes = army.filter((u) => u.hero);
+    for (const h of heroes) {
+      if (h.order?.type === 'pickup' || freeSlot(h) < 0) continue;
+      if (enemies.some((e) => e.kind === 'unit' && dist(e, h) < 9)) continue;
+      const item = game.state.items
+        .filter((i) => dist(i, h) < 14 && game.vision.isVisible(P, Math.floor(i.x), Math.floor(i.y)))
+        .sort((a, b) => dist(a, h) - dist(b, h))[0];
+      if (item) game.issue({ type: 'pickup', player: P, units: [h.id], itemId: item.id });
+    }
+    if (!this.profile.shops) return;
+    if (this.shopping) {
+      const h = game.unit(this.shopping.hero);
+      const shop = game.building(this.shopping.shop);
+      if (!h || !shop || this.wave.includes(h.id)) {
+        this.shopping = null;
+        return;
+      }
+      const wish = this.shoppingList(h).find((it) => !buyProblem(game, P, shop.id, h.id, it));
+      if (wish) {
+        game.issue({ type: 'buyItem', player: P, shopId: shop.id, heroId: h.id, item: wish });
+        return;
+      }
+      if (distToRect(h.x, h.y, shop) > CONFIG.shop.range) {
+        if (h.order === null) this.walkTo(game, h, shop);
+        return;
+      }
+      // Done (or broke): back to the staging point.
+      this.shopping = null;
+      if (keeps[0]) {
+        const s = this.staging(game, keeps[0]);
+        game.issue({ type: 'move', player: P, units: [h.id], x: s.x, y: s.y });
+      }
+      return;
+    }
+    if (me.gold < CONFIG.ai.shopGold || this.wave.length) return;
+    const h = heroes.find((u) => freeSlot(u) >= 0 && u.order === null && !enemies.some((e) => e.kind === 'unit' && dist(e, u) < 12));
+    if (!h) return;
+    const shops = game.buildings().filter((b) => b.type === 'shop');
+    if (!shops.length) return;
+    // The Posts are equally far from both bases, so "nearest" often ties.
+    // Break ties by side (left of the line toward the enemy), which mirrors
+    // between seats; list order would send both players to the same Post.
+    const side = (b: Building) => {
+      const me = game.state.starts[P];
+      const foe = game.state.starts.find((_, p) => p !== P && !game.player(p).neutral);
+      return me && foe ? Math.sign((foe.x - me.x) * (b.y - me.y) - (foe.y - me.y) * (b.x - me.x)) : 0;
     };
-    if (hurt && foes.length && tryCast('mend', hurt.id)) return;
-    if (!foes.length) return;
-    // Stun the enemy hero if present, else the healthiest fighter in reach.
-    const target = foes.find((f) => f.hero) ?? foes.filter((f) => f.type !== 'worker').sort((a, b) => b.hp - a.hp)[0];
-    if (target && tryCast('hammer', target.id)) return;
-    if (allies.length >= 3) tryCast('cry', -1);
+    const shop = shops.reduce((a, b) => {
+      const d = dist(b, h) - dist(a, h);
+      return d < -0.5 || (Math.abs(d) <= 0.5 && side(b) > side(a)) ? b : a;
+    });
+    this.shopping = { hero: h.id, shop: shop.id };
+    this.walkTo(game, h, shop);
   }
+
+  /** Walk up to a building, stopping on the side facing the walker. */
+  private walkTo(game: Game, u: Unit, b: Building): void {
+    const d = Math.max(0.01, dist(u, b));
+    const r = b.w / 2 + 1.5;
+    game.issue({ type: 'move', player: this.player, units: [u.id], x: b.x + ((u.x - b.x) / d) * r, y: b.y + ((u.y - b.y) / d) * r });
+  }
+
+  /** What a hero would buy, best first: a permanent item it lacks, then a draught. */
+  private shoppingList(h: Unit): ItemId[] {
+    const has = new Set(h.hero!.items);
+    const wants: ItemId[] = h.type === 'sage' ? ['charm', 'mail', 'blade'] : h.type === 'ranger' ? ['blade', 'charm', 'mail'] : ['mail', 'blade', 'charm'];
+    const list = wants.filter((it) => !has.has(it));
+    if (!has.has('draught')) list.push('draught');
+    return list;
+  }
+
+  /**
+   * Heroes in a fight, by what each ability does: heal or ward the most hurt
+   * ally, disable or mark the most dangerous enemy (their hero first), drop
+   * area damage where enemies bunch up, rally when the army is around. Items:
+   * a Healing Draught when badly hurt, a Scroll of Return when about to die,
+   * a Mana Tonic when dry.
+   */
+  private heroTactics(game: Game, army: Unit[], enemies: Array<Unit | Building>): void {
+    const P = this.player;
+    for (const h of army) {
+      if (!h.hero || h.stun > 0 || h.order?.type === 'cast' || !isHeroType(h.type)) continue;
+      const foes = enemies.filter((e): e is Unit => e.kind === 'unit' && dist(e, h) < 9);
+      const allies = army.filter((u) => dist(u, h) < 8);
+      const slot = (it: ItemId) => h.hero!.items.indexOf(it);
+      if (foes.length && h.hp < h.maxHp * 0.35 && slot('draught') >= 0) {
+        game.issue({ type: 'useItem', player: P, units: [h.id], slot: slot('draught') });
+        continue;
+      }
+      // About to die with no potion: read the Scroll of Return and live.
+      if (foes.length && h.hp < h.maxHp * 0.2 && slot('scroll') >= 0) {
+        game.issue({ type: 'useItem', player: P, units: [h.id], slot: slot('scroll') });
+        continue;
+      }
+      if (h.hero.mana < 40 && slot('tonic') >= 0) game.issue({ type: 'useItem', player: P, units: [h.id], slot: slot('tonic') });
+      const tryCast = (ability: AbilityId, targetId: number, x = 0, y = 0) => {
+        if (castProblem(game, h, ability, targetId, x, y)) return false;
+        game.issue({ type: 'cast', player: P, units: [h.id], ability, targetId, x, y });
+        return true;
+      };
+      const hurt = allies.filter((u) => u.hp < u.maxHp * 0.5).sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
+      const threat = foes.find((f) => f.hero) ?? foes.filter((f) => f.type !== 'worker').sort((a, b) => b.hp - a.hp)[0];
+      for (const ability of abilitiesOf(h.type)) {
+        const def = CONFIG.hero.abilities[ability];
+        if (ability === 'farsight') {
+          // Scout the enemy base before a wave goes in blind.
+          const known = enemies.some((e) => e.kind === 'building' && !game.player(e.owner).neutral);
+          const start = game.state.starts.find((_, p) => p !== P && !game.player(p).neutral && !game.player(p).defeated);
+          if (!known && this.wave.length && start && tryCast(ability, -1, start.x, start.y)) break;
+          continue;
+        }
+        if (!foes.length) continue;
+        if (def.target === 'ally') {
+          if (hurt && tryCast(ability, hurt.id)) break;
+        } else if (def.target === 'enemy') {
+          if (threat && tryCast(ability, threat.id)) break;
+        } else if (def.target === 'point') {
+          // Centre on the enemy with the most other enemies around it.
+          const best = foes.reduce<{ u: Unit; n: number } | null>((acc, f) => {
+            const n = foes.filter((g) => dist(g, f) <= def.radius).length;
+            return !acc || n > acc.n ? { u: f, n } : acc;
+          }, null);
+          if (best && best.n >= 2 && tryCast(ability, -1, best.u.x, best.u.y)) break;
+        } else if (allies.length >= 3 && tryCast(ability, -1)) break;
+      }
+    }
+  }
+
 
   // ---- military ---------------------------------------------------------------
 
@@ -488,6 +609,7 @@ export class ComputerPlayer {
     this.wave = this.wave.filter((id) => game.unit(id));
     const home = army.filter((u) => !this.wave.includes(u.id));
     this.heroTactics(game, army, enemies);
+    this.heroErrands(game, army, enemies, keeps);
 
     if (threats.length) {
       if (now - this.lastDefend >= secondsToTicks(3)) {

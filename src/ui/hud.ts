@@ -3,12 +3,13 @@
 // through the InputController.
 
 import type { ClientState } from '../input/client';
-import type { Action, InputController } from '../input/input';
-import { CONFIG, TICK_RATE, type AbilityId, type BuildingType, type ResearchId, type UnitType } from '../sim/config';
+import { ITEM_KEYS, type Action, type InputController } from '../input/input';
+import { BUILDABLE, CONFIG, isHeroType, TICK_RATE, type AbilityId, type BuildingType, type ItemId, type ResearchId, type UnitType } from '../sim/config';
 import { canAfford } from '../sim/construction';
 import type { Game } from '../sim/game';
-import { rank } from '../sim/hero';
-import { missingRequirement, trainableAt, trainCost } from '../sim/production';
+import { abilitiesOf, rank } from '../sim/hero';
+import { buyProblem } from '../sim/items';
+import { heroProblem, missingRequirement, trainableAt, trainCost } from '../sim/production';
 import { armorValue, attackDamage, attackRange, healAmount, researchAt, researched, researchPending, researchProblem } from '../sim/tech';
 import type { Building, Entity, GameEvent, Unit } from '../sim/types';
 
@@ -30,6 +31,10 @@ export function unitStatus(game: Game, u: Unit): string {
     return u.carry.amount > 0 ? `Idle, holding ${u.carry.amount} ${u.carry.res}` : 'Idle';
   }
   if (o.type === 'move') return 'Moving';
+  if (o.type === 'pickup') {
+    const it = game.state.items.find((i) => i.id === o.itemId);
+    return it ? `Picking up ${CONFIG.items[it.type].name}` : 'Picking up an item';
+  }
   if (o.type === 'cast') return `Casting ${CONFIG.hero.abilities[o.ability].name}`;
   if (o.type === 'hold') return o.targetId >= 0 ? 'Holding position, fighting' : 'Holding position';
   if (o.type === 'attackMove') return o.targetId >= 0 ? 'Attack-moving, fighting' : 'Attack-moving';
@@ -57,6 +62,8 @@ export function unitStatus(game: Game, u: Unit): string {
   }
 }
 
+const BUFF_NAMES = { cry: 'Battle Cry', mark: "Hunter's Mark", slow: 'Slowed', ward: 'Arcane Ward' } as const;
+
 interface ActionDef {
   id: Action;
   label: string;
@@ -66,6 +73,8 @@ interface ActionDef {
   train?: UnitType;
   research?: ResearchId;
   ability?: AbilityId;
+  slot?: number;
+  buy?: ItemId;
 }
 
 const BUILD_TIPS: Record<BuildingType, string> = {
@@ -78,6 +87,8 @@ const BUILD_TIPS: Record<BuildingType, string> = {
   smithy: 'Blacksmith: researches weapon and armor upgrades. Needed for Lancers.',
   chapel: 'Chapel (tier II): trains Clerics; researches Greater Healing.',
   workshop: 'Siege Works (tier II): builds Mangonels.',
+  shop: 'Trading Post (neutral): a hero standing next to it can buy items.',
+  fountain: 'Healing Fountain (neutral): heals every unit nearby, friend or foe.',
 };
 
 const TRAIN_TIPS: Record<UnitType, string> = {
@@ -90,7 +101,11 @@ const TRAIN_TIPS: Record<UnitType, string> = {
   brigand: '',
   poacher: '',
   chief: '',
-  hero: 'Marshal: your hero. Gains levels from kills nearby; learns Stormhammer, Battle Cry and Mend. Only one; revive it here if it falls.',
+  hero: 'Marshal (hero): frontline. Stormhammer stuns, Battle Cry rallies, Mend heals.',
+  ranger: 'Pathfinder (hero): ranged. Volley hits an area, Hunter\'s Mark makes a target take more damage, Far Sight reveals any spot.',
+  sage: 'Sage (hero): caster. Flame Burst burns groups and buildings, Slow cripples a threat, Arcane Ward armors an ally.',
+  wolf: '',
+  brute: '',
 };
 
 const ACTIONS: ActionDef[] = [
@@ -100,7 +115,7 @@ const ACTIONS: ActionDef[] = [
   { id: 'hold', label: 'Hold', key: 'H', tip: 'Hold position: never move, attack enemies in weapon range.' },
   { id: 'gather', label: 'Gather', key: 'G', tip: 'Harvest gold from a mine or wood from trees. (Right-click a resource.)' },
   { id: 'return', label: 'Return', key: 'R', tip: 'Deliver carried resources to the nearest drop-off, then resume.' },
-  ...(Object.keys(CONFIG.buildings) as BuildingType[]).map((t) => {
+  ...BUILDABLE.map((t) => {
     const d = CONFIG.buildings[t];
     return {
       id: `build:${t}` as Action,
@@ -135,12 +150,31 @@ const ACTIONS: ActionDef[] = [
   }),
   ...(Object.keys(CONFIG.hero.abilities) as AbilityId[]).map((a) => {
     const d = CONFIG.hero.abilities[a];
+    const aim = d.target === 'point' ? 'Click a spot' : d.target === 'enemy' ? 'Click an enemy unit' : d.target === 'ally' ? 'Click one of your units' : 'No target';
+    const reach = d.target === 'none' ? `radius ${d.radius}` : d.range >= 999 ? 'any range' : `range ${d.range}${d.radius ? `, radius ${d.radius}` : ''}`;
     return {
       id: `cast:${a}` as Action,
       label: d.name,
       key: d.hotkey,
       ability: a,
-      tip: `${d.desc} ${d.mana} mana, ${d.cooldown}s cooldown. Learned at hero level ${d.learnLevel}; stronger at levels 3 and 5.`,
+      tip: `${d.desc} ${aim}; ${reach}. ${d.mana} mana, ${d.cooldown}s cooldown. Learned at hero level ${d.learnLevel}; stronger at levels 3 and 5.`,
+    };
+  }),
+  ...[0, 1, 2].map((i) => ({
+    id: `item:${i}` as Action,
+    label: '—',
+    key: ITEM_KEYS[i].toUpperCase(),
+    slot: i,
+    tip: 'Inventory slot.',
+  })),
+  ...(CONFIG.shop.stock as readonly ItemId[]).map((it) => {
+    const d = CONFIG.items[it];
+    return {
+      id: `buy:${it}` as Action,
+      label: d.name,
+      key: d.hotkey,
+      buy: it,
+      tip: `${d.desc} ${d.price} gold. Your hero must stand within ${CONFIG.shop.range} tiles of the Trading Post.`,
     };
   }),
 ];
@@ -181,7 +215,9 @@ export class Hud {
           ? CONFIG.units[a.train].cost
           : a.research
             ? CONFIG.research[a.research].cost
-            : null;
+            : a.buy
+              ? { gold: CONFIG.items[a.buy].price, wood: 0 }
+              : null;
       b.innerHTML =
         `<span class="cmd-label">${a.label}</span><span class="cmd-key">${a.key}</span>` +
         (cost ? `<span class="cmd-cost"><i class="g">${cost.gold}</i> <i class="w">${cost.wood}</i></span>` : '');
@@ -192,6 +228,14 @@ export class Hud {
       }
       b.title = `${a.tip} [${a.key}]`;
       b.addEventListener('click', () => input.action(a.id));
+      if (a.slot !== undefined) {
+        b.classList.add('item-slot');
+        // Right-click an inventory slot to drop the item (for another hero).
+        b.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          input.action(`drop:${a.slot}` as Action);
+        });
+      }
       this.buttons.set(a.id, b);
       this.card.appendChild(b);
     }
@@ -268,15 +312,22 @@ export class Hud {
         this.notify('Not enough population: build more Farms.', 'alert');
       } else if (e.type === 'cantTrain' && e.player === this.client.player) {
         this.notify(`Cannot train: ${e.reason}`, 'alert');
+      } else if (e.type === 'cantItem' && e.player === this.client.player) {
+        this.notify(e.reason, 'alert');
+      } else if (e.type === 'itemPicked' && e.player === this.client.player) {
+        this.notify(`Your hero picked up ${CONFIG.items[e.item].name}.`, 'good');
+      } else if (e.type === 'itemBought' && e.player === this.client.player) {
+        this.notify(`Bought ${CONFIG.items[e.item].name}.`, 'good');
       } else if (e.type === 'cantCast' && e.player === this.client.player) {
         this.notify(e.reason, 'alert');
       } else if (e.type === 'researchComplete' && e.player === this.client.player) {
         this.notify(`Research complete: ${CONFIG.research[e.research].name}.`);
       } else if (e.type === 'levelUp' && e.player === this.client.player) {
-        const learned = (Object.keys(CONFIG.hero.abilities) as AbilityId[]).find((a) => CONFIG.hero.abilities[a].learnLevel === e.level);
+        const u = this.game.unit(e.id);
+        const learned = (u && isHeroType(u.type) ? abilitiesOf(u.type) : []).find((a) => CONFIG.hero.abilities[a].learnLevel === e.level);
         this.notify(`Your hero reached level ${e.level}!${learned ? ` Learned ${CONFIG.hero.abilities[learned].name}.` : ''}`);
       } else if (e.type === 'heroFallen' && e.player === this.client.player) {
-        this.notify(`Your ${CONFIG.units.hero.name} has fallen. Revive at the ${CONFIG.buildings.altar.name}.`, 'alert');
+        this.notify(`A hero has fallen. Revive it at the ${CONFIG.buildings.altar.name}: it keeps its level and items.`, 'alert');
       } else if (e.type === 'buildingDestroyed' && e.player === this.client.player) {
         const refund = e.refundGold || e.refundWood ? ` Queue refunded: ${e.refundGold} gold, ${e.refundWood} wood.` : '';
         this.notify(`${CONFIG.buildings[e.building].name} destroyed.${refund}`, 'alert');
@@ -323,21 +374,24 @@ export class Hud {
     const trainable = ownB && ownB.progress >= 1 ? trainableAt(ownB.type) : [];
     const researchable = ownB && ownB.progress >= 1 ? researchAt(ownB.type) : [];
     const hero = own.find((u) => u.hero);
-    this.card.classList.toggle('hidden', own.length === 0 && !showCancel && trainable.length === 0 && researchable.length === 0);
+    const shop = this.input.selectedShop();
+    this.card.classList.toggle('hidden', own.length === 0 && !showCancel && trainable.length === 0 && researchable.length === 0 && !shop);
     this.cancelBtn.classList.toggle('hidden', !showCancel);
     for (const a of ACTIONS) {
       const btn = this.buttons.get(a.id)!;
       if (a.train) {
         btn.classList.toggle('hidden', !trainable.includes(a.train));
         const c = trainCost(this.game, p.id, a.train);
-        if (a.train === 'hero') {
-          // The hero button turns into "Revive" while the hero is dead.
-          const rec = p.hero;
-          const label = rec && !rec.alive ? `Revive (Lv ${rec.level})` : CONFIG.units.hero.name;
+        if (isHeroType(a.train)) {
+          // A hero's button turns into "Revive" while that hero is dead.
+          const rec = p.heroes.find((h) => h.type === a.train);
+          const label = rec && !rec.alive ? `Revive ${CONFIG.units[a.train].name} (Lv ${rec.level})` : CONFIG.units[a.train].name;
           setText(btn.querySelector('.cmd-label')!, label);
           setText(btn.querySelector('.cmd-cost .g')!, String(c.gold));
           setText(btn.querySelector('.cmd-cost .w')!, String(c.wood));
-          btn.disabled = !!rec?.alive || this.game.buildings().some((x) => x.owner === p.id && x.queue.some((q) => q.unit === 'hero'));
+          const problem = heroProblem(this.game, p.id, a.train);
+          btn.disabled = !!problem;
+          btn.title = `${TRAIN_TIPS[a.train]}${problem ? ` (${problem})` : ''} [${a.key}]`;
         } else btn.disabled = !!missingRequirement(this.game, p.id, a.train);
         btn.classList.toggle('poor', p.gold < c.gold || p.wood < c.wood);
         continue;
@@ -356,9 +410,29 @@ export class Hud {
         }
         continue;
       }
-      if (a.ability) {
+      if (a.slot !== undefined) {
         btn.classList.toggle('hidden', !hero);
-        if (hero) {
+        const it = hero?.hero!.items[a.slot] ?? null;
+        setText(btn.querySelector('.cmd-label')!, it ? CONFIG.items[it].name : '(empty)');
+        btn.disabled = !it || !CONFIG.items[it].consumable;
+        btn.classList.toggle('has-item', !!it);
+        btn.title = it ? `${CONFIG.items[it].name}: ${CONFIG.items[it].desc}${CONFIG.items[it].consumable ? ' Click or press the key to use.' : ' Always active.'} Right-click to drop. [${a.key}]` : 'Empty inventory slot. Heroes pick up items by right-clicking them.';
+        continue;
+      }
+      if (a.buy) {
+        btn.classList.toggle('hidden', !shop);
+        if (shop) {
+          const shopper = this.input.shopper(shop);
+          const problem = shopper ? buyProblem(this.game, p.id, shop.id, shopper.id, a.buy) : 'You need a hero next to the Trading Post.';
+          btn.disabled = !!problem && !problem.startsWith('Not enough');
+          btn.classList.toggle('poor', !!problem && problem.startsWith('Not enough'));
+          btn.title = `${a.tip}${problem ? ` (${problem})` : ''} [${a.key}]`;
+        }
+        continue;
+      }
+      if (a.ability) {
+        btn.classList.toggle('hidden', !hero || CONFIG.hero.abilities[a.ability].hero !== hero.type);
+        if (hero && CONFIG.hero.abilities[a.ability].hero === hero.type) {
           const def = CONFIG.hero.abilities[a.ability];
           const learned = hero.hero!.level >= def.learnLevel;
           const cd = Math.max(0, ((hero.hero!.ready[a.ability] ?? 0) - this.game.state.tick) / TICK_RATE);
@@ -387,12 +461,12 @@ export class Hud {
   private updateHeroButton(): void {
     const b = this.heroBtn;
     if (!b) return;
-    const rec = this.game.player(this.client.player).hero;
-    b.classList.toggle('hidden', !rec);
-    if (!rec) return;
-    const u = rec.alive ? this.game.unit(rec.unitId) : undefined;
-    setText(b, u?.hero ? `Hero · Lv ${u.hero.level} (F2)` : 'Hero fallen: revive at the Hall');
-    b.classList.toggle('fallen', !u);
+    const recs = this.game.player(this.client.player).heroes;
+    b.classList.toggle('hidden', !recs.length);
+    if (!recs.length) return;
+    const parts = recs.map((r) => `${CONFIG.units[r.type].name} ${r.alive ? `Lv ${r.level}` : '(fallen)'}`);
+    setText(b, `${parts.join(' · ')} (F2)`);
+    b.classList.toggle('fallen', recs.some((r) => !r.alive));
   }
 
   private renderPanel(): void {
@@ -460,12 +534,18 @@ export class Hud {
         const next = CONFIG.hero.xpForLevel[h.level];
         row('Level', `${h.level}${next !== undefined ? ` (${h.xp} / ${next} xp)` : ' (max)'}`);
         row('Mana', `${Math.floor(h.mana)} / ${h.maxMana}`);
-        const known = (Object.keys(CONFIG.hero.abilities) as AbilityId[])
+        if (isHeroType(e.type)) row('Role', CONFIG.heroTypes[e.type].role);
+        const known = (isHeroType(e.type) ? abilitiesOf(e.type) : [])
           .filter((a) => h.level >= CONFIG.hero.abilities[a].learnLevel)
           .map((a) => `${CONFIG.hero.abilities[a].name} ${'I'.repeat(rank(h.level) + 1)}`);
         row('Abilities', known.join(', ') || 'none yet');
+        const items = h.items.filter((x): x is ItemId => !!x).map((x) => CONFIG.items[x].name);
+        row('Items', items.length ? items.join(', ') : 'none (right-click items on the ground)');
       }
       if (e.stun > 0) row('Stunned', `${Math.ceil(e.stun / TICK_RATE)}s`);
+      if (e.buffs.length) row('Effects', e.buffs.map((b) => `${BUFF_NAMES[b.kind]} ${Math.ceil((b.until - this.game.state.tick) / TICK_RATE)}s`).join(', '));
+      const camp = this.game.state.camps[e.camp];
+      if (camp) row('Camp', `level ${camp.level} of 3 · the last guard drops ${CONFIG.items[camp.drop].name}`);
       if (e.owner !== this.client.player) row('Owner', this.game.player(e.owner).name);
     } else if (e.kind === 'building') {
       const def = CONFIG.buildings[e.type];
@@ -480,7 +560,10 @@ export class Hud {
       if (def.attack) row('Attack', `${def.attack.damage} ${def.attack.type}, every ${def.attack.cooldown}s, range ${def.attack.range}`);
       row('Armor', `${def.armorType}`);
       if (def.popProvided) row('Population', `+${def.popProvided}`);
-      if (e.owner !== this.client.player) row('Owner', this.game.player(e.owner).name);
+      if (e.type === 'shop') row('Sells', `${(CONFIG.shop.stock as readonly ItemId[]).map((i) => CONFIG.items[i].name).join(', ')} · to a hero within ${CONFIG.shop.range} tiles`);
+      if (e.type === 'fountain') row('Heals', `${CONFIG.fountain.hpPerSecond} health and ${CONFIG.fountain.manaPerSecond} mana per second to every unit within ${CONFIG.fountain.radius} tiles`);
+      if (!def.buildable) row('Owner', 'neutral · cannot be attacked');
+      else if (e.owner !== this.client.player) row('Owner', this.game.player(e.owner).name);
       else if (e.progress >= 1 && (trainableAt(e.type).length || researchAt(e.type).length)) this.production(box, e, row);
       if (e.tier > 1) row('Fortified', e.tier > 2 ? 'Citadel (tier III unlocked)' : 'Castle (tier II unlocked)');
       const done = researchAt(e.type).filter((r) => researched(this.game, e.owner, r));
@@ -501,6 +584,7 @@ export class Hud {
       box.appendChild(el('div', 'sel-title', CONFIG.resources.tree.name));
       row('Wood left', `${e.amount} / ${e.maxAmount}`);
     }
+    if (box.querySelectorAll('.row').length > 6) box.classList.add('wide');
     return box;
   }
 

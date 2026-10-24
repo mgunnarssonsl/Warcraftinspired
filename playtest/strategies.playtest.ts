@@ -19,6 +19,13 @@ const STRATEGIES: Record<string, ProfileOverrides> = {
   classic: { mix: { guard: 3, archer: 2, lancer: 0, cleric: 0, mangonel: 0 }, adapt: false, castleSeconds: null },
   knights: { mix: { guard: 1, archer: 1, lancer: 4, cleric: 0, mangonel: 0 }, adapt: false, castleSeconds: 360 },
   holy: { mix: { guard: 3, archer: 1, lancer: 0, cleric: 2, mangonel: 0 }, adapt: false, castleSeconds: 360 },
+  // Hero choices (first hero; the second comes with the Castle)
+  marshal: { heroes: ['hero', 'ranger'] },
+  pathfinder: { heroes: ['ranger', 'sage'] },
+  sage: { heroes: ['sage', 'hero'] },
+  // Map activity: no heroes at all, or heroes that never clear camps
+  nohero: { heroes: [], creeps: false, shops: false },
+  nocreep: { creeps: false, shops: false },
   siege: { mix: { guard: 3, archer: 2, lancer: 0, cleric: 0, mangonel: 1 }, adapt: false, castleSeconds: 360 },
 };
 const SEEDS = [3, 4, 5, 6];

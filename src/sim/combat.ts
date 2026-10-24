@@ -19,7 +19,8 @@
 import { CONFIG, secondsToTicks, TICK_SECONDS, type AttackType, type UnitType } from './config';
 import type { Game } from './game';
 import { distToRect } from './movement';
-import { onHeroDeath, onKill } from './hero';
+import { buffAmount, onHeroDeath, onKill } from './hero';
+import { onCampGuardDeath } from './items';
 import { destroyBuilding } from './production';
 import { armorTypeOf, armorValue, attackDamage, attackRange, typeMultiplier } from './tech';
 import type { Building, Entity, Order, Unit } from './types';
@@ -42,7 +43,9 @@ export function canAttack(u: Unit): boolean {
 /** Can `e` be targeted at all? (Units inside mines cannot.) */
 export function targetable(e: Entity | undefined): e is Target {
   if (!e || e.kind === 'resource') return false;
-  return e.kind === 'building' || !e.hidden;
+  // Neutral map objectives (Trading Posts, Fountains) cannot be attacked.
+  if (e.kind === 'building') return CONFIG.buildings[e.type].buildable;
+  return !e.hidden;
 }
 
 /** Edge-to-edge distance from a unit to a target. */
@@ -151,7 +154,9 @@ function returnTo(u: Unit, x: number, y: number): void {
 export function updateCombatOrder(game: Game, u: Unit): void {
   const o = u.order;
   const def = attackDef(u);
-  const scan = (game.state.tick + u.id) % CONFIG.combat.scanTicks === 0;
+  // Everyone scans on the same ticks: staggering by id would let one seat's
+  // units (which have different ids from their mirror twins) react first.
+  const scan = game.state.tick % CONFIG.combat.scanTicks === 0;
 
   if (o === null) {
     if (def.acquire > 0 && scan && !u.hidden) {
@@ -232,7 +237,8 @@ export function updateCombatOrder(game: Game, u: Unit): void {
 
 /** Apply damage, emit feedback, trigger retaliation, and kill at 0 HP. */
 export function dealDamage(game: Game, attackerId: number, attackerOwner: number, t: Target, raw: number, type: AttackType): void {
-  const dmg = damageAfterArmor(raw * typeMultiplier(type, armorTypeOf(t)), armorValue(game, t));
+  const marked = t.kind === 'unit' ? 1 + buffAmount(t, 'mark') : 1;
+  const dmg = damageAfterArmor(raw * typeMultiplier(type, armorTypeOf(t)) * marked, armorValue(game, t));
   t.hp -= dmg;
   game.emit({ type: 'hit', id: t.id, attacker: attackerId, attackerOwner, owner: t.owner, damage: dmg, x: t.x, y: t.y });
   if (t.hp <= 0) {
@@ -257,6 +263,7 @@ export function kill(game: Game, t: Target, attackerOwner: number): void {
     return;
   }
   if (t.hero) onHeroDeath(game, t);
+  if (t.camp >= 0) onCampGuardDeath(game, t);
   game.emit({ type: 'death', id: t.id, owner: t.owner, unit: t.type as UnitType, x: t.x, y: t.y });
   game.removeEntity(t.id);
 }
@@ -293,7 +300,8 @@ export function updateCombat(game: Game, units: Unit[]): void {
     }
     if (--u.swing > 0) continue;
     const def = attackDef(u);
-    u.cooldown = Math.max(1, secondsToTicks(def.cooldown) - secondsToTicks(def.windup));
+    // Slowed units recover between attacks more slowly.
+    u.cooldown = Math.max(1, Math.round(secondsToTicks(def.cooldown) * (1 + buffAmount(u, 'slow'))) - secondsToTicks(def.windup));
     const t = game.get(u.swingTarget);
     if (!targetable(t) || gap(u, t) > attackRange(game, u) + CONFIG.combat.swingSlack) continue;
     const damage = attackDamage(game, u);

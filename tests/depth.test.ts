@@ -108,18 +108,18 @@ describe('research', () => {
 });
 
 describe('hero', () => {
-  it('only one hero per player; a fallen hero is revived at its level for a scaled cost', () => {
+  it('only one hero of a type; a second needs the Castle; a fallen hero is revived at its level for a scaled cost', () => {
     const { g } = base();
     const h = heroAt(g, 30.5, 20.5, 3);
     expect(h.hero!.level).toBe(3);
-    expect(h.maxHp).toBe(maxHpFor(3));
+    expect(h.maxHp).toBe(maxHpFor('hero', 3));
     const altar = g.buildings().find((b) => b.type === 'altar')!;
     g.issue({ type: 'train', player: 0, buildingId: altar.id, unit: 'hero' });
     g.step();
     expect(altar.queue).toHaveLength(0); // already have one
     const xp = h.hero!.xp;
     kill(g, h, 1);
-    expect(g.player(0).hero).toMatchObject({ alive: false, level: 3, xp });
+    expect(g.player(0).heroes[0]).toMatchObject({ type: 'hero', alive: false, level: 3, xp });
     const gold = g.player(0).gold;
     g.issue({ type: 'train', player: 0, buildingId: altar.id, unit: 'hero' });
     g.step();
@@ -144,7 +144,7 @@ describe('hero', () => {
     expect(h.hero!.xp).toBe(5 * CONFIG.units.brigand.xp);
     expect(h.hero!.level).toBe(2);
     expect(events.filter((e) => e.type === 'levelUp')).toHaveLength(1);
-    expect(attackDamage(g, h)).toBe(dmg1 + H.damagePerLevel);
+    expect(attackDamage(g, h)).toBe(dmg1 + CONFIG.heroTypes.hero.damagePerLevel);
     expect(g.player(0).gold).toBe(5000 - CONFIG.units.hero.cost.gold + 5 * CONFIG.units.brigand.bounty);
     // Kills far away grant no experience.
     kill(g, g.addUnit('brigand', 1, 55.5, 38.5), 0);
@@ -190,7 +190,7 @@ describe('hero', () => {
     g.step();
     expect(attackDamage(g, ally)).toBe(Math.round(before * (1 + H.abilities.cry.bonus[rank(2)])));
     expect(far.buffs).toHaveLength(0);
-    run(g, ticks(H.abilities.cry.duration) + 2);
+    run(g, ticks(H.abilities.cry.duration[rank(2)]) + 2);
     expect(attackDamage(g, ally)).toBe(before);
   });
 
@@ -211,11 +211,12 @@ describe('hero', () => {
 });
 
 describe('neutral camps', () => {
-  it('the contested camps include a Brigand Chief; clearing them pays bounty', () => {
+  it('camps come in three levels; the strongest have a Bog Brute; clearing them pays bounty', () => {
     const g = Game.create(2);
     const n = g.state.players.find((p) => p.neutral)!.id;
-    const chiefs = g.units().filter((u) => u.owner === n && u.type === 'chief');
-    expect(chiefs).toHaveLength(2);
+    expect([...new Set(g.state.camps.map((c) => c.level))].sort()).toEqual([1, 2, 3]);
+    expect(g.units().filter((u) => u.owner === n && u.type === 'brute')).toHaveLength(2);
+    for (const u of g.units().filter((x) => x.owner === n)) expect(g.state.camps[u.camp]).toBeDefined();
     const total = g.units().filter((u) => u.owner === n).reduce((s, u) => s + CONFIG.units[u.type].bounty, 0);
     expect(total).toBeGreaterThan(200);
   });

@@ -10,22 +10,35 @@ import { emptyGame, rebuild, run, runUntil, setRock } from './helpers';
 const T = CONFIG.combat.typeTable;
 const cost = (t: UnitType) => CONFIG.units[t].cost.gold + CONFIG.units[t].cost.wood;
 
-/** Two armies of equal total cost meet; returns the surviving cost share of side A. */
-function battle(a: UnitType, b: UnitType, budget = 1200): { winner: 0 | 1 | null; leftA: number; leftB: number } {
-  const g = emptyGame(40, 24);
-  const make = (type: UnitType, owner: number, x: number) => {
-    const n = Math.max(1, Math.round(budget / cost(type)));
-    return Array.from({ length: n }, (_, i) => g.addUnit(type, owner, x + (i % 2) * 0.9, 9 + Math.floor(i / 2) * 0.9).id);
+/**
+ * Two armies of equal total cost meet in mirrored formations. Fought twice,
+ * swapping sides, so neither side's position decides it; returns the type
+ * that won both times, or null.
+ */
+function battle(a: UnitType, b: UnitType, budget = 1200): { winner: 0 | 1 | null } {
+  const once = (left: UnitType, right: UnitType): UnitType | null => {
+    const g = emptyGame(40, 24);
+    const make = (type: UnitType, owner: number, mirror: boolean) => {
+      const n = Math.max(1, Math.round(budget / cost(type)));
+      return Array.from({ length: n }, (_, i) => {
+        const x = 14.5 + (i % 2) * 0.9;
+        const y = 9 + Math.floor(i / 2) * 0.9;
+        return g.addUnit(type, owner, mirror ? 40 - x : x, mirror ? 24 - y : y).id;
+      });
+    };
+    const A = make(left, 0, false);
+    const B = make(right, 1, true);
+    g.issue({ type: 'attackMove', player: 0, units: A, x: 30, y: 12 });
+    g.issue({ type: 'attackMove', player: 1, units: B, x: 10, y: 12 });
+    const alive = (ids: number[]) => ids.filter((id) => g.unit(id)).length;
+    for (let t = 0; t < 20 * 150 && alive(A) && alive(B); t++) g.step();
+    const la = alive(A) / A.length;
+    const lb = alive(B) / B.length;
+    return la > lb ? left : lb > la ? right : null;
   };
-  const A = make(a, 0, 14.5);
-  const B = make(b, 1, 22.5);
-  g.issue({ type: 'attackMove', player: 0, units: A, x: 30, y: 11 });
-  g.issue({ type: 'attackMove', player: 1, units: B, x: 8, y: 11 });
-  const alive = (ids: number[]) => ids.filter((id) => g.unit(id)).length;
-  for (let t = 0; t < 20 * 120 && alive(A) && alive(B); t++) g.step();
-  const leftA = alive(A) / A.length;
-  const leftB = alive(B) / B.length;
-  return { winner: leftA > leftB ? 0 : leftB > leftA ? 1 : null, leftA, leftB };
+  const w1 = once(a, b);
+  const w2 = once(b, a);
+  return { winner: w1 === w2 ? (w1 === a ? 0 : w1 === b ? 1 : null) : null };
 }
 
 function research(g: Game, player: number, ...ids: string[]): void {

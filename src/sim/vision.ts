@@ -72,6 +72,7 @@ export class Vision {
       const s = b.progress >= 1 ? CONFIG.buildings[b.type].sight : CONFIG.vision.foundationSight;
       reveal(b.owner, b.x, b.y, s + Math.max(b.w, b.h) / 2);
     }
+    for (const r of state.reveals) reveal(r.owner, r.x, r.y, r.radius);
     // Remember which players have laid eyes on each building.
     for (const b of game.buildings())
       for (let p = 0; p < state.players.length; p++) if (!(b.seenBy & (1 << p)) && this.seesBuilding(p, b)) b.seenBy |= 1 << p;

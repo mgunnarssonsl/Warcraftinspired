@@ -25,7 +25,7 @@ describe('skirmish map', () => {
     const g = Game.create(1234);
     const { width: W, height: H, terrain } = g.state.map;
     for (let i = 0; i < W * H; i++) expect(terrain[i]).toBe(terrain[W * H - 1 - i]);
-    const hqs = g.buildings();
+    const hqs = g.buildings().filter((b) => b.type === 'hq');
     expect(hqs).toHaveLength(2);
     const comp0 = g.nav.component(hqs[0].tx - 1, hqs[0].ty + 1);
     expect(comp0).toBeGreaterThan(0);
@@ -33,6 +33,15 @@ describe('skirmish map', () => {
     const mines = g.resources().filter((r) => r.type === 'goldmine');
     expect(mines).toHaveLength(10);
     for (const m of mines) expect(g.nav.footprintReachableFrom(m, comp0)).toBe(true);
+    // Two Trading Posts and two Fountains, mirrored and reachable.
+    for (const type of ['shop', 'fountain'] as const) {
+      const [a, b] = g.buildings().filter((x) => x.type === type);
+      expect(b).toBeDefined();
+      expect(b.x).toBeCloseTo(W - a.x);
+      expect(b.y).toBeCloseTo(H - a.y);
+      expect(g.nav.footprintReachableFrom(a, comp0)).toBe(true);
+      expect(g.nav.footprintReachableFrom(b, comp0)).toBe(true);
+    }
   });
 
   it('starting units stand on free tiles', () => {

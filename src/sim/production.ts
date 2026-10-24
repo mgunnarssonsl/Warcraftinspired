@@ -2,10 +2,10 @@
 // building. The rules are listed on CONFIG.production and apply identically
 // to every player, human or computer.
 
-import { CONFIG, secondsToTicks, type BuildingType, type ResearchId, type UnitType } from './config';
+import { CONFIG, isHeroType, secondsToTicks, type BuildingType, type ResearchId, type UnitType } from './config';
 import type { Game } from './game';
 import { startGather } from './gathering';
-import { initHero, reviveCost, reviveSeconds } from './hero';
+import { heroLimit, heroRecord, initHero, reviveCost, reviveSeconds } from './hero';
 import { completeResearch, researched, researchProblem } from './tech';
 import type { Building, QueueItem } from './types';
 
@@ -26,16 +26,40 @@ export function missingRequirement(game: Game, player: number, unit: UnitType): 
   return null;
 }
 
-/** A hero is alive, in training or awaiting revival somewhere. */
-function heroQueued(game: Game, player: number): boolean {
-  return game.buildings().some((b) => b.owner === player && b.queue.some((q) => q.unit === 'hero'));
+/** Heroes of a type in training or being revived anywhere. */
+function heroQueued(game: Game, player: number, type?: UnitType): boolean {
+  return game.buildings().some((b) => b.owner === player && b.queue.some((q) => q.unit && isHeroType(q.unit) && (!type || q.unit === type)));
+}
+
+/** New heroes queued (not revivals). */
+function newHeroesQueued(game: Game, player: number): number {
+  let n = 0;
+  for (const b of game.buildings()) if (b.owner === player) for (const q of b.queue) if (q.unit && isHeroType(q.unit) && !q.revive) n++;
+  return n;
 }
 
 /** What training `unit` costs right now (a fallen hero costs a revival). */
 export function trainCost(game: Game, player: number, unit: UnitType): { gold: number; wood: number } {
-  const rec = game.state.players[player]?.hero;
-  if (unit === 'hero' && rec && !rec.alive) return reviveCost(rec.level);
+  const rec = isHeroType(unit) ? game.state.players[player]?.heroes.find((h) => h.type === unit) : undefined;
+  if (rec && !rec.alive) return reviveCost(rec.level);
   return CONFIG.units[unit].cost;
+}
+
+/**
+ * Hero rules: each type at most once; a fallen hero can always be revived;
+ * a new hero only while under the limit (1, or 2 with a Castle).
+ */
+export function heroProblem(game: Game, player: number, unit: UnitType): string | null {
+  if (!isHeroType(unit)) return null;
+  const name = CONFIG.units[unit].name;
+  const rec = heroRecord(game, player, unit);
+  if (rec?.alive) return `You already have a ${name}.`;
+  if (heroQueued(game, player, unit)) return `${name} is already in training.`;
+  if (rec) return null; // revival
+  const limit = heroLimit(game, player);
+  if (game.player(player).heroes.length + newHeroesQueued(game, player) >= limit)
+    return limit < CONFIG.hero.maxHeroesCastle ? `One hero until you Fortify to Castle.` : `At most ${limit} heroes.`;
+  return null;
 }
 
 /** Why `unit` cannot be queued at building `b` right now, or null if it can. */
@@ -45,10 +69,8 @@ export function trainProblem(game: Game, player: number, b: Building, unit: Unit
   if (CONFIG.units[unit].trainedAt !== b.type) return `${CONFIG.buildings[b.type].name} cannot train that.`;
   const req = missingRequirement(game, player, unit);
   if (req) return req;
-  if (unit === 'hero') {
-    const rec = game.player(player).hero;
-    if ((rec && rec.alive) || heroQueued(game, player)) return 'You already have a hero.';
-  }
+  const hp = heroProblem(game, player, unit);
+  if (hp) return hp;
   if (b.queue.length >= CONFIG.production.queueSize) return 'The queue is full.';
   const p = game.player(player);
   const c = trainCost(game, player, unit);
@@ -71,8 +93,8 @@ export function enqueue(game: Game, player: number, buildingId: number, unit: Un
     if (b.owner === player) game.emit({ type: 'cantTrain', player, reason: problem });
     return;
   }
-  const rec = game.player(player).hero;
-  const revive = unit === 'hero' && !!rec && !rec.alive;
+  const rec = isHeroType(unit) ? heroRecord(game, player, unit) : undefined;
+  const revive = !!rec && !rec.alive;
   const cost = trainCost(game, player, unit);
   const seconds = revive ? reviveSeconds(rec!.level) : CONFIG.units[unit].trainSeconds;
   pay(game, player, cost);
@@ -182,9 +204,10 @@ function spawn(game: Game, b: Building, item: QueueItem): boolean {
     ? spots.reduce((a, c) => (Math.hypot(c.x + 0.5 - r.x, c.y + 0.5 - r.y) < Math.hypot(a.x + 0.5 - r.x, a.y + 0.5 - r.y) ? c : a))
     : spots[0];
   const u = game.addUnit(type, b.owner, spot.x + 0.5, spot.y + 0.5);
-  if (type === 'hero') {
-    const rec = game.player(b.owner).hero;
-    initHero(game, u, item.revive && rec ? rec.level : 1, item.revive && rec ? rec.xp : 0);
+  if (isHeroType(type)) {
+    // A revived hero comes back with its level, experience and items.
+    const rec = item.revive ? heroRecord(game, b.owner, type) : undefined;
+    initHero(game, u, rec ? rec.level : 1, rec ? rec.xp : 0, rec ? rec.items : []);
   }
   if (!item.revive) {
     const stats = game.player(b.owner).stats;

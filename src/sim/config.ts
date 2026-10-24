@@ -259,6 +259,87 @@ export const CONFIG = {
       bounty: 0,
       attack: { type: 'hero' as AttackType, damage: 22, range: 0.5, cooldown: 1.5, windup: 0.4, acquire: 7, projectileSpeed: 0, minRange: 0, splash: 0 },
     },
+    ranger: {
+      name: 'Pathfinder',
+      hp: 540,
+      speed: 3.1,
+      radius: 0.4,
+      sight: 11,
+      pop: 3,
+      cost: { gold: 250, wood: 50 },
+      trainSeconds: 30,
+      trainedAt: 'altar',
+      requires: null,
+      /** Research that must be complete (a tier), or null. */
+      tech: null as string | null,
+      hotkey: 'W',
+      armor: 1,
+      armorType: 'hero' as ArmorType,
+      xp: 0,
+      bounty: 0,
+      attack: { type: 'hero' as AttackType, damage: 19, range: 6, cooldown: 1.4, windup: 0.4, acquire: 8, projectileSpeed: 13, minRange: 0, splash: 0 },
+    },
+    sage: {
+      name: 'Sage',
+      hp: 480,
+      speed: 2.9,
+      radius: 0.4,
+      sight: 10,
+      pop: 3,
+      cost: { gold: 250, wood: 50 },
+      trainSeconds: 30,
+      trainedAt: 'altar',
+      requires: null,
+      /** Research that must be complete (a tier), or null. */
+      tech: null as string | null,
+      hotkey: 'E',
+      armor: 0,
+      armorType: 'hero' as ArmorType,
+      xp: 0,
+      bounty: 0,
+      attack: { type: 'hero' as AttackType, damage: 17, range: 5.5, cooldown: 1.6, windup: 0.4, acquire: 7, projectileSpeed: 11, minRange: 0, splash: 0 },
+    },
+    // Neutral creeps (camp guards). Not trainable by anyone.
+    wolf: {
+      name: 'Timber Wolf',
+      hp: 220,
+      speed: 3.4,
+      radius: 0.35,
+      sight: 8,
+      pop: 0,
+      cost: { gold: 0, wood: 0 },
+      trainSeconds: 0,
+      trainedAt: null,
+      requires: null,
+      /** Research that must be complete (a tier), or null. */
+      tech: null as string | null,
+      hotkey: '',
+      armor: 0,
+      armorType: 'medium' as ArmorType,
+      xp: 25,
+      bounty: 12,
+      attack: { type: 'normal' as AttackType, damage: 9, range: 0.4, cooldown: 1.2, windup: 0.3, acquire: 5, projectileSpeed: 0, minRange: 0, splash: 0 },
+    },
+    brute: {
+      name: 'Bog Brute',
+      hp: 1100,
+      speed: 2.4,
+      radius: 0.48,
+      sight: 8,
+      pop: 0,
+      cost: { gold: 0, wood: 0 },
+      trainSeconds: 0,
+      trainedAt: null,
+      requires: null,
+      /** Research that must be complete (a tier), or null. */
+      tech: null as string | null,
+      hotkey: '',
+      armor: 3,
+      armorType: 'heavy' as ArmorType,
+      xp: 140,
+      bounty: 90,
+      attack: { type: 'normal' as AttackType, damage: 30, range: 0.55, cooldown: 1.9, windup: 0.5, acquire: 6, projectileSpeed: 0, minRange: 0, splash: 0 },
+    },
   },
 
   /**
@@ -267,58 +348,139 @@ export const CONFIG = {
    * to maxLevel, and grows stronger per level. A fallen hero keeps its level
    * and can be revived at an Altar for a level-scaled cost and time.
    */
+  /**
+   * Heroes. Rules shared by every hero type; per-type numbers are in
+   * CONFIG.heroTypes. A player may have 1 hero, 2 once fortified to a Castle,
+   * each of a different type. A hero gains experience when its owner kills
+   * enemies within xpRadius of it (shared among heroes there), levels up to
+   * maxLevel, and grows stronger per level. Neutral kills give less
+   * experience to higher-level heroes (creepXpFactor), so creeping alone
+   * cannot max a hero. A fallen hero keeps its level, experience and items,
+   * and can be revived at the Hall of Valor for a level-scaled cost and time.
+   */
   hero: {
     maxLevel: 5,
     /** Total experience needed for each level (index 0 = level 1). */
     xpForLevel: [0, 200, 500, 900, 1400],
     xpRadius: 12,
     killXpPerLevel: 60,
-    hpPerLevel: 60,
-    damagePerLevel: 3,
-    armorPerLevel: 0.5,
-    mana: 200,
-    manaPerLevel: 30,
-    manaRegen: 0.6, // per second
+    /** Share of neutral-kill experience by hero level (index 0 = level 1). */
+    creepXpFactor: [1, 0.8, 0.65, 0.5, 0.4],
+    /** Heroes allowed: one, plus one more with Fortify to Castle. */
+    maxHeroes: 1,
+    maxHeroesCastle: 2,
+    inventorySize: 3,
     revive: { goldBase: 100, goldPerLevel: 50, secondsBase: 20, secondsPerLevel: 5 },
+    /**
+     * Every ability lists the same fields. Per-rank arrays: rank 1 at levels
+     * 1-2, 2 at 3-4, 3 at 5. target: 'enemy' / 'ally' (a unit), 'point'
+     * (ground) or 'none' (around the hero).
+     */
     abilities: {
       hammer: {
-        name: 'Stormhammer',
-        hotkey: 'Q',
-        learnLevel: 1,
-        target: 'enemy',
-        range: 6,
-        mana: 75,
-        cooldown: 10,
-        /** Per rank (rank 1 at levels 1-2, 2 at 3-4, 3 at 5). */
-        damage: [90, 140, 190],
-        stun: [1.5, 2, 2.5],
-        projectileSpeed: 14,
+        name: 'Stormhammer', hero: 'hero', hotkey: 'Q', learnLevel: 1, target: 'enemy', range: 6, radius: 0, mana: 75, cooldown: 10,
+        damage: [90, 140, 190], stun: [1.5, 2, 2.5], duration: [0, 0, 0], bonus: [0, 0, 0], heal: [0, 0, 0], projectileSpeed: 14,
         desc: 'Hurls a hammer that damages and stuns an enemy unit.',
       },
       cry: {
-        name: 'Battle Cry',
-        hotkey: 'W',
-        learnLevel: 2,
-        target: 'none',
-        radius: 8,
-        mana: 60,
-        cooldown: 30,
-        duration: 12,
-        bonus: [0.15, 0.25, 0.35],
+        name: 'Battle Cry', hero: 'hero', hotkey: 'W', learnLevel: 2, target: 'none', range: 0, radius: 8, mana: 60, cooldown: 30,
+        damage: [0, 0, 0], stun: [0, 0, 0], duration: [12, 12, 12], bonus: [0.15, 0.25, 0.35], heal: [0, 0, 0], projectileSpeed: 0,
         desc: 'Nearby allies deal more damage for a while.',
       },
       mend: {
-        name: 'Mend',
-        hotkey: 'E',
-        learnLevel: 3,
-        target: 'ally',
-        range: 6,
-        mana: 50,
-        cooldown: 8,
-        heal: [150, 225, 300],
+        name: 'Mend', hero: 'hero', hotkey: 'E', learnLevel: 3, target: 'ally', range: 6, radius: 0, mana: 50, cooldown: 8,
+        damage: [0, 0, 0], stun: [0, 0, 0], duration: [0, 0, 0], bonus: [0, 0, 0], heal: [150, 225, 300], projectileSpeed: 0,
         desc: 'Heals one of your units.',
       },
+      volley: {
+        name: 'Volley', hero: 'ranger', hotkey: 'Q', learnLevel: 1, target: 'point', range: 8, radius: 2.5, mana: 70, cooldown: 12,
+        damage: [70, 105, 140], stun: [0, 0, 0], duration: [0, 0, 0], bonus: [0, 0, 0], heal: [0, 0, 0], projectileSpeed: 0,
+        desc: 'A rain of arrows damages every enemy unit in an area.',
+      },
+      mark: {
+        name: "Hunter's Mark", hero: 'ranger', hotkey: 'W', learnLevel: 2, target: 'enemy', range: 8, radius: 0, mana: 40, cooldown: 14,
+        damage: [0, 0, 0], stun: [0, 0, 0], duration: [10, 12, 14], bonus: [0.2, 0.3, 0.4], heal: [0, 0, 0], projectileSpeed: 0,
+        desc: 'The marked enemy takes extra damage from every source.',
+      },
+      farsight: {
+        name: 'Far Sight', hero: 'ranger', hotkey: 'E', learnLevel: 3, target: 'point', range: 999, radius: 9, mana: 50, cooldown: 30,
+        damage: [0, 0, 0], stun: [0, 0, 0], duration: [10, 14, 18], bonus: [0, 0, 0], heal: [0, 0, 0], projectileSpeed: 0,
+        desc: 'Reveals any spot on the map for a while.',
+      },
+      flame: {
+        name: 'Flame Burst', hero: 'sage', hotkey: 'Q', learnLevel: 1, target: 'point', range: 7, radius: 2, mana: 85, cooldown: 9,
+        damage: [85, 130, 175], stun: [0, 0, 0], duration: [0, 0, 0], bonus: [0, 0, 0], heal: [0, 0, 0], projectileSpeed: 0,
+        desc: 'Fire erupts at a spot, burning enemy units and buildings there.',
+      },
+      slow: {
+        name: 'Slow', hero: 'sage', hotkey: 'W', learnLevel: 2, target: 'enemy', range: 7, radius: 0, mana: 45, cooldown: 10,
+        damage: [0, 0, 0], stun: [0, 0, 0], duration: [6, 8, 10], bonus: [0.4, 0.5, 0.6], heal: [0, 0, 0], projectileSpeed: 0,
+        desc: 'An enemy unit moves and attacks much more slowly.',
+      },
+      ward: {
+        name: 'Arcane Ward', hero: 'sage', hotkey: 'E', learnLevel: 3, target: 'ally', range: 6, radius: 0, mana: 55, cooldown: 12,
+        damage: [0, 0, 0], stun: [0, 0, 0], duration: [15, 15, 15], bonus: [5, 8, 11], heal: [0, 0, 0], projectileSpeed: 0,
+        desc: 'Shields one of your units with extra armor.',
+      },
     },
+  },
+
+  /**
+   * Items. Heroes carry up to CONFIG.hero.inventorySize, keep them through
+   * death and revival, and can drop them for another hero. Permanent items
+   * work while carried; consumables are used up. Tier decides where they
+   * come from: camp drops (by camp level) and the neutral Trading Posts.
+   */
+  items: {
+    blade: { name: 'Keen Blade', tier: 1, price: 160, hotkey: 'Q', consumable: false, damage: 4, armor: 0, hp: 0, mana: 0, speed: 0, heal: 0, restore: 0, desc: '+4 attack damage.' },
+    mail: { name: 'Ringmail Vest', tier: 1, price: 160, hotkey: 'W', consumable: false, damage: 0, armor: 3, hp: 0, mana: 0, speed: 0, heal: 0, restore: 0, desc: '+3 armor.' },
+    charm: { name: 'Charm of Vigor', tier: 1, price: 160, hotkey: 'E', consumable: false, damage: 0, armor: 0, hp: 150, mana: 0, speed: 0, heal: 0, restore: 0, desc: '+150 maximum health.' },
+    draught: { name: 'Healing Draught', tier: 1, price: 75, hotkey: 'R', consumable: true, damage: 0, armor: 0, hp: 0, mana: 0, speed: 0, heal: 300, restore: 0, desc: 'Use: the hero regains 300 health.' },
+    tonic: { name: 'Mana Tonic', tier: 1, price: 60, hotkey: 'T', consumable: true, damage: 0, armor: 0, hp: 0, mana: 0, speed: 0, heal: 0, restore: 150, desc: 'Use: the hero regains 150 mana.' },
+    scroll: { name: 'Scroll of Return', tier: 1, price: 100, hotkey: 'Y', consumable: true, damage: 0, armor: 0, hp: 0, mana: 0, speed: 0, heal: 0, restore: 0, desc: 'Use: the hero returns at once to your nearest Keep.' },
+    salve: { name: 'Mending Salve', tier: 1, price: 125, hotkey: 'D', consumable: true, damage: 0, armor: 0, hp: 0, mana: 0, speed: 0, heal: 150, restore: 0, desc: 'Use: your units within 6 tiles regain 150 health.' },
+    // Tier 2: only from the hardest camps.
+    boots: { name: 'Swift Boots', tier: 2, price: 0, hotkey: '', consumable: false, damage: 0, armor: 0, hp: 0, mana: 0, speed: 0.6, heal: 0, restore: 0, desc: '+0.6 movement speed.' },
+    gauntlets: { name: 'Gauntlets of Might', tier: 2, price: 0, hotkey: '', consumable: false, damage: 9, armor: 0, hp: 0, mana: 0, speed: 0, heal: 0, restore: 0, desc: '+9 attack damage.' },
+    circlet: { name: "Seer's Circlet", tier: 2, price: 0, hotkey: '', consumable: false, damage: 0, armor: 0, hp: 0, mana: 120, speed: 0, heal: 0, restore: 0, desc: '+120 maximum mana.' },
+  },
+
+  /**
+   * Neutral camps guard mines. Level sets their strength and what the last
+   * guard drops when the camp is wiped out: level 1 a consumable, level 2 a
+   * tier-1 item, level 3 a tier-2 item. Mirrored camps drop the same item.
+   */
+  camps: {
+    // The small mine beside each base stays unguarded: a camp there would
+    // maul Laborers before anyone has an army.
+    natural: { level: 1, guards: ['brigand', 'wolf'] },
+    far: { level: 2, guards: ['chief', 'brigand', 'poacher'] },
+    center: { level: 3, guards: ['brute', 'chief', 'poacher'] },
+  },
+  campDrops: {
+    1: ['draught', 'tonic', 'salve', 'scroll'],
+    2: ['blade', 'mail', 'charm'],
+    3: ['boots', 'gauntlets', 'circlet'],
+  },
+
+  /** Neutral Trading Posts: a hero within `range` can buy their stock. */
+  shop: {
+    range: 4,
+    stock: ['blade', 'mail', 'charm', 'draught', 'tonic', 'scroll', 'salve'],
+  },
+
+  /** Healing Fountains heal every unit near them, any owner. */
+  fountain: {
+    radius: 5,
+    hpPerSecond: 15,
+    manaPerSecond: 3,
+  },
+
+  /** Per hero type: growth per level and mana. Base stats are in CONFIG.units. */
+  heroTypes: {
+    hero: { role: 'Frontline: stuns, rallies and heals.', hpPerLevel: 60, damagePerLevel: 3, armorPerLevel: 0.5, mana: 200, manaPerLevel: 30, manaRegen: 0.6 },
+    ranger: { role: 'Ranged: area damage, marks targets, scouts the map.', hpPerLevel: 45, damagePerLevel: 3, armorPerLevel: 0.4, mana: 220, manaPerLevel: 35, manaRegen: 0.7 },
+    sage: { role: 'Caster: burns groups, slows threats, wards allies.', hpPerLevel: 40, damagePerLevel: 2, armorPerLevel: 0.3, mana: 260, manaPerLevel: 45, manaRegen: 0.9 },
   },
 
   vision: {
@@ -350,7 +512,7 @@ export const CONFIG = {
      */
     typeTable: {
       normal: { light: 1, medium: 1.5, heavy: 1, fortified: 0.8, hero: 1 },
-      pierce: { light: 1.5, medium: 0.75, heavy: 1.6, fortified: 0.4, hero: 0.75 },
+      pierce: { light: 1.5, medium: 0.6, heavy: 1.8, fortified: 0.4, hero: 0.75 },
       siege: { light: 1, medium: 0.5, heavy: 1, fortified: 2, hero: 0.5 },
       magic: { light: 1.25, medium: 0.75, heavy: 1.5, fortified: 0.35, hero: 0.5 },
       hero: { light: 1, medium: 1, heavy: 1, fortified: 0.7, hero: 1 },
@@ -389,6 +551,7 @@ export const CONFIG = {
       /** Research needed before it can be built (a tier), or null. */
       requires: null as string | null,
       armorType: 'fortified' as ArmorType,
+      buildable: true,
       attack: null,
     },
     farm: {
@@ -404,6 +567,7 @@ export const CONFIG = {
       /** Research needed before it can be built (a tier), or null. */
       requires: null as string | null,
       armorType: 'fortified' as ArmorType,
+      buildable: true,
       attack: null,
     },
     barracks: {
@@ -419,6 +583,7 @@ export const CONFIG = {
       /** Research needed before it can be built (a tier), or null. */
       requires: null as string | null,
       armorType: 'fortified' as ArmorType,
+      buildable: true,
       attack: null,
     },
     lumbermill: {
@@ -434,6 +599,7 @@ export const CONFIG = {
       /** Research needed before it can be built (a tier), or null. */
       requires: null as string | null,
       armorType: 'fortified' as ArmorType,
+      buildable: true,
       attack: null,
     },
     tower: {
@@ -449,6 +615,7 @@ export const CONFIG = {
       /** Research needed before it can be built (a tier), or null. */
       requires: null as string | null,
       armorType: 'fortified' as ArmorType,
+      buildable: true,
       attack: { type: 'pierce' as AttackType, damage: 16, range: 7, cooldown: 1.2, windup: 0, acquire: 7, projectileSpeed: 14 },
     },
     altar: {
@@ -464,6 +631,7 @@ export const CONFIG = {
       /** Research needed before it can be built (a tier), or null. */
       requires: null as string | null,
       armorType: 'fortified' as ArmorType,
+      buildable: true,
       attack: null,
     },
     smithy: {
@@ -479,6 +647,7 @@ export const CONFIG = {
       /** Research needed before it can be built (a tier), or null. */
       requires: null as string | null,
       armorType: 'fortified' as ArmorType,
+      buildable: true,
       attack: null,
     },
     chapel: {
@@ -494,6 +663,7 @@ export const CONFIG = {
       /** Research needed before it can be built (a tier), or null. */
       requires: 'castle' as string | null,
       armorType: 'fortified' as ArmorType,
+      buildable: true,
       attack: null,
     },
     workshop: {
@@ -509,6 +679,41 @@ export const CONFIG = {
       /** Research needed before it can be built (a tier), or null. */
       requires: 'castle' as string | null,
       armorType: 'fortified' as ArmorType,
+      buildable: true,
+      attack: null,
+    },
+    // Neutral map objectives: placed with the map, owned by the neutral
+    // player, cannot be built, attacked or destroyed.
+    shop: {
+      name: 'Trading Post',
+      hp: 1000,
+      size: 3,
+      sight: 6,
+      popProvided: 0,
+      accepts: [] as const,
+      cost: { gold: 0, wood: 0 },
+      buildSeconds: 0,
+      hotkey: '',
+      /** Research needed before it can be built (a tier), or null. */
+      requires: null as string | null,
+      armorType: 'fortified' as ArmorType,
+      buildable: false,
+      attack: null,
+    },
+    fountain: {
+      name: 'Healing Fountain',
+      hp: 1000,
+      size: 2,
+      sight: 6,
+      popProvided: 0,
+      accepts: [] as const,
+      cost: { gold: 0, wood: 0 },
+      buildSeconds: 0,
+      hotkey: '',
+      /** Research needed before it can be built (a tier), or null. */
+      requires: null as string | null,
+      armorType: 'fortified' as ArmorType,
+      buildable: false,
       attack: null,
     },
   },
@@ -675,6 +880,10 @@ export const CONFIG = {
         mix: { guard: 3, archer: 1, lancer: 0, cleric: 0, mangonel: 0 } as ArmyMix,
         /** Shifts that mix to counter the enemy units it has seen. */
         adapt: false,
+        /** Heroes it raises, in order (the second once fortified). */
+        heroes: ['hero'] as Array<'hero' | 'ranger' | 'sage'>,
+        /** Sends a hero to buy items at Trading Posts. */
+        shops: false,
         firstAttackSeconds: 540,
         waveSize: 4,
         waveGrowth: 2,
@@ -701,6 +910,8 @@ export const CONFIG = {
         towers: 1,
         mix: { guard: 3, archer: 2, lancer: 1.5, cleric: 1, mangonel: 0.6 } as ArmyMix,
         adapt: true,
+        heroes: ['hero', 'sage'] as Array<'hero' | 'ranger' | 'sage'>,
+        shops: true,
         firstAttackSeconds: 400,
         waveSize: 6,
         waveGrowth: 3,
@@ -721,6 +932,8 @@ export const CONFIG = {
         towers: 1,
         mix: { guard: 3, archer: 2, lancer: 2, cleric: 1, mangonel: 0.8 } as ArmyMix,
         adapt: true,
+        heroes: ['hero', 'ranger'] as Array<'hero' | 'ranger' | 'sage'>,
+        shops: true,
         firstAttackSeconds: 300,
         waveSize: 7,
         waveGrowth: 3,
@@ -738,6 +951,8 @@ export const CONFIG = {
     goldWorkersPerMine: 5,
     /** A wave falls back when reduced to this share of its launch size. */
     retreatShare: 0.35,
+    /** Gold on hand before it sends a hero shopping. */
+    shopGold: 350,
     /** Earliest time (seconds) it researches Mule Carts. */
     cartsSeconds: 300,
     /** Enemy soldiers it must have seen before it adapts its army mix. */
@@ -817,3 +1032,14 @@ export type UnitType = keyof typeof CONFIG.units;
 export type BuildingType = keyof typeof CONFIG.buildings;
 export type ResearchId = keyof typeof CONFIG.research;
 export type AbilityId = keyof typeof CONFIG.hero.abilities;
+export type ItemId = keyof typeof CONFIG.items;
+export type HeroType = keyof typeof CONFIG.heroTypes;
+export type CampRole = keyof typeof CONFIG.camps;
+
+export const HERO_TYPES = Object.keys(CONFIG.heroTypes) as HeroType[];
+export function isHeroType(t: string): t is HeroType {
+  return t in CONFIG.heroTypes;
+}
+
+/** Buildings a Laborer can construct (not the neutral map objectives). */
+export const BUILDABLE = (Object.keys(CONFIG.buildings) as BuildingType[]).filter((t) => CONFIG.buildings[t].buildable);

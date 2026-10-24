@@ -9,7 +9,7 @@ import { CONFIG, secondsToTicks, type BuildingType } from '../sim/config';
 import type { PlacementCheck } from '../sim/construction';
 import type { Game } from '../sim/game';
 import { hash2 } from '../sim/rng';
-import type { Building, Entity, Footprint, GameEvent, ResourceNode, Unit } from '../sim/types';
+import type { Building, Entity, Footprint, GameEvent, GroundItem, ResourceNode, Unit } from '../sim/types';
 import { TERRAIN } from '../sim/types';
 import { CameraRig } from './cameraRig';
 import { FogTexture, withFog } from './fog';
@@ -20,6 +20,7 @@ import {
   makeMine,
   makeTreeGeometries,
   makeArrowGeometry,
+  makeGroundItem,
   makeBoltGeometry,
   makeBoulderGeometry,
   makeHammerGeometry,
@@ -59,6 +60,7 @@ export class World3D {
   readonly rig: CameraRig;
   private sun: THREE.DirectionalLight;
   private units = new Map<number, WorkerParts>();
+  private items = new Map<number, THREE.Group>();
   private buildings = new Map<number, BuildingParts & { type: BuildingType; tier: number }>();
   private mines = new Map<number, MineParts>();
   private trunks!: THREE.InstancedMesh;
@@ -348,6 +350,22 @@ export class World3D {
         this.burst(e.x, 1.2, e.y, 30, '#ffd84a', 2.4, now);
       } else if (e.type === 'cast' && e.ability === 'cry') {
         this.burst(e.x, 0.6, e.y, 36, '#ff9a3a', 4.5, now);
+      } else if (e.type === 'cast' && (e.ability === 'volley' || e.ability === 'flame')) {
+        const r = CONFIG.hero.abilities[e.ability].radius;
+        const color = e.ability === 'flame' ? '#ff7a2a' : '#c8a070';
+        for (let i = 0; i < 6; i++) this.burst(e.x + Math.cos(i) * r * 0.6, 0.3, e.y + Math.sin(i) * r * 0.6, 6, color, 1.8, now);
+        this.addMarker(e.x, e.y, now, color);
+      } else if (e.type === 'cast' && e.ability === 'farsight') {
+        this.addMarker(e.x, e.y, now, '#ffe9a8');
+      } else if (e.type === 'cast' && (e.ability === 'slow' || e.ability === 'mark' || e.ability === 'ward')) {
+        this.burst(e.x, 0.8, e.y, 12, BUFF_COLORS[e.ability], 1.4, now);
+      } else if (e.type === 'teleport') {
+        this.burst(e.fromX, 0.6, e.fromY, 20, '#b8d8ff', 2.4, now);
+        this.burst(e.x, 0.6, e.y, 20, '#b8d8ff', 2.4, now);
+      } else if (e.type === 'itemPicked' || e.type === 'itemUsed') {
+        this.burst(e.x, 0.6, e.y, 10, '#7dffb0', 1.4, now);
+      } else if (e.type === 'campCleared') {
+        this.burst(e.x, 1.0, e.y, 24, '#ffd84a', 2.6, now);
       } else if (e.type === 'heal') {
         this.burst(e.x, 0.9, e.y, 6, '#7dff8a', 0.8, now);
       } else if (e.type === 'impact') {
@@ -471,6 +489,7 @@ export class World3D {
       this.dying.push({ root: v.root, t0: now, building: true });
       this.buildings.delete(id);
     }
+    this.syncItems(now);
     this.updateDying(now);
     this.updateArrows(alpha, now);
     for (const [id, v] of this.mines) if (!seen.has(id)) (this.removePickable(v.root), this.mines.delete(id));
@@ -614,6 +633,46 @@ export class World3D {
     this.pickables = this.pickables.filter((p) => p !== o);
   }
 
+  /** Items on the ground: shown where the viewer can see, gems bobbing. */
+  private syncItems(now: number): void {
+    const live = new Set<number>();
+    for (const it of this.game.state.items) {
+      live.add(it.id);
+      let v = this.items.get(it.id);
+      if (!v) {
+        v = makeGroundItem(CONFIG.items[it.type].tier);
+        v.position.set(it.x, 0, it.y);
+        this.scene.add(v);
+        this.items.set(it.id, v);
+      }
+      v.visible = this.tileVisible(it.x, it.y);
+      v.children[2].position.y = 0.46 + Math.sin(now * 3 + it.id) * 0.05;
+      v.children[2].rotation.y = now * 1.5;
+    }
+    for (const [id, v] of this.items) {
+      if (live.has(id)) continue;
+      this.scene.remove(v);
+      this.items.delete(id);
+    }
+  }
+
+  /** The ground item under a screen point, if the viewer can see it. */
+  pickItem(sx: number, sy: number): GroundItem | undefined {
+    let best: GroundItem | undefined;
+    let bestD = 18;
+    for (const it of this.game.state.items) {
+      if (!this.tileVisible(it.x, it.y)) continue;
+      const c = this.rig.project(it.x, it.y, 0.3);
+      if (!c.visible) continue;
+      const d = Math.hypot(c.x - sx, c.y - sy);
+      if (d < bestD) {
+        bestD = d;
+        best = it;
+      }
+    }
+    return best;
+  }
+
   private syncUnit(u: Unit, alpha: number, now: number): void {
     let v = this.units.get(u.id);
     if (!v) {
@@ -723,8 +782,12 @@ export class World3D {
       const color = e.kind === 'resource' ? RING_COLORS.neutral : e.owner === client.player ? RING_COLORS.own : RING_COLORS.enemy;
       ringFor(e, color, 0.95);
     }
-    // Battle Cry: an orange glow under every inspired unit.
-    for (const u of this.game.units()) if (u.buffs.length && this.perceived(u)) ringFor(u, '#ff9a3a', 0.6, 1.25);
+    // Buffs and debuffs glow under the unit: Battle Cry orange, Mark red,
+    // Slow blue, Arcane Ward cyan.
+    for (const u of this.game.units()) {
+      if (!u.buffs.length || !this.perceived(u)) continue;
+      for (const b of u.buffs) ringFor(u, BUFF_COLORS[b.kind], 0.6, b.kind === 'cry' ? 1.25 : 1.45);
+    }
     if (client.hoverId && !client.selected.includes(client.hoverId)) {
       const e = this.game.get(client.hoverId);
       if (e) ringFor(e, RING_COLORS.hover, 0.45);
@@ -833,6 +896,8 @@ export class World3D {
     return undefined;
   }
 }
+
+const BUFF_COLORS: Record<'cry' | 'mark' | 'slow' | 'ward', string> = { cry: '#ff9a3a', mark: '#ff3a3a', slow: '#6a8cff', ward: '#5ef0ff' };
 
 function attacking(u: Unit): boolean {
   const t = u.order?.type;

@@ -2,6 +2,8 @@
 // unit-unit separation and stuck recovery. Order logic decides *where* to go;
 // this module decides *how* to get there.
 
+import { buffAmount } from './hero';
+import { itemBonus } from './items';
 import { CONFIG, TICK_SECONDS } from './config';
 import type { Game } from './game';
 import { findPath, smoothPath, type GoalRect } from './pathfinding';
@@ -238,7 +240,7 @@ function separate(game: Game, units: Unit[]): void {
 
 /** Walking speed: the unit's own, or its group's pace while marching together. */
 export function moveSpeed(u: Unit): number {
-  const speed = CONFIG.units[u.type].speed;
+  const speed = (CONFIG.units[u.type].speed + itemBonus(u, 'speed')) * (1 - buffAmount(u, 'slow'));
   const o = u.order;
   if (o?.type === 'move' && o.pace) return Math.min(speed, o.pace);
   if (o?.type === 'attackMove' && o.pace && o.targetId < 0) return Math.min(speed, o.pace);

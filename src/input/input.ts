@@ -4,14 +4,15 @@
 // conversion and picking are delegated to the 3D view.
 
 import type { World3D } from '../render3d/world';
-import { CONFIG, type AbilityId, type BuildingType, type ResearchId, type UnitType } from '../sim/config';
+import { BUILDABLE, CONFIG, type AbilityId, type BuildingType, type HeroType, type ItemId, type ResearchId, type UnitType } from '../sim/config';
+import { abilitiesOf } from '../sim/hero';
 import { canAfford, checkPlacement, shortfall, snapFootprint } from '../sim/construction';
 import type { Game } from '../sim/game';
 import { acceptsResource } from '../sim/gathering';
 import { trainableAt } from '../sim/production';
 import { researchAt, researched } from '../sim/tech';
 import { canAttack, isEnemy, targetable } from '../sim/combat';
-import type { Entity, Unit } from '../sim/types';
+import type { Building, Entity, Unit } from '../sim/types';
 import type { Minimap } from '../ui/minimap';
 import type { ClientState, TargetMode } from './client';
 
@@ -19,7 +20,24 @@ const EDGE = 10; // px from the view edge that triggers scrolling
 const PAN_SPEED = 900; // px per second
 const DRAG_THRESHOLD = 5;
 
-export type Action = 'move' | 'stop' | 'attack' | 'hold' | 'gather' | 'return' | 'cancel' | `build:${BuildingType}` | `train:${UnitType}` | `research:${ResearchId}` | `cast:${AbilityId}`;
+export type Action =
+  | 'move'
+  | 'stop'
+  | 'attack'
+  | 'hold'
+  | 'gather'
+  | 'return'
+  | 'cancel'
+  | `build:${BuildingType}`
+  | `train:${UnitType}`
+  | `research:${ResearchId}`
+  | `cast:${AbilityId}`
+  | `item:${number}`
+  | `drop:${number}`
+  | `buy:${ItemId}`;
+
+/** Hotkeys of the hero's inventory slots. */
+export const ITEM_KEYS = ['z', 'x', 'c'];
 
 export class InputController {
   private mouse = { x: -1, y: -1, inside: false, moved: true };
@@ -285,10 +303,18 @@ export class InputController {
       if (b && trainableAt(b.type).length) this.setRally(b.id, sx, sy);
       return;
     }
-    const target = this.world.pick(sx, sy);
-    const g = this.rig.screenToGround(sx, sy);
     const player = this.client.player;
     const now = this.now();
+    // A hero right-clicking an item on the ground picks it up.
+    const hero = units.find((u) => u.hero);
+    const item = hero ? this.world.pickItem(sx, sy) : undefined;
+    if (hero && item) {
+      this.game.issue({ type: 'pickup', player, units: [hero.id], itemId: item.id });
+      this.world.addMarker(item.x, item.y, now, '#7dffb0');
+      return;
+    }
+    const target = this.world.pick(sx, sy);
+    const g = this.rig.screenToGround(sx, sy);
     const workers = units.filter((u) => u.type === 'worker');
     const others = units.filter((u) => u.type !== 'worker');
     const moveRest = (rest: Unit[]) => {
@@ -352,16 +378,25 @@ export class InputController {
     const units = this.ownSelectedUnits();
     const player = this.client.player;
     const now = this.now();
-    if (mode === 'cast:hammer' || mode === 'cast:mend') {
+    if (mode.startsWith('cast:')) {
       const ability = mode.slice(5) as AbilityId;
-      const hero = units.find((u) => u.hero);
-      const target = this.world.pick(sx, sy);
-      if (!hero || target?.kind !== 'unit') {
-        this.onMessage(ability === 'hammer' ? 'Target an enemy unit.' : 'Target one of your units.');
-        return;
+      const def = CONFIG.hero.abilities[ability];
+      const hero = units.find((u) => u.hero && u.type === def.hero);
+      if (!hero) return;
+      if (def.target === 'point') {
+        const g = this.rig.screenToGround(sx, sy);
+        if (!g) return;
+        this.game.issue({ type: 'cast', player, units: [hero.id], ability, targetId: -1, x: g.x, y: g.y });
+        this.world.addMarker(g.x, g.y, now, '#ffe9a8');
+      } else {
+        const target = this.world.pick(sx, sy);
+        if (target?.kind !== 'unit') {
+          this.onMessage(def.target === 'enemy' ? 'Target an enemy unit.' : 'Target one of your units.');
+          return;
+        }
+        this.game.issue({ type: 'cast', player, units: [hero.id], ability, targetId: target.id });
+        this.world.flashEntity(target.id, now);
       }
-      this.game.issue({ type: 'cast', player, units: [hero.id], ability, targetId: target.id });
-      this.world.flashEntity(target.id, now);
       if (!shift) this.client.targetMode = null;
       return;
     }
@@ -429,10 +464,31 @@ export class InputController {
     }
     if (name.startsWith('cast:')) {
       const ability = name.slice(5) as AbilityId;
-      const hero = this.ownSelectedUnits().find((u) => u.hero);
+      const def = CONFIG.hero.abilities[ability];
+      const hero = this.ownSelectedUnits().find((u) => u.hero && u.type === def.hero);
       if (!hero) return;
-      if (CONFIG.hero.abilities[ability].target === 'none') this.game.issue({ type: 'cast', player, units: [hero.id], ability, targetId: -1 });
-      else this.client.targetMode = name as 'cast:hammer' | 'cast:mend';
+      if (def.target === 'none') this.game.issue({ type: 'cast', player, units: [hero.id], ability, targetId: -1 });
+      else {
+        this.client.placing = null;
+        this.client.targetMode = name as `cast:${AbilityId}`;
+      }
+      return;
+    }
+    if (name.startsWith('item:') || name.startsWith('drop:')) {
+      const hero = this.activeHero();
+      if (!hero) return;
+      const slot = Number(name.slice(5));
+      this.game.issue({ type: name.startsWith('item:') ? 'useItem' : 'dropItem', player, units: [hero.id], slot });
+      return;
+    }
+    if (name.startsWith('buy:')) {
+      const shop = this.selectedShop();
+      const hero = shop && this.shopper(shop);
+      if (!shop || !hero) {
+        this.onMessage('You need a hero next to the Trading Post to buy.');
+        return;
+      }
+      this.game.issue({ type: 'buyItem', player, shopId: shop.id, heroId: hero.id, item: name.slice(4) as ItemId });
       return;
     }
     if (name.startsWith('train:')) {
@@ -475,12 +531,31 @@ export class InputController {
     this.rig.centerOn(next.x, next.y);
   }
 
+  /** Select a hero (F2): the next one each press when there are two. */
   selectHero(): void {
-    const rec = this.game.player(this.client.player).hero;
-    const h = rec?.alive ? this.game.unit(rec.unitId) : undefined;
-    if (!h) return;
+    const heroes = this.game.player(this.client.player).heroes.filter((r) => r.alive).map((r) => this.game.unit(r.unitId)).filter((u): u is Unit => !!u);
+    if (!heroes.length) return;
+    const cur = this.client.selected.length === 1 ? heroes.findIndex((h) => h.id === this.client.selected[0]) : -1;
+    const h = heroes[(cur + 1) % heroes.length];
     this.setSelection([h.id]);
     this.rig.centerOn(h.x, h.y);
+  }
+
+  /** The hero whose abilities and items the command card shows. */
+  activeHero(): Unit | undefined {
+    return this.ownSelectedUnits().find((u) => u.hero);
+  }
+
+  /** The selected neutral Trading Post, if any. */
+  selectedShop(): Building | undefined {
+    const b = this.client.selected.length === 1 ? this.game.building(this.client.selected[0]) : undefined;
+    return b?.type === 'shop' ? b : undefined;
+  }
+
+  /** Your hero nearest a shop: the one that shops there. */
+  shopper(shop: Building): Unit | undefined {
+    const heroes = this.game.units().filter((u) => u.owner === this.client.player && u.hero);
+    return heroes.sort((a, b) => Math.hypot(a.x - shop.x, a.y - shop.y) - Math.hypot(b.x - shop.x, b.y - shop.y))[0];
   }
 
   centerOnSelection(): void {
@@ -519,12 +594,28 @@ export class InputController {
         return;
       }
     }
-    if (this.ownSelectedUnits().some((u) => u.hero)) {
-      for (const [a, def] of Object.entries(CONFIG.hero.abilities)) {
-        if (k === def.hotkey.toLowerCase()) {
-          this.action(`cast:${a as AbilityId}`);
+    const shop = this.selectedShop();
+    if (shop) {
+      for (const it of CONFIG.shop.stock as readonly ItemId[]) {
+        if (k === CONFIG.items[it].hotkey.toLowerCase()) {
+          this.action(`buy:${it}`);
           return;
         }
+      }
+    }
+    const hero = this.activeHero();
+    if (hero) {
+      for (const a of abilitiesOf(hero.type as HeroType)) {
+        if (k === CONFIG.hero.abilities[a].hotkey.toLowerCase()) {
+          this.action(`cast:${a}`);
+          return;
+        }
+      }
+      // Inventory slots: Z, X, C.
+      const slot = ITEM_KEYS.indexOf(k);
+      if (slot >= 0 && !this.selectedWorkers().length) {
+        this.action(`item:${slot}`);
+        return;
       }
     }
     if (e.key === 'F2') {
@@ -533,9 +624,9 @@ export class InputController {
       return;
     }
     const hasWorkers = this.selectedWorkers().length > 0;
-    for (const [type, def] of Object.entries(CONFIG.buildings)) {
-      if (hasWorkers && k === def.hotkey.toLowerCase()) {
-        this.action(`build:${type as BuildingType}`);
+    for (const type of BUILDABLE) {
+      if (hasWorkers && k === CONFIG.buildings[type].hotkey.toLowerCase()) {
+        this.action(`build:${type}`);
         return;
       }
     }

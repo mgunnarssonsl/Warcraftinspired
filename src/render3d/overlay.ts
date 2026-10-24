@@ -157,6 +157,20 @@ export class Overlay {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const selected = new Set(client.selected);
     this.drawPlans(client, alpha);
+    // Items on the ground are labelled so they read at a glance.
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    for (const it of game.state.items) {
+      if (!client.revealAll && !game.vision.isVisible(client.player, Math.floor(it.x), Math.floor(it.y))) continue;
+      const p = this.rig.project(it.x, it.y, 0.75);
+      if (!p.visible) continue;
+      const def = CONFIG.items[it.type];
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+      ctx.strokeText(def.name, p.x, p.y);
+      ctx.fillStyle = def.tier > 1 ? '#d9b8ff' : '#b8ffd4';
+      ctx.fillText(def.name, p.x, p.y);
+    }
 
     for (const e of Object.values(game.state.entities)) {
       if (!this.perceived(e)) continue;

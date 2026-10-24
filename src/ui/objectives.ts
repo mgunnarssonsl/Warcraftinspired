@@ -72,8 +72,8 @@ export const STEPS: Step[] = [
   },
   {
     text: 'Raise a hero',
-    hint: 'With a Laborer press V to build a Hall of Valor, then train the Marshal there. Clear Brigand camps to level it up.',
-    status: (g, p) => ({ done: !!g.player(p).hero, progress: '' }),
+    hint: 'With a Laborer press V to build a Hall of Valor, then pick a hero there (Q Marshal, W Pathfinder, E Sage). Clear camps to level it up and win items.',
+    status: (g, p) => ({ done: g.player(p).heroes.length > 0, progress: '' }),
   },
   {
     text: 'Destroy the enemy base',

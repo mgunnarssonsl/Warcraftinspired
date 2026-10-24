@@ -51,8 +51,11 @@ npm run build      # typecheck + production bundle in dist/
 | H | Hold position: never move, and fight whatever comes within weapon range |
 | F, L, B, T, V, N, K (Laborer selected) | Place a Farm, Lumber Mill, Barracks, Watch Tower, Hall of Valor, Blacksmith or Keep. From tier II, C places a Chapel and W a Siege Works. Click to place, Shift+click to keep placing, right-click or Esc to cancel. |
 | Q, W, E (building selected) | Train or research what that building offers. See the table below. |
-| F2 or the Hero button | Select your hero |
-| Q, W, E (hero selected) | Stormhammer (click an enemy), Battle Cry, Mend (click one of your units) |
+| F2 or the Hero button | Select a hero (each press cycles to the next) |
+| Q, W, E (hero selected) | That hero's abilities: click an enemy, an ally or a spot, depending on the ability |
+| Z, X, C (hero selected) | Use the item in that inventory slot. Right-click a slot to drop it. |
+| Right-click an item (hero selected) | Walk over and pick it up |
+| Q, W, E, R, T, Y, D (Trading Post selected) | Buy that item for your hero standing next to the Post |
 | Right-click (Keep or Barracks selected) | Set the rally point. On a mine or tree, newly trained Laborers start gathering there. |
 | Click a queue slot | Cancel that unit (full refund) |
 | X | Cancel construction (75% refund), or the last queued unit (full refund) |
@@ -71,7 +74,7 @@ npm run build      # typecheck + production bundle in dist/
 | --- | --- | --- | --- |
 | Keep | Laborer | Fortify to Castle, then to Citadel | Mule Carts |
 | Barracks | Guard | Archer | Lancer (tier II) |
-| Hall of Valor | hero (or revive) | | |
+| Hall of Valor | Marshal (or revive) | Pathfinder (or revive) | Sage (or revive) |
 | Blacksmith | weapons I–III | armor I–III | |
 | Lumber Mill | Bow Saws | Longbows (tier II) | |
 | Chapel | Cleric | Greater Healing (tier III) | |
@@ -138,6 +141,19 @@ These are the rules as implemented. All numbers live in `src/sim/config.ts`.
   it had just watched walk into the fog.
 - **Routes:** waves march around neutral camps they know of, using queued
   waypoints like a player would, instead of fighting them on the way.
+- **Heroes and items:**
+  - Easy raises a Marshal.
+  - Normal raises a Marshal, then a Sage once fortified.
+  - Hard raises a Marshal, then a Pathfinder.
+  - In a fight, every hero uses all its abilities by kind: it heals or wards
+    the most hurt ally, stuns, marks or slows the biggest threat (heroes
+    first), and drops Volley or Flame Burst where enemies bunch up.
+  - A Pathfinder casts Far Sight on the enemy start before a wave goes in
+    blind.
+  - Heroes pick up camp drops nearby. They drink a Draught when badly hurt
+    and read a Scroll of Return when about to die.
+  - With spare gold and a free slot, Normal and Hard send a hero to buy at
+    the nearest Trading Post.
 - **Army composition:** each difficulty aims for a mix of soldier types.
   - Easy uses Guards and Archers only.
   - Normal and Hard also field Lancers, Clerics and Mangonels once
@@ -296,7 +312,7 @@ multiplier depends on the attack type and the target's armor type:
 | Attack \ armor | Light | Medium | Heavy | Fortified | Hero |
 | --- | --- | --- | --- | --- | --- |
 | Normal (Guard, Lancer, Laborer, Brigand) | 1 | **1.5** | 1 | 0.8 | 1 |
-| Pierce (Archer, Poacher, Watch Tower) | **1.5** | 0.75 | **1.6** | 0.4 | 0.75 |
+| Pierce (Archer, Poacher, Watch Tower) | **1.5** | 0.6 | **1.8** | 0.4 | 0.75 |
 | Siege (Mangonel) | 1 | 0.5 | 1 | **2** | 0.5 |
 | Magic (Cleric) | 1.25 | 0.75 | **1.5** | 0.35 | 0.5 |
 | Hero (Marshal) | 1 | 1 | 1 | 0.7 | 1 |
@@ -397,6 +413,9 @@ reporting the first difference. The fixes:
 - **Path tiles:** the start and goal tiles of a path use a symmetric rule
   for points that lie exactly on a tile edge, which happens all the time
   around even-sized buildings.
+- **Target scans:** idle units look for targets on the same ticks. They
+  used to be staggered by entity id, so a camp next to one base reacted
+  sooner than its mirror twin.
 - **Simultaneous resolution:**
   - Combat blows that land in the same tick are applied together.
   - Unit separation sums all pushes before applying them.
@@ -481,42 +500,119 @@ Tiers are player-wide: losing the fortified Keep doesn't undo them.
 The Blacksmith (hotkey N) costs 140 gold and 60 wood. It is also needed for
 Lancers.
 
-## Hero
+## Heroes
 
-- **Training:** the Marshal is trained at the Hall of Valor (hotkey V; 180
-  gold, 50 wood). The hero costs 250 gold and 50 wood and uses 3 population.
-  You can have only one, counting a hero in training or one waiting to be
-  revived.
-- **Experience:** when you kill an enemy unit, your hero gains its
-  experience if it is within 12 tiles. The experience is split if several
-  heroes are close.
+Three heroes with distinct roles, trained at the Hall of Valor (hotkey V;
+180 gold, 50 wood).
+
+- **Cost and limits:** each hero costs 250 gold and 50 wood and uses 3
+  population. You may have **one hero, or two once you Fortify to Castle**,
+  and never two of the same type. Heroes in training count toward the
+  limit.
+
+| Hero | Key | Role | Health | Attack | Q (level 1) | W (level 2) | E (level 3) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Marshal | Q | Frontline | 650 | 22 melee | Stormhammer | Battle Cry | Mend |
+| Pathfinder | W | Ranged, scout | 540 | 19, range 6 | Volley | Hunter's Mark | Far Sight |
+| Sage | E | Caster | 480 | 17, range 5.5 | Flame Burst | Slow | Arcane Ward |
+
+- **Abilities:** each lists its target, range, mana and cooldown in its
+  tooltip. Ranks II and III come at hero levels 3 and 5. The hero walks
+  into range before casting.
+
+  | Ability | Target | Range / radius | Mana / cooldown | Effect (rank I / II / III) |
+  | --- | --- | --- | --- | --- |
+  | Stormhammer | enemy unit | 6 | 75 / 10 s | 90 / 140 / 190 damage, 1.5 / 2 / 2.5 s stun |
+  | Battle Cry | none | radius 8 | 60 / 30 s | your units deal +15 / 25 / 35% damage for 12 s |
+  | Mend | your unit | 6 | 50 / 8 s | heals 150 / 225 / 300 |
+  | Volley | a spot | 8 / radius 2.5 | 70 / 12 s | 70 / 105 / 140 damage to every enemy unit there |
+  | Hunter's Mark | enemy unit | 8 | 40 / 14 s | takes +20 / 30 / 40% damage from everything, 10 / 12 / 14 s |
+  | Far Sight | any spot | anywhere / radius 9 | 50 / 30 s | reveals the area for 10 / 14 / 18 s |
+  | Flame Burst | a spot | 7 / radius 2 | 85 / 9 s | 85 / 130 / 175 damage to enemy units and buildings there |
+  | Slow | enemy unit | 7 | 45 / 10 s | moves and attacks 40 / 50 / 60% slower, 6 / 8 / 10 s |
+  | Arcane Ward | your unit | 6 | 55 / 12 s | +5 / 8 / 11 armor for 15 s |
+
+  Buffs show as a colored ring under the unit:
+
+  - Battle Cry: orange
+  - Mark: red
+  - Slow: blue
+  - Ward: cyan
+
+  A stunned unit can't move, attack, cast or use items, and the stun
+  interrupts its swing.
+- **Experience:** when you kill an enemy unit, each of your heroes within 12
+  tiles gets an equal share of its experience. Levels need 200, 500, 900 and
+  1400 total, up to level 5. Kills of neutral camp guards count for less as
+  a hero grows: 100% at level 1, then 80%, 65%, 50% and 40%. Creeping
+  alone can't max a hero; fighting the enemy can.
 
   | Kill | Experience |
   | --- | --- |
   | Laborer | 15 |
   | Guard or Archer | 35 |
-  | Brigand | 40 |
-  | Poacher | 30 |
-  | Brigand Chief | 90 |
+  | Lancer, Mangonel | 55 |
+  | Cleric | 45 |
+  | Timber Wolf, Poacher, Brigand | 25, 30, 40 |
+  | Brigand Chief, Bog Brute | 90, 140 |
   | Enemy hero | 60 × its level |
+- **Growth per level:**
 
-  Levels need 200, 500, 900 and 1400 total experience, up to level 5.
-- **Each level adds** +60 health, +3 damage, +0.5 armor and +30 maximum mana.
-  Mana regenerates at 0.6 per second. Abilities get stronger at levels 3 and
-  5.
+  | Hero | Health | Damage | Armor | Mana | Mana regeneration |
+  | --- | --- | --- | --- | --- | --- |
+  | Marshal | +60 | +3 | +0.5 | 200, +30 per level | 0.6/s |
+  | Pathfinder | +45 | +3 | +0.4 | 220, +35 per level | 0.7/s |
+  | Sage | +40 | +2 | +0.3 | 260, +45 per level | 0.9/s |
+- **Death and revival:** a fallen hero keeps its level, experience **and
+  items**.
+  - Its Hall of Valor button becomes "Revive". Revival costs 100 + 50 ×
+    level gold and takes 20 + 5 × level seconds.
+  - The hero returns at full health and mana.
+  - A dead hero still counts toward the hero limit.
+  - A revival is not counted as a new unit in the statistics.
 
-  | Ability | Key | Learned | Mana / cooldown | Effect (rank I / II / III) |
-  | --- | --- | --- | --- | --- |
-  | Stormhammer | Q, click an enemy | level 1 | 75 / 10 s | Thrown hammer: 90 / 140 / 190 damage and a 1.5 / 2 / 2.5 s stun |
-  | Battle Cry | W | level 2 | 60 / 30 s | Your units within 8 tiles deal +15 / 25 / 35% damage for 12 s |
-  | Mend | E, click one of your units | level 3 | 50 / 8 s | Heals 150 / 225 / 300 |
+## Items, camps and map objectives
 
-  The hero walks into range before casting. A stunned unit can't move,
-  attack or cast, and stunning a unit interrupts its swing.
-- **Death and revival:** a fallen hero keeps its level and experience. Its
-  Hall of Valor button becomes "Revive". Revival costs 100 + 50 × level gold
-  and takes 20 + 5 × level seconds. The hero comes back at full health and
-  mana. A revival does not count as a new unit in the statistics.
+- **Inventory:** each hero carries three items.
+  - Right-click an item on the ground to pick it up. Every item on the
+    ground is labelled.
+  - Z, X and C use a slot. Right-click a slot to drop its item, for
+    example to pass it to another hero.
+  - A full inventory refuses new items.
+  - Permanent items work while carried. Consumables are used up.
+
+  | Item | Price | Effect |
+  | --- | --- | --- |
+  | Keen Blade | 160 | +4 damage |
+  | Ringmail Vest | 160 | +3 armor |
+  | Charm of Vigor | 160 | +150 health |
+  | Healing Draught | 75 | use: +300 health |
+  | Mana Tonic | 60 | use: +150 mana |
+  | Scroll of Return | 100 | use: the hero returns at once to your nearest Keep |
+  | Mending Salve | 125 | use: your units within 6 tiles gain 150 health |
+  | Swift Boots | camp drop only | +0.6 speed |
+  | Gauntlets of Might | camp drop only | +9 damage |
+  | Seer's Circlet | camp drop only | +120 mana |
+- **Camps** guard the richer mines at three levels. When the last guard of
+  a camp dies, it drops an item where it fell. Selecting a guard shows its
+  camp's level and drop.
+
+  | Level | Where | Guards | Drops |
+  | --- | --- | --- | --- |
+  | 1 | Natural expansions | Brigand, Timber Wolf | a consumable |
+  | 2 | Far expansions | Brigand Chief, Brigand, Poacher | a tier-1 item |
+  | 3 | Centre mines | Bog Brute, Brigand Chief, Poacher | a tier-2 item (Boots, Gauntlets or Circlet) |
+
+  Mirrored camps drop the same item. The small mine beside each base stays
+  unguarded: a camp there mauled Laborers in testing.
+- **Trading Posts** (two) sell the first seven items to any hero standing
+  within 4 tiles. Select the Post and press the item's key (Q, W, E, R, T,
+  Y, D).
+- **Healing Fountains** (two) heal every unit within 5 tiles, any owner, by
+  15 health and 3 mana per second.
+- **Placement:** Posts and Fountains sit on the line of points equally far
+  from both starts, at least 9 tiles from any mine. Like mines, they are
+  known from the start. They can't be attacked.
 
 ## Architecture
 

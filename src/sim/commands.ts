@@ -1,7 +1,8 @@
 // Commands are the only way players (human or AI) affect the simulation.
 // They are validated here: a player can only command their own living units.
 
-import { CONFIG, type AbilityId, type BuildingType, type ResearchId, type UnitType } from './config';
+import { CONFIG, type AbilityId, type BuildingType, type ItemId, type ResearchId, type UnitType } from './config';
+import { buyItem, dropItem, useItem } from './items';
 import { cancelConstruction, checkPlacement, resumeBuild, shortfall, startBuild } from './construction';
 import type { Game } from './game';
 import { cancelTraining, enqueue, enqueueResearch, setRally } from './production';
@@ -21,7 +22,12 @@ export type Command =
   | { type: 'hold'; player: number; units: number[]; queued?: boolean }
   | { type: 'surrender'; player: number }
   | { type: 'research'; player: number; buildingId: number; research: ResearchId }
-  | { type: 'cast'; player: number; units: number[]; ability: AbilityId; targetId: number }
+  /** targetId for unit-targeted abilities; x, y for ground-targeted ones. */
+  | { type: 'cast'; player: number; units: number[]; ability: AbilityId; targetId: number; x?: number; y?: number }
+  | { type: 'pickup'; player: number; units: number[]; itemId: number }
+  | { type: 'useItem'; player: number; units: number[]; slot: number }
+  | { type: 'dropItem'; player: number; units: number[]; slot: number }
+  | { type: 'buyItem'; player: number; shopId: number; heroId: number; item: ItemId }
   | { type: 'build'; player: number; units: number[]; buildingType: BuildingType; tx: number; ty: number; queued?: boolean }
   | { type: 'resumeBuild'; player: number; units: number[]; buildingId: number }
   | { type: 'cancelBuild'; player: number; buildingId: number }
@@ -59,6 +65,9 @@ export function applyCommand(game: Game, cmd: Command): void {
     case 'research':
       if (!(cmd.research in CONFIG.research) || game.state.players[cmd.player]?.defeated) return;
       return enqueueResearch(game, cmd.player, cmd.buildingId, cmd.research);
+    case 'buyItem':
+      if (!(cmd.item in CONFIG.items) || game.state.players[cmd.player]?.defeated) return;
+      return buyItem(game, cmd.player, cmd.shopId, cmd.heroId, cmd.item);
   }
   // A decided match accepts no further orders from defeated players.
   if (game.state.players[cmd.player]?.defeated) return;
@@ -85,7 +94,7 @@ export function applyCommand(game: Game, cmd: Command): void {
       return;
     }
     case 'build': {
-      if (!(cmd.buildingType in CONFIG.buildings)) return;
+      if (!(cmd.buildingType in CONFIG.buildings) || !CONFIG.buildings[cmd.buildingType].buildable) return;
       const workers = units.filter((u) => u.type === 'worker');
       if (!workers.length) return;
       const size = CONFIG.buildings[cmd.buildingType].size;
@@ -131,16 +140,38 @@ export function applyCommand(game: Game, cmd: Command): void {
     }
     case 'cast': {
       if (!(cmd.ability in CONFIG.hero.abilities)) return;
-      for (const u of units) {
-        const problem = castProblem(game, u, cmd.ability, cmd.targetId);
-        if (problem) {
-          if (u.hero) game.emit({ type: 'cantCast', player: cmd.player, reason: problem });
-          continue;
-        }
-        releaseFromNode(game, u);
-        u.order = { type: 'cast', ability: cmd.ability, targetId: cmd.targetId };
-        u.move = null;
+      // Only the selected hero who knows the ability casts it.
+      const def = CONFIG.hero.abilities[cmd.ability];
+      const caster = units.find((u) => u.hero && u.type === def.hero) ?? units.find((u) => u.hero);
+      if (!caster) return;
+      const x = cmd.x ?? 0;
+      const y = cmd.y ?? 0;
+      const problem = castProblem(game, caster, cmd.ability, cmd.targetId, x, y);
+      if (problem) {
+        game.emit({ type: 'cantCast', player: cmd.player, reason: problem });
+        return;
       }
+      releaseFromNode(game, caster);
+      caster.order = { type: 'cast', ability: cmd.ability, targetId: cmd.targetId, x, y };
+      caster.move = null;
+      return;
+    }
+    case 'pickup': {
+      const hero = units.find((u) => u.hero);
+      if (!hero || !game.state.items.some((i) => i.id === cmd.itemId)) return;
+      hero.orderQueue = [];
+      hero.order = { type: 'pickup', itemId: cmd.itemId };
+      hero.move = null;
+      return;
+    }
+    case 'useItem': {
+      const hero = units.find((u) => u.hero);
+      if (hero) useItem(game, hero, cmd.slot);
+      return;
+    }
+    case 'dropItem': {
+      const hero = units.find((u) => u.hero);
+      if (hero) dropItem(game, hero, cmd.slot);
       return;
     }
     case 'hold': {
