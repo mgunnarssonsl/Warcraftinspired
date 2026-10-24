@@ -22,6 +22,9 @@ computer opponents. No campaign or story.
   new units (Lancer, Cleric, Mangonel), two new buildings, a third
   technology tier, economic and military upgrades, and a computer opponent
   that uses all of it.
+- Phase C: three heroes with distinct roles, items and a three-slot
+  inventory, camps at three levels that drop items, Trading Posts and
+  Healing Fountains, and explicit death and revival rules
 
 See [Roadmap](#roadmap).
 
@@ -514,7 +517,7 @@ Three heroes with distinct roles, trained at the Hall of Valor (hotkey V;
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Marshal | Q | Frontline | 650 | 22 melee | Stormhammer | Battle Cry | Mend |
 | Pathfinder | W | Ranged, scout | 540 | 19, range 6 | Volley | Hunter's Mark | Far Sight |
-| Sage | E | Caster | 480 | 17, range 5.5 | Flame Burst | Slow | Arcane Ward |
+| Sage | E | Caster | 580 (armor 2) | 19, range 5.5 | Flame Burst | Slow | Arcane Ward |
 
 - **Abilities:** each lists its target, range, mana and cooldown in its
   tooltip. Ranks II and III come at hero levels 3 and 5. The hero walks
@@ -528,8 +531,8 @@ Three heroes with distinct roles, trained at the Hall of Valor (hotkey V;
   | Volley | a spot | 8 / radius 2.5 | 70 / 12 s | 70 / 105 / 140 damage to every enemy unit there |
   | Hunter's Mark | enemy unit | 8 | 40 / 14 s | takes +20 / 30 / 40% damage from everything, 10 / 12 / 14 s |
   | Far Sight | any spot | anywhere / radius 9 | 50 / 30 s | reveals the area for 10 / 14 / 18 s |
-  | Flame Burst | a spot | 7 / radius 2 | 85 / 9 s | 85 / 130 / 175 damage to enemy units and buildings there |
-  | Slow | enemy unit | 7 | 45 / 10 s | moves and attacks 40 / 50 / 60% slower, 6 / 8 / 10 s |
+  | Flame Burst | a spot | 7 / radius 2.5 | 80 / 8 s | 95 / 145 / 195 damage to enemy units and buildings there |
+  | Slow | enemy unit | 7 | 35 / 9 s | moves and attacks 40 / 50 / 60% slower, 6 / 8 / 10 s |
   | Arcane Ward | your unit | 6 | 55 / 12 s | +5 / 8 / 11 armor for 15 s |
 
   Buffs show as a colored ring under the unit:
@@ -562,7 +565,7 @@ Three heroes with distinct roles, trained at the Hall of Valor (hotkey V;
   | --- | --- | --- | --- | --- | --- |
   | Marshal | +60 | +3 | +0.5 | 200, +30 per level | 0.6/s |
   | Pathfinder | +45 | +3 | +0.4 | 220, +35 per level | 0.7/s |
-  | Sage | +40 | +2 | +0.3 | 260, +45 per level | 0.9/s |
+  | Sage | +55 | +3 | +0.3 | 260, +45 per level | 1.3/s |
 - **Death and revival:** a fallen hero keeps its level, experience **and
   items**.
   - Its Hall of Valor button becomes "Revive". Revival costs 100 + 50 ×
@@ -951,6 +954,50 @@ which are never shipped to players.
   - **Still open:** the Phase A finding stands. Expanding early and
     attacking late in one big wave (eco) wins 95%, and a rush can't punish
     it.
+- **Phase C (automated, `npm test`, 149 tests):** `tests/heroes.test.ts`
+  covers:
+  - hero choice, the one/two hero limit and the no-duplicates rule;
+  - revival that keeps level, experience and items;
+  - creep experience pacing;
+  - Volley, Hunter's Mark, Slow, Arcane Ward, Flame Burst on buildings,
+    Far Sight reveal and expiry, and abilities belonging to their own hero;
+  - pickup, a full inventory, permanent stat items, dropping, and each
+    consumable;
+  - camp drops and their mirroring;
+  - Trading Post range and price, and that it can't be attacked;
+  - Fountain healing;
+  - a computer hero picking up loot.
+
+  The map test checks that the Posts and Fountains are mirrored and
+  reachable. Counter battles now fight from both sides.
+- **Phase C in the browser (scripted):**
+  - The Hall shows Marshal, Pathfinder and Sage, and W trained a
+    Pathfinder.
+  - A selected Trading Post lists its stock, and Q bought a Keen Blade for
+    the hero next to it.
+  - The hero card shows that hero's own abilities and three item slots.
+  - Q plus a click cast Volley on the ground (mana 220 → 150).
+  - Right-clicking a labelled Healing Draught picked it up.
+  - The detail panel switches to two columns for heroes.
+  - No console errors.
+- **Phase C balance (computer games):**
+  - **Heroes matter:** across all strategies, the no-hero strategy won 4
+    and lost 59. Against the standard computer it lost 8 of 8, and heroes
+    that skip camps still beat no heroes 6–1.
+  - **Map activity matters less:** standard vs the same without camps or
+    shopping went 5–3, plus a 30-minute stalemate.
+  - **No hero choice dominates:** in the first wide run (288 games)
+    Marshal-first won 41–21 and Sage-first 23–39. The Sage died far more
+    often, so it got more health and armor, more mana regeneration, and a
+    larger, cheaper Flame Burst. After that: Marshal 12–10, Pathfinder
+    11–12, Sage 10–13, holy 12–10.
+  - **Compositions stay viable:** standard 41–21, siege 40–21, knights
+    36–27, classic 31–28, holy 29–30.
+  - **Difficulty order:** Hard won 20 of 24 against Easy and Normal on six
+    maps from both seats.
+  - **Seats:** identical computers split 5–5 over ten maps. The strategy
+    runs leaned slightly toward player 2 (153–123), which is within noise
+    but worth watching.
 - **Not yet done:** human playtesting of feel and pacing, and frame-rate
   measurement on real GPUs. Software WebGL only manages ~2–3 fps, which says
   nothing about real hardware.
@@ -979,6 +1026,17 @@ Phase B (done): one complete faction.
 - Mule Carts and Longbows.
 - A computer that composes and adapts its army.
 - Fair seats.
+
+Phase C (done): heroes, items and neutral objectives.
+
+- Three heroes with distinct roles and a second hero with the Castle.
+- Abilities with clear targets, ranges, costs and cooldowns.
+- Experience pacing for neutral kills.
+- A three-slot inventory with ten original items.
+- Camps at three levels that drop items.
+- Trading Posts and Healing Fountains.
+- Explicit death and revival rules.
+- A computer that uses all of it.
 
 Still open from Phase A, ideally driven by human playtesting:
 

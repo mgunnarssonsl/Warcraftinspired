@@ -281,7 +281,7 @@ export const CONFIG = {
     },
     sage: {
       name: 'Sage',
-      hp: 480,
+      hp: 580,
       speed: 2.9,
       radius: 0.4,
       sight: 10,
@@ -293,11 +293,11 @@ export const CONFIG = {
       /** Research that must be complete (a tier), or null. */
       tech: null as string | null,
       hotkey: 'E',
-      armor: 0,
+      armor: 2,
       armorType: 'hero' as ArmorType,
       xp: 0,
       bounty: 0,
-      attack: { type: 'hero' as AttackType, damage: 17, range: 5.5, cooldown: 1.6, windup: 0.4, acquire: 7, projectileSpeed: 11, minRange: 0, splash: 0 },
+      attack: { type: 'hero' as AttackType, damage: 19, range: 5.5, cooldown: 1.6, windup: 0.4, acquire: 7, projectileSpeed: 11, minRange: 0, splash: 0 },
     },
     // Neutral creeps (camp guards). Not trainable by anyone.
     wolf: {
@@ -408,12 +408,12 @@ export const CONFIG = {
         desc: 'Reveals any spot on the map for a while.',
       },
       flame: {
-        name: 'Flame Burst', hero: 'sage', hotkey: 'Q', learnLevel: 1, target: 'point', range: 7, radius: 2, mana: 85, cooldown: 9,
-        damage: [85, 130, 175], stun: [0, 0, 0], duration: [0, 0, 0], bonus: [0, 0, 0], heal: [0, 0, 0], projectileSpeed: 0,
+        name: 'Flame Burst', hero: 'sage', hotkey: 'Q', learnLevel: 1, target: 'point', range: 7, radius: 2.5, mana: 80, cooldown: 8,
+        damage: [95, 145, 195], stun: [0, 0, 0], duration: [0, 0, 0], bonus: [0, 0, 0], heal: [0, 0, 0], projectileSpeed: 0,
         desc: 'Fire erupts at a spot, burning enemy units and buildings there.',
       },
       slow: {
-        name: 'Slow', hero: 'sage', hotkey: 'W', learnLevel: 2, target: 'enemy', range: 7, radius: 0, mana: 45, cooldown: 10,
+        name: 'Slow', hero: 'sage', hotkey: 'W', learnLevel: 2, target: 'enemy', range: 7, radius: 0, mana: 35, cooldown: 9,
         damage: [0, 0, 0], stun: [0, 0, 0], duration: [6, 8, 10], bonus: [0.4, 0.5, 0.6], heal: [0, 0, 0], projectileSpeed: 0,
         desc: 'An enemy unit moves and attacks much more slowly.',
       },
@@ -480,7 +480,7 @@ export const CONFIG = {
   heroTypes: {
     hero: { role: 'Frontline: stuns, rallies and heals.', hpPerLevel: 60, damagePerLevel: 3, armorPerLevel: 0.5, mana: 200, manaPerLevel: 30, manaRegen: 0.6 },
     ranger: { role: 'Ranged: area damage, marks targets, scouts the map.', hpPerLevel: 45, damagePerLevel: 3, armorPerLevel: 0.4, mana: 220, manaPerLevel: 35, manaRegen: 0.7 },
-    sage: { role: 'Caster: burns groups, slows threats, wards allies.', hpPerLevel: 40, damagePerLevel: 2, armorPerLevel: 0.3, mana: 260, manaPerLevel: 45, manaRegen: 0.9 },
+    sage: { role: 'Caster: burns groups, slows threats, wards allies.', hpPerLevel: 55, damagePerLevel: 3, armorPerLevel: 0.3, mana: 260, manaPerLevel: 45, manaRegen: 1.3 },
   },
 
   vision: {
