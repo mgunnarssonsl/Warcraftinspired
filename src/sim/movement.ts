@@ -37,17 +37,31 @@ export function closestAround(x: number, y: number, f: Footprint, pad: number): 
   return { x: cx, y: cy };
 }
 
+/**
+ * The tile containing coordinate `v` on an axis of length `size`. Like
+ * Math.floor, except that a point exactly on a tile edge in the far half of
+ * the map belongs to the tile before it: the rule is then the same seen from
+ * either end, so mirrored positions on the point-symmetric map get mirrored
+ * tiles. (Positions on exact edges are common: even-sized buildings have
+ * whole-number centres.)
+ */
+export function symTile(v: number, size: number): number {
+  const f = Math.floor(v);
+  return f === v && v > size / 2 ? f - 1 : f;
+}
+
 export function planPath(game: Game, u: Unit): void {
   const mv = u.move;
   if (!mv) return;
   const nav = game.nav;
   const goal = mv.goal;
-  const sx = Math.floor(u.x);
-  const sy = Math.floor(u.y);
+  const { width: W, height: H } = game.state.map;
+  const sx = symTile(u.x, W);
+  const sy = symTile(u.y, H);
   let rect: GoalRect;
   if (goal.kind === 'point') {
-    const gx = Math.floor(goal.x);
-    const gy = Math.floor(goal.y);
+    const gx = symTile(goal.x, W);
+    const gy = symTile(goal.y, H);
     rect = { x0: gx, y0: gy, x1: gx, y1: gy };
   } else {
     rect = { x0: goal.tx - 1, y0: goal.ty - 1, x1: goal.tx + goal.w, y1: goal.ty + goal.h };
@@ -169,6 +183,17 @@ function separate(game: Game, units: Unit[]): void {
     if (list) list.push(u);
     else cells.set(k, [u]);
   }
+  // Pushes are summed first and applied together, so the result never
+  // depends on which unit happens to be processed first (entity ids, and so
+  // player seats, must not matter).
+  const shifts = new Map<number, { x: number; y: number }>();
+  const push = (u: Unit, x: number, y: number) => {
+    const p = shifts.get(u.id);
+    if (p) {
+      p.x += x;
+      p.y += y;
+    } else shifts.set(u.id, { x, y });
+  };
   for (const a of solid) {
     const ax = Math.floor(a.x);
     const ay = Math.floor(a.y);
@@ -200,10 +225,14 @@ function separate(game: Game, units: Unit[]): void {
           // Units holding position are never shoved.
           if (a.order?.type === 'hold') wa = b.order?.type === 'hold' ? 0.5 : 0;
           else if (b.order?.type === 'hold') wa = 1;
-          tryShift(game, a, -dx * overlap * wa, -dy * overlap * wa);
-          tryShift(game, b, dx * overlap * (1 - wa), dy * overlap * (1 - wa));
+          push(a, -dx * overlap * wa, -dy * overlap * wa);
+          push(b, dx * overlap * (1 - wa), dy * overlap * (1 - wa));
         }
       }
+  }
+  for (const u of solid) {
+    const p = shifts.get(u.id);
+    if (p) tryShift(game, u, p.x, p.y);
   }
 }
 

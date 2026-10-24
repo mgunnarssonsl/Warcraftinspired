@@ -68,8 +68,9 @@ export class ComputerPlayer {
   }
 
   update(game: Game): void {
-    // Stagger players so two computers do not think on the same tick.
-    if ((game.state.tick + this.player * 7) % this.thinkTicks !== 0) return;
+    // Every computer thinks on the same ticks: staggering them would give one
+    // seat a head start in every exchange.
+    if (game.state.tick % this.thinkTicks !== 0) return;
     const me = game.player(this.player);
     if (!me || me.defeated || game.state.outcome) return;
     this.think(game);

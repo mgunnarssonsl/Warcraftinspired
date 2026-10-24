@@ -146,9 +146,10 @@ These are the rules as implemented. All numbers live in `src/sim/config.ts`.
     Lancers against Archers, Clerics and siege; more Guards against
     Lancers; more Clerics against Guards.
   - Hard fortifies to a Citadel at 16:00 for the tier III upgrades.
-- **Fair seats:** its building-placement search runs in the mirrored order
-  for the player in the rotated half of the map, so both sides build
-  mirror-image bases.
+- **Fair seats:** both computers think on the same ticks. Its
+  building-placement search runs in the mirrored order for the player in the
+  rotated half of the map, so both sides build mirror-image bases. See
+  [Fair seats](#fair-seats).
 - **Heroes and upgrades:**
   - It builds a Hall of Valor after its first Barracks, then trains its hero
     and revives it when it falls.
@@ -279,7 +280,7 @@ choice:
 | Archer | Barracks (needs Lumber Mill) | 130 gold, 10 wood | I | Ranged pierce damage | Guards, light units (Archers, Clerics) | Lancers, buildings |
 | Lancer | Barracks (needs Blacksmith) | 195 gold, 40 wood | II | Fast cavalry, shrugs off arrows | Archers, Clerics, Mangonels | Guards |
 | Cleric | Chapel | 140 gold, 30 wood | II | Support: heals on its own | (heavy armor, with its weak bolt) | everything, alone |
-| Mangonel | Siege Works | 220 gold, 120 wood | II | Siege, splash | Buildings, clumps that stand still | Anything that reaches it (2-tile minimum range) |
+| Mangonel | Siege Works | 180 gold, 90 wood | II | Siege, splash | Buildings, clumps that stand still | Anything that reaches it (2-tile minimum range) |
 | Marshal (hero) | Hall of Valor | 250 gold, 50 wood | I | Hero | | |
 
 On an open field at equal cost, the triangle is Guards beat Lancers,
@@ -311,8 +312,8 @@ multiplier depends on the attack type and the target's armor type:
   - Each prayer costs 15 of its 180 mana, and prayers come 2 s apart.
   - Mana regenerates at 0.9 per second.
   - It needs no orders and works the same for the computer.
-- **Mangonel boulders:** a boulder flies to where the target stood when it
-  was thrown, then splashes 1.2 tiles around, full damage at the centre and
+- **Mangonel boulders:** Mangonels target buildings before units. A boulder
+  flies to where the target stood when it was thrown, then splashes 1.2 tiles around, full damage at the centre and
   half at the edge, hurting enemies only.
   - Units that keep moving dodge it.
   - A Mangonel can't hit anything within 2 tiles: it backs off first, or,
@@ -330,7 +331,7 @@ All numbers are in `CONFIG.units[*].attack`, `CONFIG.combat` and
 | Archer | 300 | 0 | 15 | 1.5 s | 5.5 (7 with Longbows) | Projectile |
 | Lancer | 560 | 2 | 17 | 1.5 s | melee | Speed 3.6 (Guards 2.7) |
 | Cleric | 280 | 0 | 8 | 1.8 s | 4.5 | Magic bolt; heals |
-| Mangonel | 380 | 1 | 45 | 4 s | 2–8 | Boulder, splash 1.2 |
+| Mangonel | 420 | 1 | 45 | 4 s | 2–8 | Boulder, splash 1.2; targets buildings first |
 | Watch Tower | 500 | 5 | 16 | 1.2 s | 7 | 110 gold, 80 wood. Fires only once finished. |
 | Brigand (neutral) | 300 | 1 | 11 | 1.4 s | melee | |
 | Poacher (neutral) | 200 | 0 | 10 | 1.7 s | 5 | Projectile |
@@ -377,6 +378,35 @@ All numbers are in `CONFIG.units[*].attack`, `CONFIG.combat` and
   attack" notices with a red minimap ping. They are throttled to one per
   10 s unless the attack is somewhere else. Space jumps to the latest alert.
   In fights, health bars show on every wounded unit.
+
+## Fair seats
+
+The map is point-symmetric, so neither starting position should be better.
+AI-vs-AI playtests showed one was: in the first Phase B run, player 1 won
+64% of evenly matched games. A mirror check found the causes. It steps two
+identical computers and compares each side with the other rotated 180°,
+reporting the first difference. The fixes:
+
+- **Spawns:** the search for free tiles walks its rings rotated for
+  footprints in the rotated half. Starting Laborers had appeared on the
+  edge side of one Keep and the centre side of the other.
+- **Building placement:** the computer's site search scans in mirrored
+  order on the rotated side.
+- **AI timing:** both computers think on the same ticks. They used to be
+  staggered, which gave one a head start in every exchange.
+- **Path tiles:** the start and goal tiles of a path use a symmetric rule
+  for points that lie exactly on a tile edge, which happens all the time
+  around even-sized buildings.
+- **Simultaneous resolution:**
+  - Combat blows that land in the same tick are applied together.
+  - Unit separation sums all pushes before applying them.
+
+  Neither depends on processing order any more.
+
+The result: two identical computers stay exactly mirrored through the
+first minute (tested). Over 24 mirror games player 1 won 12 and player 2
+won 11. Single games still differ through tiny floating-point effects, but
+there is no systematic bias.
 
 ## Orders and movement
 
@@ -787,6 +817,44 @@ which are never shipped to players.
     Citadel.
   - The start screen fits.
   - No console errors.
+- **Phase B balance playtest (`npm run playtest`, 224 games):** eight
+  computer strategies in a round robin, on 4 maps, from both seats, all
+  with Hard decisions.
+  - Four are development paths: standard (adaptive), rush, eco and turtle.
+  - Four are fixed army compositions:
+    - classic: Guards and Archers, never fortifies;
+    - knights: Lancer-heavy;
+    - holy: Guards with Clerics;
+    - siege: Guards and Archers with Mangonels.
+
+  | Strategy | Won | Lost | No result | Avg minutes |
+  | --- | --- | --- | --- | --- |
+  | standard | 27 | 27 | 2 | 15.9 |
+  | rush | 2 | 52 | 2 | 13.8 |
+  | eco | 53 | 3 | 0 | 14.3 |
+  | turtle | 31 | 25 | 0 | 16.1 |
+  | classic | 30 | 24 | 2 | 15.7 |
+  | knights | 25 | 28 | 3 | 16.1 |
+  | holy | 29 | 25 | 2 | 15.9 |
+  | siege | 21 | 34 | 1 | 14.8 |
+
+  - **Seats:** player 1 won 105 and player 2 won 113. Before the fair-seat
+    fixes it was 63–47, and 64% among evenly matched strategies.
+  - **Compositions:** among the six non-eco, non-rush strategies, the best
+    record is 60% (turtle). Head to head the results are non-transitive:
+    classic beats knights, knights beats siege, siege beats standard,
+    standard beats holy, holy beats classic. Several army compositions and
+    development paths are viable.
+  - **Found and fixed along the way:**
+    - Mangonels had a 0.55-tile radius, which left them wedged in one-tile
+      gaps or unable to move from their spawn tile. Units are now all under
+      half a tile, and a test checks it.
+    - Mangonels shot at moving soldiers instead of buildings.
+    - The computer researched Mule Carts at 2:00, which blocked Laborer
+      training.
+  - **Still open:** the Phase A finding stands. Expanding early and
+    attacking late in one big wave (eco) wins 95%, and a rush can't punish
+    it.
 - **Not yet done:** human playtesting of feel and pacing, and frame-rate
   measurement on real GPUs. Software WebGL only manages ~2–3 fps, which says
   nothing about real hardware.
@@ -807,12 +875,20 @@ grab-to-pan camera, group pace, objectives that register reliably, AI
 routing and memory, a readable command card, and an AI-vs-AI balance
 harness.
 
-Still open in Phase A, ideally driven by human playtesting:
+Phase B (done): one complete faction.
+
+- Damage and armor types and the Guard → Lancer → Archer → Guard triangle.
+- The Lancer, Cleric and Mangonel, with the Chapel and Siege Works.
+- A Citadel tier with tier III research.
+- Mule Carts and Longbows.
+- A computer that composes and adapts its army.
+- Fair seats.
+
+Still open from Phase A, ideally driven by human playtesting:
 
 - **Early aggression should be able to punish a fast expansion.** Options to
   test:
   - diminishing returns beyond 5 miners, so economy and army trade off;
   - cheaper or faster early units;
   - harassing workers.
-- **Mirror matches still favor player 0.**
 - **Opening playtests by people, not only by the AI.**

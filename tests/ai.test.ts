@@ -4,6 +4,7 @@ import { CONFIG } from '../src/sim/config';
 import { Game } from '../src/sim/game';
 import { emptyGame } from './helpers';
 import { findSite } from '../src/ai/placement';
+import { symTile } from '../src/sim/movement';
 
 function play(seed: number, a: Difficulty | null, b: Difficulty | null, minutes: number) {
   const g = Game.create(seed);
@@ -135,5 +136,35 @@ describe('fair seats', () => {
       const b = findSite(g, 1, type, W - p0.x, H - p0.y)!;
       expect(b).toEqual({ tx: W - a.tx - s, ty: H - a.ty - s, w: s, h: s });
     }
+  });
+});
+
+describe('fair seats: mirror symmetry', () => {
+  const mirrored = (g: Game) => {
+    const { width: W, height: H } = g.state.map;
+    const own = (p: number) => [...g.units(), ...g.buildings()].filter((e) => e.owner === p);
+    const b = own(1);
+    return own(0).every((a) =>
+      b.some((e) => e.type === a.type && Math.abs(W - e.x - a.x) < 1e-6 && Math.abs(H - e.y - a.y) < 1e-6 && (e.kind !== 'unit' || a.kind !== 'unit' || e.carry.amount === a.carry.amount)),
+    );
+  };
+
+  it('starting units are exact mirror images', () => {
+    for (const seed of [1, 5, 9]) expect(mirrored(Game.create(seed))).toBe(true);
+  });
+
+  it('tile lookup is the same seen from either end of the map', () => {
+    for (const v of [0.5, 14, 14.0001, 47.5, 58, 81.999]) expect(96 - 1 - symTile(96 - v, 96)).toBe(symTile(v, 96));
+  });
+
+  it('two identical computers stay exactly mirrored through the first minute', () => {
+    const g = Game.create(5);
+    const ais = [new ComputerPlayer(0, 'hard'), new ComputerPlayer(1, 'hard')];
+    for (let t = 0; t < 20 * 60; t++) {
+      g.step();
+      for (const ai of ais) ai.update(g);
+    }
+    expect(g.player(0).gold).toBe(g.player(1).gold);
+    expect(mirrored(g)).toBe(true);
   });
 });

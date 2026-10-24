@@ -150,13 +150,14 @@ export const CONFIG = {
     },
     mangonel: {
       name: 'Mangonel',
-      hp: 380,
-      speed: 2.0,
-      radius: 0.55,
+      hp: 420,
+      speed: 2.3,
+      /** Under half a tile, like every unit: any free tile fits it, and paths through one-tile gaps work. */
+      radius: 0.45,
       /** Vision radius in tiles. */
       sight: 9,
-      pop: 3,
-      cost: { gold: 220, wood: 120 },
+      pop: 2,
+      cost: { gold: 180, wood: 90 },
       trainSeconds: 35,
       trainedAt: 'workshop',
       requires: null,

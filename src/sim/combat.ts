@@ -58,12 +58,14 @@ export function damageAfterArmor(raw: number, armor: number): number {
 
 /**
  * Best enemy near (x, y) within `range` (edge distance from `u`): units that
- * can fight first, then other units, then buildings; nearest wins, ties by id.
+ * can fight first, then other units, then buildings (siege: buildings first);
+ * nearest wins, ties by id.
  */
 export function findTarget(game: Game, u: Unit, range: number): Target | undefined {
   let best: Target | undefined;
   let bestKey = Infinity;
   const minRange = attackDef(u).minRange;
+  const siege = attackDef(u).type === 'siege';
   const scan = (list: readonly Target[]) => {
     for (const e of list) consider(e);
   };
@@ -71,7 +73,8 @@ export function findTarget(game: Game, u: Unit, range: number): Target | undefin
     if (!isEnemy(game, u.owner, e.owner) || !targetable(e) || !game.vision.canSee(u.owner, e)) return;
     const d = gap(u, e);
     if (d > range || d < minRange) return;
-    const tier = e.kind === 'unit' ? (canAttack(e) ? 0 : 1) : 2;
+    // Siege engines go for buildings first; everyone else for fighters first.
+    const tier = siege ? (e.kind === 'building' ? 0 : canAttack(e) ? 1 : 2) : e.kind === 'unit' ? (canAttack(e) ? 0 : 1) : 2;
     const key = tier * 1000 + d;
     if (key < bestKey) {
       bestKey = key;

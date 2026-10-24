@@ -5,7 +5,7 @@ import { CONFIG, secondsToTicks, type UnitType } from '../src/sim/config';
 import type { Game } from '../src/sim/game';
 import { attackRange } from '../src/sim/tech';
 import type { GameEvent } from '../src/sim/types';
-import { emptyGame, run, runUntil } from './helpers';
+import { emptyGame, rebuild, run, runUntil, setRock } from './helpers';
 
 const T = CONFIG.combat.typeTable;
 const cost = (t: UnitType) => CONFIG.units[t].cost.gold + CONFIG.units[t].cost.wood;
@@ -239,5 +239,20 @@ describe('computer composition', () => {
     expect(look('archer').lancer).toBeGreaterThan(base.lancer);
     expect(look('lancer').guard).toBeGreaterThan(base.guard);
     expect(look('guard').cleric).toBeGreaterThan(base.cleric);
+  });
+});
+
+describe('every unit fits the grid', () => {
+  it('all radii are under half a tile, so any free tile fits and one-tile gaps are passable', () => {
+    for (const [type, def] of Object.entries(CONFIG.units)) expect(def.radius, type).toBeLessThan(0.5);
+  });
+
+  it('a Mangonel drives through a one-tile gap in a wall', () => {
+    const g = emptyGame(30, 20);
+    for (let y = 0; y < 20; y++) if (y !== 10) setRock(g, 15, y);
+    const g2 = rebuild(g);
+    const m = g2.addUnit('mangonel', 0, 8.5, 4.5);
+    g2.issue({ type: 'move', player: 0, units: [m.id], x: 24.5, y: 15.5 });
+    runUntil(g2, () => Math.hypot(m.x - 24.5, m.y - 15.5) < 0.6, 20 * 30);
   });
 });

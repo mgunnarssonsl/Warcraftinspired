@@ -325,6 +325,8 @@ export class Game {
     const out: Array<{ x: number; y: number }> = [];
     const taken = new Set<number>();
     for (const u of this.units()) taken.add(Math.floor(u.y) * this.nav.w + Math.floor(u.x));
+    const { width: W, height: H } = this.state.map;
+    const flip = f.tx + f.w / 2 + (f.ty + f.h / 2) > (W + H) / 2;
     for (let ring = 1; ring < 12 && out.length < count; ring++) {
       // Walk the ring clockwise starting below the footprint (toward the viewer).
       const cand: Array<{ x: number; y: number }> = [];
@@ -332,6 +334,12 @@ export class Game {
       for (let y = f.ty + f.h - 1 + ring; y >= f.ty - ring; y--) cand.push({ x: f.tx + f.w - 1 + ring, y });
       for (let x = f.tx + f.w - 1 + ring; x >= f.tx - ring; x--) cand.push({ x, y: f.ty - ring });
       for (let y = f.ty - ring; y <= f.ty + f.h - 1 + ring; y++) cand.push({ x: f.tx - ring, y });
+      // Maps are point-symmetric: in the rotated half, walk the ring rotated
+      // too, so both seats get mirror-image spawn spots.
+      if (flip) for (const c of cand) {
+        c.x = 2 * f.tx + f.w - 1 - c.x;
+        c.y = 2 * f.ty + f.h - 1 - c.y;
+      }
       for (const c of cand) {
         const key = c.y * this.nav.w + c.x;
         if (out.length >= count) break;

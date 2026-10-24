@@ -19,7 +19,7 @@ const STRATEGIES: Record<string, ProfileOverrides> = {
   classic: { mix: { guard: 3, archer: 2, lancer: 0, cleric: 0, mangonel: 0 }, adapt: false, castleSeconds: null },
   knights: { mix: { guard: 1, archer: 1, lancer: 4, cleric: 0, mangonel: 0 }, adapt: false, castleSeconds: 360 },
   holy: { mix: { guard: 3, archer: 1, lancer: 0, cleric: 2, mangonel: 0 }, adapt: false, castleSeconds: 360 },
-  siege: { mix: { guard: 3, archer: 1, lancer: 0, cleric: 0, mangonel: 2 }, adapt: false, castleSeconds: 360 },
+  siege: { mix: { guard: 3, archer: 2, lancer: 0, cleric: 0, mangonel: 1 }, adapt: false, castleSeconds: 360 },
 };
 const SEEDS = [3, 4, 5, 6];
 const MAX_MINUTES = 30;
