@@ -63,15 +63,22 @@ describe('computer opponent', () => {
     expect(g.building(keep.id)).toBeDefined();
   });
 
-  it('a full computer-vs-computer match reaches a decisive outcome', () => {
-    const { g, minGold } = play(1, 'hard', 'easy', 30);
-    expect(g.state.outcome).not.toBeNull();
-    expect(g.state.outcome!.winner).toBe(0);
-    expect(minGold).toBeGreaterThanOrEqual(0); // never spends money it does not have
-    const loser = g.player(1);
-    expect(loser.defeated).toBe(true);
-    expect(g.buildings().some((b) => b.owner === 1)).toBe(false);
-  }, 30_000); // a whole simulated match
+  it('full computer-vs-computer matches end decisively, and Hard beats Easy', () => {
+    // Single games can go either way (upsets happen), so this checks the
+    // trend: two maps, both seats.
+    let hardWins = 0;
+    for (const seed of [2, 3])
+      for (const hardSeat of [0, 1]) {
+        const { g, minGold } = play(seed, hardSeat === 0 ? 'hard' : 'easy', hardSeat === 0 ? 'easy' : 'hard', 30);
+        expect(g.state.outcome).not.toBeNull();
+        expect(minGold).toBeGreaterThanOrEqual(0); // never spends money it does not have
+        const loser = g.player(1 - g.state.outcome!.winner!);
+        expect(loser.defeated).toBe(true);
+        expect(g.buildings().some((b) => b.owner === loser.id)).toBe(false);
+        if (g.state.outcome!.winner === hardSeat) hardWins++;
+      }
+    expect(hardWins).toBeGreaterThanOrEqual(3);
+  }, 120_000); // four whole simulated matches
 
   it('is deterministic', () => {
     const run = () => play(24, 'normal', 'hard', 5).g.toJSON();
