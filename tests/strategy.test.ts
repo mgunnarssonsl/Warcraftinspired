@@ -283,14 +283,15 @@ describe('styles over a match', () => {
     expect(raider).toBeLessThan(secondsToTicks(240));
   }, 120_000);
 
-  it('the Expander expands no later than anyone, and runs the most Keeps', () => {
+  it('the Expander expands no later than anyone, and starts a third Keep first', () => {
+    // When Keeps are started, not how many survive the fighting.
     const exp = first(match('expander').ai, 'Expanding');
-    const keeps = (s: StyleId) => match(s).g.buildings().filter((b) => b.owner === 0 && b.type === 'hq').length;
-    for (const s of ['balanced', 'raider', 'warden'] as const) {
-      expect(exp).toBeLessThanOrEqual(first(match(s).ai, 'Expanding'));
-      expect(keeps('expander')).toBeGreaterThanOrEqual(keeps(s));
+    const third = (st: StyleId) => first(match(st).ai, '(Keep 3)');
+    for (const st of ['balanced', 'raider', 'warden'] as const) {
+      expect(exp).toBeLessThanOrEqual(first(match(st).ai, 'Expanding'));
+      expect(third('expander')).toBeLessThan(third(st));
     }
-    expect(keeps('expander')).toBe(3);
+    expect(third('expander')).toBeLessThan(Infinity);
   }, 120_000);
 
   it('the Warden builds the most towers; the Warlord raises its hero before its Barracks', () => {

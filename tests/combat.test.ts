@@ -116,6 +116,45 @@ describe('orders and automatic behaviour', () => {
     expect(a.order).toMatchObject({ type: 'attack', targetId: b.id, auto: true });
   });
 
+  it('after killing the ordered target, soldiers fight on against the next enemy they can see', () => {
+    const g = emptyGame(40, 20);
+    const a = g.addUnit('guard', 0, 5.5, 10.5);
+    const target = g.addUnit('worker', 1, 7, 10.5);
+    target.hp = 5;
+    // Beyond the Guard's acquire range once it has made the kill, but within its sight.
+    const next = g.addUnit('worker', 1, 13.5, 10.5);
+    g.issue({ type: 'hold', player: 1, units: [next.id] });
+    g.issue({ type: 'attack', player: 0, units: [a.id], targetId: target.id });
+    runUntil(g, () => !g.unit(target.id), 20 * 10);
+    expect(g.unit(target.id)).toBeUndefined();
+    const gap = Math.hypot(next.x - a.x, next.y - a.y) - a.radius - next.radius;
+    expect(gap).toBeGreaterThan(GUARD.attack.acquire);
+    expect(gap).toBeLessThan(GUARD.sight);
+    run(g, 2);
+    expect(a.order).toMatchObject({ type: 'attack', targetId: next.id });
+    runUntil(g, () => !g.unit(next.id), 20 * 20);
+    expect(g.unit(next.id)).toBeUndefined();
+  });
+
+  it('Laborers and units with queued orders do not chain on after the kill', () => {
+    const g = emptyGame(40, 20);
+    const w = g.addUnit('worker', 0, 5.5, 10.5);
+    const g1 = g.addUnit('guard', 0, 5.5, 14.5);
+    const t1 = g.addUnit('worker', 1, 6.5, 10.5);
+    const t2 = g.addUnit('worker', 1, 6.5, 14.5);
+    t1.hp = 3;
+    t2.hp = 3;
+    const other = g.addUnit('worker', 1, 12, 12.5);
+    g.issue({ type: 'hold', player: 1, units: [other.id] });
+    g.issue({ type: 'attack', player: 0, units: [w.id], targetId: t1.id });
+    g.issue({ type: 'attack', player: 0, units: [g1.id], targetId: t2.id });
+    g.issue({ type: 'move', player: 0, units: [g1.id], x: 2, y: 14.5, queued: true });
+    runUntil(g, () => !g.unit(t1.id) && !g.unit(t2.id), 20 * 10);
+    run(g, 2);
+    expect(w.order).toBeNull();
+    expect(g1.order?.type).toBe('move');
+  });
+
   it('auto-engaged units give up past the leash and walk back', () => {
     const g = emptyGame(60, 20);
     const a = g.addUnit('guard', 0, 5.5, 10.5);

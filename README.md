@@ -459,7 +459,11 @@ All numbers are in `CONFIG.units[*].attack`, `CONFIG.combat` and
   simulation state. It deals damage when it arrives and fizzles if the
   target dies or goes into a mine first.
 - **Orders:**
-  - **Attack** chases its target until it dies.
+  - **Attack** chases its target until it dies. Then the soldiers fight on:
+    each takes the nearest enemy it can see (within its sight, e.g. 8
+    tiles for a Guard) and keeps going, giving up 8 tiles from where that
+    fight began. Laborers stop after the kill, and so does a unit with
+    Shift-queued orders, which carries on with its queue.
   - **Attack-move** walks to a point, fights anything met on the way, then
     carries on.
   - **Hold position** never moves, and held units can't be pushed aside.

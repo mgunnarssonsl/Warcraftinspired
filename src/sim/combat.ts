@@ -183,11 +183,17 @@ export function updateCombatOrder(game: Game, u: Unit): void {
       }
     }
     if (fight(game, u, o.targetId, true)) return;
-    // Target gone: auto-engaged units look for the next one nearby, then go home.
+    // Target gone: soldiers fight on against the nearest enemy they can see
+    // (within their sight, not just their short acquire range), leashed to
+    // where this fight is. Camp guards keep their short reach; Laborers and
+    // units with Shift-queued orders stop and carry on with their queue.
+    const reach = u.home ? def.acquire : Math.max(def.acquire, CONFIG.units[u.type].sight);
+    const next = def.acquire > 0 && u.orderQueue.length === 0 ? findTarget(game, u, reach) : undefined;
     if (o.auto) {
-      const t = def.acquire > 0 ? findTarget(game, u, def.acquire) : undefined;
-      if (t) o.targetId = t.id;
+      if (next) o.targetId = next.id;
       else returnTo(u, o.anchorX, o.anchorY);
+    } else if (next) {
+      engage(u, next);
     } else {
       u.order = null;
       u.move = null;
