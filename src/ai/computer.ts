@@ -635,6 +635,9 @@ export class ComputerPlayer {
    */
   wantedMix(game: Game): Record<ArmyUnit, number> {
     const mix = { ...this.profile.mix };
+    // Banked wood is wasted wood: lean on the units that use it.
+    if (this.profile.usesSurplus && game.player(this.player).wood > CONFIG.ai.woodSurplus)
+      for (const t of Object.keys(mix) as ArmyUnit[]) if (CONFIG.units[t].cost.wood >= 30) mix[t] *= 1.6;
     if (!this.profile.adapt) return mix;
     const seen = new Map<UnitType, number>();
     for (const m of this.armySeen.values()) seen.set(m.type, (seen.get(m.type) ?? 0) + 1);
@@ -667,7 +670,8 @@ export class ComputerPlayer {
     // Mule Carts ties up the Keep, which also trains Laborers: not in the opening.
     if (seconds >= CONFIG.ai.cartsSeconds) order.push('carts');
     // Facing a turtle, it fortifies a fifth sooner.
-    const soon = this.posture === 'greedy' ? 0.8 : 1;
+    const woodBanked = this.profile.usesSurplus && me.wood > CONFIG.ai.woodSurplus * 1.5;
+    const soon = this.posture === 'greedy' || woodBanked ? 0.8 : 1;
     if (this.profile.castleSeconds !== null && seconds >= this.profile.castleSeconds * soon) {
       order.push('castle', 'weapons2', 'armor2');
       if (this.profile.mix.archer > 0) order.push('longbows');
@@ -1243,6 +1247,13 @@ export class ComputerPlayer {
       if (seen.some((u) => u.id === id)) continue;
       const a = CONFIG.units[m.type].attack;
       theirs += m.hp * (a.damage / a.cooldown);
+    }
+    if (this.profile.countsDefences) {
+      // Attacking into a base means its towers too, and a defender close to
+      // its healing, its production and its Laborers.
+      const g = CONFIG.units.guard;
+      const towers = this.knownEnemyBuildings(game).filter((m) => m.type === 'tower' && m.done).length;
+      theirs = (theirs + towers * CONFIG.ai.towerAsGuards * g.hp * (g.attack.damage / g.attack.cooldown)) * CONFIG.ai.defenderEdge;
     }
     return this.strength(home) >= theirs * CONFIG.ai.attackAdvantage;
   }

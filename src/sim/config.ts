@@ -987,6 +987,10 @@ export const CONFIG = {
         scoutWorkerSeconds: null as number | null,
         /** Changes plan on what it has scouted (early pressure, towers, expansions). */
         readsIntel: false,
+        /** Counts the towers it has seen, and the defender's edge, before attacking. */
+        countsDefences: false,
+        /** Puts banked wood to use: more units that cost wood, an earlier Castle. */
+        usesSurplus: false,
       },
       normal: {
         thinkSeconds: 1.0,
@@ -1024,6 +1028,8 @@ export const CONFIG = {
         saveForKeep: true,
         scoutWorkerSeconds: 120 as number | null,
         readsIntel: true,
+        countsDefences: false,
+        usesSurplus: true,
       },
       hard: {
         thinkSeconds: 0.5,
@@ -1038,8 +1044,8 @@ export const CONFIG = {
         shops: true,
         scouts: 1,
         flares: true,
-        firstAttackSeconds: 300,
-        waveSize: 7,
+        firstAttackSeconds: 400,
+        waveSize: 6,
         waveGrowth: 3,
         expandSeconds: 420,
         assessStrength: true,
@@ -1061,6 +1067,8 @@ export const CONFIG = {
         saveForKeep: true,
         scoutWorkerSeconds: 75 as number | null,
         readsIntel: true,
+        countsDefences: true,
+        usesSurplus: true,
       },
     },
     /**
@@ -1167,6 +1175,10 @@ export const CONFIG = {
     woodSurplus: 600,
     /** Assessing players attack only with this strength advantage... */
     attackAdvantage: 1.15,
+    /** Counting defences: a defender fights at home with this edge... */
+    defenderEdge: 1.25,
+    /** ...and each tower it has seen counts for this many Guards. */
+    towerAsGuards: 2.5,
     /** ...unless the army is already this large (prevents endless turtling). */
     attackAnyway: 24,
     /** Smallest army (hero included) it takes camp-clearing. */
