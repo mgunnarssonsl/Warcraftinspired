@@ -38,6 +38,7 @@ export function emptyGame(width = 32, height = 24): Game {
     camps: [],
     reveals: [],
     memory: [],
+    history: [],
   };
   return new Game(state);
 }

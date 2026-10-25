@@ -135,11 +135,13 @@ export function buyItem(game: Game, player: number, shopId: number, heroId: numb
 }
 
 /** A camp guard died: when it was the last one, the camp drops its item. */
-export function onCampGuardDeath(game: Game, victim: Unit): void {
+export function onCampGuardDeath(game: Game, victim: Unit, killer = -1): void {
   const camp = game.state.camps[victim.camp];
   if (!camp || camp.cleared) return;
   if (game.units().some((u) => u.id !== victim.id && u.camp === victim.camp)) return;
   camp.cleared = true;
+  const k = game.state.players[killer];
+  if (k && !k.neutral) k.stats.campsCleared++;
   placeGroundItem(game, camp.drop, victim.x, victim.y);
   game.emit({ type: 'campCleared', level: camp.level, x: camp.x, y: camp.y });
 }

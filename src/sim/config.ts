@@ -36,6 +36,8 @@ export type StyleAdjust = {
 
 export const CONFIG = {
   match: {
+    /** How often (seconds) the match summary samples each player. */
+    historySeconds: 30,
     startGold: 500,
     startWood: 150,
     startWorkers: 5,

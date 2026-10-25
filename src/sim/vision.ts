@@ -18,12 +18,29 @@ export class Vision {
   /** One grid per player: 1 = visible now. */
   private visible: Uint8Array[];
 
-  constructor(private game: Game) {
+  /**
+   * `saved` restores the visibility a saved game had (see snapshot()):
+   * recomputing on load would see units where they are now rather than
+   * where they were at the last update, and a loaded match would drift.
+   */
+  constructor(
+    private game: Game,
+    saved?: string[],
+  ) {
     const { width, height } = game.state.map;
     this.w = width;
     this.h = height;
-    this.visible = game.state.players.map(() => new Uint8Array(width * height));
-    this.recompute();
+    if (saved && saved.length === game.state.players.length && saved.every((s) => s.length === width * height)) {
+      this.visible = saved.map((s) => Uint8Array.from(s, (c) => (c === '1' ? 1 : 0)));
+    } else {
+      this.visible = game.state.players.map(() => new Uint8Array(width * height));
+      this.recompute();
+    }
+  }
+
+  /** Current visibility, one string of 0s and 1s per player (part of a save). */
+  snapshot(): string[] {
+    return this.visible.map((v) => v.join(''));
   }
 
   isVisible(player: number, tx: number, ty: number): boolean {

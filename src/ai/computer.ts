@@ -84,11 +84,35 @@ export class ComputerPlayer {
     readonly player: number,
     readonly difficulty: Difficulty,
     readonly style: StyleId = 'balanced',
-    overrides: ProfileOverrides = {},
+    readonly overrides: ProfileOverrides = {},
   ) {
     this.profile = composeProfile(difficulty, style, overrides);
     this.thinkTicks = secondsToTicks(this.profile.thinkSeconds);
     this.waveSize = this.profile.waveSize;
+  }
+
+  /**
+   * Everything it knows and plans, as plain JSON data (part of a save). Its
+   * profile is rebuilt from difficulty, style and overrides; every other
+   * field is kept, so a loaded match continues exactly as it would have.
+   */
+  snapshot(): AiSnapshot {
+    const fields: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(this)) if (!NOT_SAVED.has(k)) fields[k] = v;
+    return {
+      player: this.player,
+      difficulty: this.difficulty,
+      style: this.style,
+      overrides: this.overrides,
+      fields: JSON.parse(JSON.stringify(fields, encodeCollections)) as Record<string, unknown>,
+    };
+  }
+
+  static restore(snap: AiSnapshot): ComputerPlayer {
+    const ai = new ComputerPlayer(snap.player, snap.difficulty, snap.style, snap.overrides);
+    const fields = JSON.parse(JSON.stringify(snap.fields), decodeCollections) as Record<string, unknown>;
+    for (const [k, v] of Object.entries(fields)) if (!NOT_SAVED.has(k)) (ai as unknown as Record<string, unknown>)[k] = v;
+    return ai;
   }
 
   update(game: Game): void {
@@ -1322,6 +1346,35 @@ export class ComputerPlayer {
       .sort((a, b) => dist(a, home) - dist(b, home));
     return options[0] ? { x: options[0].x, y: options[0].y } : null;
   }
+}
+
+/** A computer player's saved state (see ComputerPlayer.snapshot). */
+export interface AiSnapshot {
+  player: number;
+  difficulty: Difficulty;
+  style: StyleId;
+  overrides: ProfileOverrides;
+  fields: Record<string, unknown>;
+}
+
+/** Rebuilt on load (profile, timing) or recomputed every think (seen). */
+const NOT_SAVED = new Set(['player', 'difficulty', 'style', 'overrides', 'profile', 'thinkTicks', 'seen']);
+
+/** Maps and Sets are not JSON: tag them on the way out... */
+function encodeCollections(_key: string, v: unknown): unknown {
+  if (v instanceof Map) return { $map: [...v.entries()] };
+  if (v instanceof Set) return { $set: [...v.values()] };
+  return v;
+}
+
+/** ...and rebuild them on the way in. */
+function decodeCollections(_key: string, v: unknown): unknown {
+  if (v && typeof v === 'object' && !Array.isArray(v)) {
+    const o = v as { $map?: Array<[unknown, unknown]>; $set?: unknown[] };
+    if (o.$map) return new Map(o.$map);
+    if (o.$set) return new Set(o.$set);
+  }
+  return v;
 }
 
 function centroid(es: Entity[]): { x: number; y: number } {

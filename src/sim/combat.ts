@@ -257,13 +257,14 @@ export function kill(game: Game, t: Target, attackerOwner: number): void {
   const killer = game.state.players[attackerOwner];
   if (killer) killer.stats.kills++;
   if (victim) victim.stats[t.kind === 'building' ? 'buildingsLost' : 'unitsLost']++;
+  if (victim && t.kind === 'unit') victim.stats.lost[t.type] = (victim.stats.lost[t.type] ?? 0) + 1;
   onKill(game, attackerOwner, t);
   if (t.kind === 'building') {
     destroyBuilding(game, t.id);
     return;
   }
   if (t.hero) onHeroDeath(game, t);
-  if (t.camp >= 0) onCampGuardDeath(game, t);
+  if (t.camp >= 0) onCampGuardDeath(game, t, attackerOwner);
   game.emit({ type: 'death', id: t.id, owner: t.owner, unit: t.type as UnitType, x: t.x, y: t.y });
   game.removeEntity(t.id);
 }

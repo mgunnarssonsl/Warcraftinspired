@@ -2,7 +2,7 @@
 // and advances the simulation one fixed tick at a time. Rendering, input and
 // AI never mutate state directly; they submit Commands.
 
-import { CONFIG, type BuildingType, type ItemId, type UnitType } from './config';
+import { CONFIG, secondsToTicks, type BuildingType, type ItemId, type UnitType } from './config';
 import { applyCommand, applyQueued, type Command } from './commands';
 import { updateCombat, updateCombatOrder } from './combat';
 import { checkOutcome } from './outcome';
@@ -41,10 +41,10 @@ export class Game {
 
   vision: Vision;
 
-  constructor(state: GameState) {
+  constructor(state: GameState, visible?: string[]) {
     this.state = state;
     this.nav = new NavGrid(state);
-    this.vision = new Vision(this);
+    this.vision = new Vision(this, visible);
   }
 
   /** Build the skirmish starting state for a map and seed. */
@@ -87,6 +87,7 @@ export class Game {
       camps: [],
       reveals: [],
       memory: [],
+      history: [],
     };
     const game = new Game(state);
     for (const i of layout.trees) {
@@ -217,6 +218,18 @@ export class Game {
 
   static fromJSON(json: string): Game {
     return new Game(JSON.parse(json) as GameState);
+  }
+
+  /** Rebuild a game from saved state, with commands issued but not yet applied. */
+  static restore(state: GameState, pending: Command[] = [], visible?: string[]): Game {
+    const g = new Game(state, visible);
+    g.pending = pending.map((c) => ({ ...c }));
+    return g;
+  }
+
+  /** Commands issued since the last step (part of a save). */
+  pendingCommands(): Command[] {
+    return this.pending.map((c) => ({ ...c }));
   }
 
   toJSON(): string {
@@ -512,7 +525,28 @@ export class Game {
     updateMovement(this, alive);
     updateCombat(this, alive);
     checkOutcome(this);
+    if (this.state.tick % secondsToTicks(CONFIG.match.historySeconds) === 0) this.sampleHistory();
     this.state.tick++;
+  }
+
+  /** Record each player's economy and army for the match summary. */
+  private sampleHistory(): void {
+    const players = this.state.players.map((p) => {
+      let workers = 0;
+      let army = 0;
+      let value = 0;
+      for (const u of this.units()) {
+        if (u.owner !== p.id) continue;
+        if (u.type === 'worker') workers++;
+        else {
+          army++;
+          const c = CONFIG.units[u.type].cost;
+          value += c.gold + c.wood;
+        }
+      }
+      return { gold: p.goldGathered, wood: p.woodGathered, workers, army, value, kills: p.stats.kills, lost: p.stats.unitsLost };
+    });
+    this.state.history.push({ tick: this.state.tick, players });
   }
 
   /** Start (or keep) moving toward a goal. Re-plans only if the goal changed. */

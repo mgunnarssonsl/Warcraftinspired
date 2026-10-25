@@ -106,6 +106,7 @@ export function onKill(game: Game, killer: number, victim: Unit | Building): voi
   const bounty = CONFIG.units[victim.type].bounty;
   if (bounty > 0) {
     kp.gold += bounty;
+    kp.stats.bounty += bounty;
     game.emit({ type: 'bounty', player: killer, amount: bounty, x: victim.x, y: victim.y });
   }
   const heroes = game.units().filter((h) => h.owner === killer && h.hero && Math.hypot(h.x - victim.x, h.y - victim.y) <= CONFIG.hero.xpRadius);

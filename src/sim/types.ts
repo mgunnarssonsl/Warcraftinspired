@@ -150,10 +150,28 @@ export interface PlayerStats {
   /** Per type: units trained and buildings completed (for objectives and summaries). */
   trained: Partial<Record<UnitType, number>>;
   built: Partial<Record<BuildingType, number>>;
+  /** Per type: own units lost. */
+  lost: Partial<Record<UnitType, number>>;
+  /** Neutral camps whose last guard this player killed. */
+  campsCleared: number;
+  /** Gold earned from bounties. */
+  bounty: number;
 }
 
 export function emptyStats(): PlayerStats {
-  return { unitsTrained: 0, unitsLost: 0, kills: 0, buildingsBuilt: 0, buildingsLost: 0, trained: {}, built: {} };
+  return { unitsTrained: 0, unitsLost: 0, kills: 0, buildingsBuilt: 0, buildingsLost: 0, trained: {}, built: {}, lost: {}, campsCleared: 0, bounty: 0 };
+}
+
+/** One sample of a player's match, for the end-of-match summary. */
+export interface HistoryPoint {
+  gold: number;
+  wood: number;
+  workers: number;
+  army: number;
+  /** Gold + wood cost of the army alive. */
+  value: number;
+  kills: number;
+  lost: number;
 }
 
 export interface Outcome {
@@ -411,6 +429,8 @@ export interface GameState {
   reveals: Reveal[];
   /** Per player: enemy buildings as last seen. */
   memory: RememberedBuilding[][];
+  /** Samples every CONFIG.match.historySeconds: [tick, one point per player]. */
+  history: Array<{ tick: number; players: HistoryPoint[] }>;
 }
 
 export type GameEvent =
