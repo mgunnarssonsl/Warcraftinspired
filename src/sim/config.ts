@@ -1124,6 +1124,9 @@ export const CONFIG = {
     goldWorkersPerMine: 5,
     /** Judging a fight: falls back when the enemy near its wave is this much stronger. */
     retreatOdds: 1.4,
+    /** Once in a fight (an enemy within engagedRange tiles), it pulls out only at these odds. */
+    hopelessOdds: 2.2,
+    engagedRange: 5,
     /** A regrouping wave marches once this share of it has gathered (or after regroupSeconds). */
     regroupShare: 0.8,
     regroupSeconds: 20,

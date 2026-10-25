@@ -221,11 +221,11 @@ describe('fights', () => {
     const wall: Unit[] = [];
     for (let i = 0; i < 18; i++) wall.push(g.addUnit('guard', 1, 44 + (i % 6), 34 + Math.floor(i / 6)));
     g.issue({ type: 'hold', player: 1, units: wall.map((u) => u.id) } as Command);
-    for (let t = 0; t < 120 * SEC && !said(ai, 'stronger force'); t++) {
+    for (let t = 0; t < 120 * SEC && !said(ai, 'falling back'); t++) {
       g.step();
       ai.update(g);
     }
-    expect(said(ai, 'Met a stronger force')).toBe(true);
+    expect(said(ai, 'Spotted a stronger force')).toBe(true);
     expect(army.filter((u) => g.unit(u.id)).length).toBeGreaterThanOrEqual(4);
   }, 30_000);
 

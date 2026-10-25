@@ -1088,7 +1088,12 @@ export class ComputerPlayer {
       const facing = enemies.filter((e): e is Unit => e.kind === 'unit' && !game.player(e.owner).neutral && dist(e, c) < 12);
       const towers = enemies.filter((e): e is Building => e.kind === 'building' && e.type === 'tower' && e.progress >= 1 && dist(e, c) < 12);
       const theirs = this.strength(facing) + towers.length * this.strength(waveUnits.slice(0, 1)) * 1.5;
-      if (theirs > this.strength(waveUnits) * CONFIG.ai.retreatOdds) return goHome(this.waveKind === 'attack', 'Met a stronger force: falling back to regroup.');
+      // Turning tail in the middle of a fight gets an army cut down from
+      // behind: once engaged it only runs from a hopeless fight; before
+      // contact it backs off from any clearly stronger force.
+      const engaged = facing.some((e) => waveUnits.some((u) => dist(u, e) < CONFIG.ai.engagedRange));
+      const odds = engaged ? CONFIG.ai.hopelessOdds : CONFIG.ai.retreatOdds;
+      if (theirs > this.strength(waveUnits) * odds) return goHome(this.waveKind === 'attack', engaged ? 'Losing a fight badly: pulling out.' : 'Spotted a stronger force: falling back before contact.');
     }
     if (this.waveKind === 'raid') {
       if (now - this.waveStart > secondsToTicks(CONFIG.ai.raidSeconds)) return goHome(false, 'Raid over: back home.');
