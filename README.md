@@ -75,7 +75,7 @@ npm run build      # typecheck + production bundle in dist/
 | Click a queue slot | Cancel that unit (full refund) |
 | X | Cancel construction (75% refund), or the last queued unit (full refund) |
 | `.` or the *Idle workers* button | Cycle through idle workers |
-| Ctrl+1–9 / 1–9 | Set / recall a control group (press twice to center the camera) |
+| Ctrl+1–9 / Shift+1–9 / 1–9 | Save the selection as group 1–9 / add the selection to it / select that group again (press twice to center the camera). On a Mac, Ctrl or ⌥ Option + number saves: ⌘ + number is kept by the browser for switching tabs. Works on the number row and the keypad, in any keyboard layout. |
 | Hold and drag the right or middle mouse button | Grab the map and drag it: the ground under the cursor follows the mouse. A right-click released without dragging is still a normal command. |
 | Arrows, screen edge | Pan the camera. The mouse wheel zooms toward the cursor, and the camera tilts flatter as you zoom in. |
 | Minimap | Left-click jumps the camera there, or aims a pending flare, attack-move or move. Right-click moves the selected units there. |

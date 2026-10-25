@@ -621,9 +621,14 @@ export class InputController {
       e.preventDefault();
       return;
     }
-    if (/^[0-9]$/.test(e.key)) {
+    // Control groups by physical key (Digit1 / Numpad1), so Shift+1 (which
+    // types "!") and other keyboard layouts work. Ctrl, Cmd or Option/Alt
+    // saves a group: browsers on a Mac keep Cmd+1-9 for switching tabs, so
+    // Ctrl+1 or Option+1 is the one that always reaches the game there.
+    const digit = /^(?:Digit|Numpad)([0-9])$/.exec(e.code)?.[1] ?? (/^[0-9]$/.test(e.key) ? e.key : null);
+    if (digit !== null) {
       e.preventDefault();
-      this.controlGroup(Number(e.key), e.ctrlKey || e.metaKey, e.shiftKey);
+      this.controlGroup(Number(digit), e.ctrlKey || e.metaKey || e.altKey, e.shiftKey);
       return;
     }
     const building = this.selectedOwnBuilding();
