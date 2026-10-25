@@ -179,7 +179,9 @@ it stays hidden until the end screen.
 | Scouts | no | Laborer at 2:00, then an Outrider; flares | Laborer at 1:15, then an Outrider; flares |
 | Changes plan on what it scouted | no | yes | yes |
 | Adapts its army to yours | no | yes | yes |
-| Checks it is stronger before attacking | no | yes | yes |
+| Checks it is stronger before attacking | no | yes | yes, counting towers and the defender's edge |
+| Expands | on a timer (15:00) | on a timer (10:00) | as soon as it is safe (from 3:00), or at 7:00 |
+| Uses banked wood (wood-hungry units, earlier Castle) | no | yes | yes |
 | Judges fights (retreats from a stronger force, defends in proportion) | no | yes | yes |
 | Regroups before marching | no | yes | yes |
 | Reinforces a wave already out | no | no | yes |
@@ -189,6 +191,11 @@ it stays hidden until the end screen.
 | Saves to rebuild a falling last Keep | no | yes | yes |
 | Laborers per Keep (max) / Barracks / most Keeps | 11 / 1 / 2 | 12 / 2 / 2 | 13 / 2 / 3 |
 | Upgrades, Castle | no | yes, Castle 12:00 | yes, Castle 9:00, Citadel 16:00 |
+| First attack / wave size | 9:00, 4 | 6:40, 6 | 6:40, 6 |
+
+Hard attacks no earlier than Normal. An earlier Hard attack was tried and
+measured: attacking into a defended base early loses (13–22 over 36
+computer games), so Hard's edge is in its decisions, not its clock.
 
 Easy is not only slower. It defends with everything it has whether the
 raid is one Guard or ten, fights on until a wave is three-quarters dead,
@@ -196,15 +203,16 @@ and leaves Laborers idle for a while.
 
 ### Styles: different plans
 
-Times are the Hard figures; at other difficulties they scale the same way.
+Times are the Normal figures; the other difficulties scale the same way.
+Hard also expands as soon as it is safe, whatever the style.
 
-| Style | Plan | Hard: first attack / expansion |
+| Style | Plan | Normal: first attack / expansion |
 | --- | --- | --- |
-| **Balanced** | Expands on schedule and attacks when it judges itself stronger. | 5:00 / 7:00 |
-| **Raider** | Small groups of its fastest soldiers raid your Laborers from about 2:30; smaller, earlier waves; Lancer-heavy; expands late. | 3:15 / 11:12 |
-| **Expander** | Takes mines early, up to three Keeps (two more Laborers each), then attacks late with a large army. | 7:30 / 3:09 |
-| **Warden** | Four towers, an early Castle, a siege-heavy army, and a late, heavy push. | 7:30 / 7:00 |
-| **Warlord** | Hall of Valor before the Barracks, heroes first, hunts camps with a smaller party for items and levels. | 5:30 / 7:00 |
+| **Balanced** | Expands on schedule and attacks when it judges itself stronger. | 6:40 / 10:00 |
+| **Raider** | Small groups of its fastest soldiers raid your Laborers before its first wave; smaller, earlier waves; Lancer-heavy; expands late. | 4:20 (raids from 3:15) / 16:00 |
+| **Expander** | Takes mines first, up to three Keeps (two more Laborers each), then attacks late with a large army. | 10:00 / 4:00 |
+| **Warden** | Three towers (the second and third guard its mines), an early Castle, Mangonels, and a later, heavier push. | 8:40 / 10:00 |
+| **Warlord** | Hall of Valor before the Barracks, heroes first, hunts camps with a smaller party for items and levels. | 7:20 / 10:00 |
 
 ### What it does, in layers
 
@@ -238,7 +246,9 @@ Times are the Hard figures; at other difficulties they scale the same way.
 - **Defence:**
   - It answers an attack on any of its buildings with enough defenders,
     nearest first, to outmatch it by half again (Easy sends everything).
-  - It recalls an attack wave only when the threat is serious.
+    A lone enemy Laborer walking past is a scout, not an attack.
+  - It recalls an attack wave only for a real attack: at least two
+    soldiers, outweighing the army at home and the towers nearby.
   - With a second Keep, Laborers in the path of an army leave for it. With
     no soldiers near, Laborers fight off a small raid (not on Easy).
 - **Attack waves:**
@@ -246,8 +256,11 @@ Times are the Hard figures; at other difficulties they scale the same way.
     judges itself stronger.
   - It gathers at the staging point before marching, so it arrives
     together.
-  - It falls back when it meets a force 1.4× its strength, or when it has
-    lost 65% of its units (75% on Easy). The next wave is larger.
+  - It judges the fight before contact. It backs off from a force 1.4×
+    its strength that it has only spotted. Once engaged, it pulls out only
+    at 2.2× odds, since turning tail mid-fight gets an army cut down from
+    behind. It also falls back after losing 65% of its units (75% on
+    Easy). The next wave is larger.
   - On Hard, soldiers trained meanwhile follow as reinforcements.
   - Waves route around camps they know of.
 - **Heroes and items:**
