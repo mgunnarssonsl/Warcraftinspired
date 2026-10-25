@@ -1020,7 +1020,13 @@ export class ComputerPlayer {
     const danger = this.strength(threats);
     // Recall the wave when the base faces a real attack: judged by strength,
     // or (without judgement) by headcount.
-    const serious = this.profile.judgeFights ? danger > this.strength(home) * 0.8 : threats.length >= 3;
+    // A judging computer counts the towers standing near the threat, and never
+    // recalls a wave over a couple of stragglers.
+    const g = CONFIG.units.guard;
+    const towers = game.buildings().filter((b) => b.owner === P && b.type === 'tower' && b.progress >= 1 && dist(b, c) < 10).length;
+    const held = this.strength(home) + towers * CONFIG.ai.towerAsGuards * g.hp * (g.attack.damage / g.attack.cooldown);
+    const soldiers = threats.filter((t) => t.type !== 'worker');
+    const serious = this.profile.judgeFights ? soldiers.length >= 2 && danger > held * 0.8 : threats.length >= 3;
     if (serious && this.wave.length) {
       this.note(game, 'Recalled its army to defend the base.');
       this.endWave(false);
@@ -1041,7 +1047,6 @@ export class ComputerPlayer {
     const idleDefenders = defenders.filter((u) => u.order?.type !== 'attack');
     if (idleDefenders.length) game.issue({ type: 'attackMove', player: P, units: idleDefenders.map((u) => u.id), x: c.x, y: c.y });
     const near = defenders.filter((u) => dist(u, c) < 12);
-    const soldiers = threats.filter((t) => t.type !== 'worker');
     const hopeless = this.strength(near) < danger;
     // Laborers in the way of an army they can't fight leave for another Keep.
     if (this.profile.pullWorkers && hopeless && soldiers.length >= 2) {
