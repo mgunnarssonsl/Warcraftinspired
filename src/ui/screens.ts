@@ -1,13 +1,18 @@
-// Full-screen panels: start (introduction, map and opponent), in-game menu
-// (resume, surrender, restart) and the end-of-match summary, which also
-// shows the computer's plan and its main decisions.
+// Full-screen panels: the start screen (new match, continue, load, tutorial,
+// settings), the in-game menu (save, load, settings, restart, surrender),
+// saved-game slots, settings, and the end-of-match summary with the
+// computer's plan and decisions.
 
 import type { AdvantageId, Difficulty, StyleId } from '../ai/profile';
+import { SLOTS, type SaveStore, type SlotId } from '../save/save';
 import { CONFIG, TICK_RATE } from '../sim/config';
 import type { Game } from '../sim/game';
 import { mapById, MAPS } from '../sim/maps';
+import type { Settings } from './settings';
+import { settingsHtml, wireSettings, type SettingsTab } from './settingsPanel';
+import { summaryHtml } from './summary';
 
-export type Modal = 'start' | 'menu' | 'end' | null;
+export type Modal = 'start' | 'menu' | 'end' | 'settings' | 'saves' | null;
 
 export interface MatchSettings {
   seed: number;
@@ -16,6 +21,24 @@ export interface MatchSettings {
   /** The opponent's strategic style, or 'random' (fixed by the seed, revealed at the end). */
   style: StyleId | 'random';
   advantage: AdvantageId;
+}
+
+/** What the screens need from the running game (main.ts provides it). */
+export interface ScreenHost {
+  settings: Settings;
+  /** Apply and store changed settings. */
+  applySettings(s: Settings): void;
+  store: SaveStore;
+  saveTo(slot: SlotId): { ok: true } | { ok: false; reason: string };
+  /** Download the current match as a file. */
+  exportSave(): void;
+  /** Leave this match and continue a saved one (from a slot or a file's text). */
+  load(source: { slot: SlotId } | { text: string }): void;
+  startTutorial(): void;
+  /** Set when a load failed: shown on the start screen. */
+  loadError: string | null;
+  /** True while playing the tutorial (no saving needed, different end). */
+  tutorial: boolean;
 }
 
 /** Difficulty is how well it plays; the style (below) is what it plans. */
@@ -31,7 +54,7 @@ export function startMatch(s: MatchSettings): void {
   location.search = q.toString();
 }
 
-/** "Hard Raider", with the style kept secret while a random one is in play. */
+/** "Hard · Raider", with the style kept secret while a random one is in play. */
 export function opponentLabel(s: MatchSettings, resolved: StyleId, reveal: boolean): string {
   const level = s.difficulty[0].toUpperCase() + s.difficulty.slice(1);
   const style = s.style === 'random' && !reveal ? 'random style' : CONFIG.ai.styles[resolved].name;
@@ -47,14 +70,19 @@ function fmtTime(ticks: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
+function escapeHtml(t: string): string {
+  return t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+}
+
 export class Screens {
   private root = document.getElementById('modal')!;
   current: Modal = null;
+  /** The screen to return to from settings or saves. */
+  private back: 'start' | 'menu' | 'end' = 'start';
   onClose: () => void = () => {};
   onSurrender: () => void = () => {};
   /** How the viewer was defeated, recorded from simulation events. */
   defeatReason: 'eliminated' | 'surrendered' | null = null;
-
   /** The style the computer actually plays, and its decision journal. */
   opponent: { style: StyleId; journal: ReadonlyArray<{ tick: number; text: string }> } = { style: 'balanced', journal: [] };
 
@@ -62,6 +90,7 @@ export class Screens {
     private game: Game,
     private settings: MatchSettings,
     private viewer: number,
+    private host: ScreenHost,
   ) {}
 
   close(): void {
@@ -81,6 +110,12 @@ export class Screens {
     this.root.querySelector(sel)?.addEventListener('click', fn);
   }
 
+  private returnTo(): void {
+    if (this.back === 'start') this.showStart();
+    else if (this.back === 'end') this.showEnd();
+    else this.showMenu();
+  }
+
   showStart(): void {
     let picked: Difficulty = this.settings.difficulty;
     let pickedMap = this.settings.mapId;
@@ -91,34 +126,20 @@ export class Screens {
       ...(Object.entries(CONFIG.ai.styles) as Array<[StyleId, (typeof CONFIG.ai.styles)[StyleId]]>).map(([id, st]) => ({ id, name: st.name, blurb: st.blurb })),
     ];
     const styleBlurb = (id: string) => styles.find((x) => x.id === id)!.blurb;
+    const latest = this.host.store.latest();
+    const latestInfo = latest ? this.host.store.info(latest) : null;
     this.open(
       'start',
       `<h1>Ironvale</h1>
       <p class="lead">Build an economy, raise an army, and destroy every enemy building before they destroy yours.</p>
-      <div class="intro">
-        <div>
-          <h3>Economy</h3>
-          <p>Laborers carry gold and wood home; only delivered resources count. About five keep a mine busy.</p>
-          <h3>Base</h3>
-          <p>Farms raise population, a Lumber Mill by the forest shortens wood trips. Fortify the Keep to a Castle, then a Citadel, for stronger units.</p>
-          <h3>Heroes and the map</h3>
-          <p>Heroes level up and carry items. Camps guard the richer mines and drop treasure. You only see what your units see: scout.</p>
-        </div>
-        <div>
-          <h3>Controls</h3>
-          <ul>
-            <li><b>Left-click / drag</b> select, <b>right-click</b> to act, <b>Shift</b> to queue orders</li>
-            <li><b>A</b> attack-move, <b>H</b> hold, <b>S</b> stop</li>
-            <li>With a Laborer: <b>F</b>arm, <b>B</b>arracks, <b>L</b>umber Mill, <b>T</b>ower</li>
-            <li>With a Keep or Barracks: <b>Q</b> / <b>W</b> train</li>
-            <li>Hero (<b>F2</b>): <b>Q</b> / <b>W</b> / <b>E</b> abilities, <b>Z</b> / <b>X</b> / <b>C</b> items</li>
-            <li><b>Right-drag</b> grabs the map, <b>arrows</b> or edges scroll, <b>wheel</b> zooms</li>
-            <li><b>F1</b> all controls, <b>F10</b> menu</li>
-          </ul>
-          <h3>Army</h3>
-          <p>Guards beat Lancers, Lancers beat Archers, Archers beat Guards. Clerics heal nearby allies on their own. Mangonels wreck buildings but need protecting.</p>
-        </div>
+      ${this.host.loadError ? `<p class="load-error">${escapeHtml(this.host.loadError)}</p>` : ''}
+      <div class="start-actions">
+        <button id="tutorial"><b>Tutorial</b><span>New here? Learn the basics in about ten minutes.</span></button>
+        ${latestInfo ? `<button id="continue"><b>Continue</b><span>${this.slotLine(latest!)}</span></button>` : ''}
+        <button id="load"><b>Load a saved game…</b><span>From a slot or a file.</span></button>
+        <button id="settings"><b>Settings</b><span>Sound, graphics, camera, interface, controls.</span></button>
       </div>
+      <h2 class="new-match">New match</h2>
       <div class="choices">
         <div>
           <h3>Map</h3>
@@ -142,68 +163,135 @@ export class Screens {
           </div>
         </div>
       </div>
-      <p class="fine">Without an advantage the computer plays by exactly your rules: the same costs, the same fog of war, no hidden information. An advantage is a cheat and is always shown as one.</p>
+      <p class="fine">Without an advantage the computer plays by exactly your rules: the same costs, the same fog of war, no hidden information. An advantage is a cheat and is always shown as one. F1 in a match lists every control.</p>
       <div class="actions"><button class="primary" id="go">Start match</button></div>`,
     );
-    this.root.querySelectorAll<HTMLButtonElement>('button[data-d]').forEach((b) =>
-      b.addEventListener('click', () => {
-        picked = b.dataset.d as Difficulty;
-        this.root.querySelectorAll('button[data-d]').forEach((x) => x.classList.toggle('picked', x === b));
-      }),
-    );
-    this.root.querySelectorAll<HTMLButtonElement>('button[data-m]').forEach((b) =>
-      b.addEventListener('click', () => {
-        pickedMap = b.dataset.m!;
-        this.root.querySelectorAll('button[data-m]').forEach((x) => x.classList.toggle('picked', x === b));
-      }),
-    );
-    this.root.querySelectorAll<HTMLButtonElement>('button[data-s]').forEach((b) =>
-      b.addEventListener('click', () => {
-        pickedStyle = b.dataset.s as StyleId | 'random';
-        this.root.querySelectorAll('button[data-s]').forEach((x) => x.classList.toggle('picked', x === b));
-        this.root.querySelector('#style-blurb')!.textContent = styleBlurb(pickedStyle);
-      }),
-    );
-    this.root.querySelectorAll<HTMLButtonElement>('button[data-a]').forEach((b) =>
-      b.addEventListener('click', () => {
-        pickedAdv = b.dataset.a as AdvantageId;
-        this.root.querySelectorAll('button[data-a]').forEach((x) => x.classList.toggle('picked', x === b));
-      }),
-    );
+    const pick = (attr: string, fn: (v: string) => void) =>
+      this.root.querySelectorAll<HTMLButtonElement>(`button[data-${attr}]`).forEach((b) =>
+        b.addEventListener('click', () => {
+          fn(b.dataset[attr]!);
+          this.root.querySelectorAll(`button[data-${attr}]`).forEach((x) => x.classList.toggle('picked', x === b));
+        }),
+      );
+    pick('d', (v) => (picked = v as Difficulty));
+    pick('m', (v) => (pickedMap = v));
+    pick('s', (v) => {
+      pickedStyle = v as StyleId | 'random';
+      this.root.querySelector('#style-blurb')!.textContent = styleBlurb(pickedStyle);
+    });
+    pick('a', (v) => (pickedAdv = v as AdvantageId));
     this.on('#go', () => {
       const next: MatchSettings = { seed: this.settings.seed, difficulty: picked, mapId: pickedMap, style: pickedStyle, advantage: pickedAdv };
-      const same = (Object.keys(next) as Array<keyof MatchSettings>).every((k) => next[k] === this.settings[k]);
+      const same = !this.host.tutorial && (Object.keys(next) as Array<keyof MatchSettings>).every((k) => next[k] === this.settings[k]);
       if (!same) startMatch(next);
       else this.close();
     });
+    this.on('#tutorial', () => this.host.startTutorial());
+    this.on('#continue', () => latest && this.host.load({ slot: latest }));
+    this.on('#load', () => this.showSaves('load', 'start'));
+    this.on('#settings', () => this.showSettings('start'));
   }
 
   showMenu(): void {
-    if (this.current === 'start' || this.current === 'end') return;
+    if (this.current === 'start') return;
     const over = !!this.game.state.outcome;
     this.open(
       'menu',
       `<h2>Paused</h2>
-      <p class="fine">Map: ${mapById(this.settings.mapId).name} · opponent: ${opponentLabel(this.settings, this.opponent.style, over)}${this.settings.advantage === 'none' ? '' : ` · ${CONFIG.ai.advantages[this.settings.advantage].name}`} · match time ${fmtTime(this.game.state.tick)} · seed ${this.settings.seed}</p>
+      <p class="fine">${this.host.tutorial ? 'Tutorial' : `Map: ${mapById(this.settings.mapId).name} · opponent: ${opponentLabel(this.settings, this.opponent.style, over)}${this.settings.advantage === 'none' ? '' : ` · ${CONFIG.ai.advantages[this.settings.advantage].name}`}`} · match time ${fmtTime(this.game.state.tick)} · seed ${this.settings.seed}</p>
       <div class="stack">
         <button class="primary" id="resume">Resume</button>
-        <button id="restart">Restart (same map and opponent)</button>
+        ${this.host.tutorial ? '' : '<button id="save">Save game…</button>'}
+        <button id="load">Load game…</button>
+        <button id="settings">Settings…</button>
+        <button id="restart">${this.host.tutorial ? 'Restart the tutorial' : 'Restart (same map and opponent)'}</button>
         <button id="new">New match…</button>
-        ${over ? '' : '<button class="danger" id="surrender">Surrender</button>'}
+        ${over || this.host.tutorial ? '' : '<button class="danger" id="surrender">Surrender</button>'}
       </div>`,
     );
     this.on('#resume', () => this.close());
-    this.on('#restart', () => startMatch(this.settings));
-    this.on('#new', () => startMatch({ ...this.settings, seed: newSeed() }));
+    this.on('#save', () => this.showSaves('save', 'menu'));
+    this.on('#load', () => this.showSaves('load', 'menu'));
+    this.on('#settings', () => this.showSettings('menu'));
+    this.on('#restart', () => (this.host.tutorial ? this.host.startTutorial() : startMatch(this.settings)));
+    this.on('#new', () => {
+      const q = new URLSearchParams({ seed: String(newSeed()), difficulty: this.settings.difficulty, map: this.settings.mapId, style: this.settings.style, adv: this.settings.advantage });
+      location.search = q.toString();
+    });
     this.on('#surrender', () => {
       this.onSurrender();
       this.close();
     });
   }
 
+  private slotLine(slot: SlotId): string {
+    const i = this.host.store.info(slot);
+    if (!i) return 'Empty';
+    const when = new Date(i.savedAt);
+    const style = i.style === 'random' ? 'random style' : (CONFIG.ai.styles[i.style as StyleId]?.name ?? i.style);
+    return `${mapById(i.mapId).name} · ${i.difficulty} ${style} · ${fmtTime(i.tick)} · saved ${when.toLocaleDateString()} ${when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  }
+
+  /** Saved-game slots: save into one, or load one (or a file). */
+  showSaves(mode: 'save' | 'load', back: 'start' | 'menu' | 'end', message = ''): void {
+    this.back = back;
+    const slots = SLOTS.filter((s) => mode === 'load' || s !== 'auto');
+    this.open(
+      'saves',
+      `<h2>${mode === 'save' ? 'Save game' : 'Load game'}</h2>
+      <p class="fine">${mode === 'save' ? 'Pick a slot. Saves stay in this browser; export one to keep it elsewhere.' : 'The autosave is made every two minutes of play and when you leave the page.'}</p>
+      <div class="slots">${slots
+        .map((s) => {
+          const info = this.host.store.info(s);
+          const name = s === 'auto' ? 'Autosave' : `Slot ${s}`;
+          return `<div class="slot"><div><b>${name}</b><span>${escapeHtml(this.slotLine(s))}</span></div><div class="slot-actions">
+            ${mode === 'save' ? `<button data-save="${s}">${info ? 'Overwrite' : 'Save here'}</button>` : info ? `<button data-load="${s}" class="primary">Load</button>` : ''}
+            ${info && s !== 'auto' ? `<button data-del="${s}" class="danger">Delete</button>` : ''}</div></div>`;
+        })
+        .join('')}</div>
+      <p class="fine" id="save-msg">${escapeHtml(message)}</p>
+      <div class="actions">
+        ${mode === 'save' ? '<button id="export">Export to a file…</button>' : '<label class="file-btn">Load from a file…<input type="file" id="import" accept=".json,application/json"></label>'}
+        <button class="primary" id="back">Back</button>
+      </div>`,
+    );
+    this.root.querySelectorAll<HTMLButtonElement>('[data-save]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const r = this.host.saveTo(b.dataset.save as SlotId);
+        this.showSaves('save', back, r.ok ? `Saved in slot ${b.dataset.save}.` : r.reason);
+      }),
+    );
+    this.root.querySelectorAll<HTMLButtonElement>('[data-load]').forEach((b) => b.addEventListener('click', () => this.host.load({ slot: b.dataset.load as SlotId })));
+    this.root.querySelectorAll<HTMLButtonElement>('[data-del]').forEach((b) =>
+      b.addEventListener('click', () => {
+        this.host.store.remove(b.dataset.del as SlotId);
+        this.showSaves(mode, back, `Slot ${b.dataset.del} deleted.`);
+      }),
+    );
+    this.on('#export', () => this.host.exportSave());
+    this.root.querySelector<HTMLInputElement>('#import')?.addEventListener('change', async (e) => {
+      const f = (e.target as HTMLInputElement).files?.[0];
+      if (f) this.host.load({ text: await f.text() });
+    });
+    this.on('#back', () => this.returnTo());
+  }
+
+  private settingsTab: SettingsTab = 'audio';
+
+  showSettings(back: 'start' | 'menu' | 'end'): void {
+    this.back = back;
+    const render = (tab: SettingsTab, listening: Parameters<typeof settingsHtml>[2]) => {
+      this.settingsTab = tab;
+      this.open('settings', settingsHtml(this.host.settings, tab, listening));
+      wireSettings(this.root, this.host.settings, tab, (s) => this.host.applySettings(s), render, () => this.returnTo());
+    };
+    render(this.settingsTab, null);
+  }
+
   showEnd(): void {
     const o = this.game.state.outcome;
     if (!o) return;
+    this.back = 'end';
     const title = o.winner === null ? 'Draw' : o.winner === this.viewer ? 'Victory' : 'Defeat';
     const reason =
       o.winner === null
@@ -213,27 +301,20 @@ export class Screens {
           : this.defeatReason === 'surrendered'
             ? 'You surrendered.'
             : 'All of your buildings were destroyed.';
-    const players = this.game.state.players.filter((p) => !p.neutral);
-    const rows: Array<[string, (i: number) => number]> = [
-      ['Gold gathered', (i) => players[i].goldGathered],
-      ['Wood gathered', (i) => players[i].woodGathered],
-      ['Units trained', (i) => players[i].stats.unitsTrained],
-      ['Units lost', (i) => players[i].stats.unitsLost],
-      ['Enemies destroyed', (i) => players[i].stats.kills],
-      ['Buildings built', (i) => players[i].stats.buildingsBuilt],
-      ['Buildings lost', (i) => players[i].stats.buildingsLost],
-    ];
+    const names: Record<number, string> = { [this.viewer]: 'You' };
+    for (const p of this.game.state.players) if (!p.neutral && p.id !== this.viewer) names[p.id] = 'Computer';
     this.open(
       'end',
       `<h1 class="${title.toLowerCase()}">${title}</h1>
       <p class="lead">${reason} Match time ${fmtTime(o.tick)}.</p>
-      <table class="stats">
-        <tr><th></th>${players.map((p) => `<th style="color:${p.color}">${p.id === this.viewer ? 'You' : 'Computer'}</th>`).join('')}</tr>
-        ${rows.map(([k, f]) => `<tr><td>${k}</td>${players.map((_, i) => `<td>${f(i)}</td>`).join('')}</tr>`).join('')}
-      </table>
-      <h3>Your opponent: ${opponentLabel(this.settings, this.opponent.style, true)}${this.settings.style === 'random' ? ' (picked at random)' : ''}</h3>
+      ${summaryHtml(this.game, this.viewer, names)}
+      ${
+        this.host.tutorial
+          ? ''
+          : `<h3>Your opponent: ${opponentLabel(this.settings, this.opponent.style, true)}${this.settings.style === 'random' ? ' (picked at random)' : ''}</h3>
       <p class="fine">${CONFIG.ai.styles[this.opponent.style].blurb}${this.settings.advantage === 'none' ? ' It had no advantage.' : ` It had an advantage: ${CONFIG.ai.advantages[this.settings.advantage].name}.`}</p>
-      ${this.journalHtml()}
+      ${this.journalHtml()}`
+      }
       <div class="actions">
         <button class="primary" id="again">Play again</button>
         <button id="change">Change opponent</button>
@@ -252,12 +333,8 @@ export class Screens {
   private journalHtml(): string {
     const j = this.opponent.journal;
     if (!j.length) return '';
-    return `<details class="journal" open><summary>What the computer did (${j.length})</summary><ol>${j
+    return `<details class="journal"><summary>What the computer did (${j.length})</summary><ol>${j
       .map((e) => `<li><span class="when">${fmtTime(e.tick)}</span>${escapeHtml(e.text)}</li>`)
       .join('')}</ol></details>`;
   }
-}
-
-function escapeHtml(t: string): string {
-  return t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 }

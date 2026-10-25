@@ -2,6 +2,8 @@
 // button, notifications and the controls overlay. Reads state; issues actions
 // through the InputController.
 
+import { teamColor } from './view';
+import { keyLabel } from '../input/keymap';
 import type { ClientState } from '../input/client';
 import { ITEM_KEYS, type Action, type InputController } from '../input/input';
 import { BUILDABLE, CONFIG, isHeroType, TICK_RATE, type AbilityId, type BuildingType, type ItemId, type ResearchId, type UnitType } from '../sim/config';
@@ -214,11 +216,12 @@ export class Hud {
     this.idleBtn.addEventListener('click', () => input.selectIdleWorker());
     this.heroBtn?.addEventListener('click', () => input.selectHero());
     this.cancelBtn.innerHTML = '<span class="cmd-label">Cancel</span><span class="cmd-key">X</span>';
-    this.cancelBtn.title = `Cancel construction (${CONFIG.construction.cancelRefund * 100}% refund) or the last queued unit (${CONFIG.production.cancelRefund * 100}% refund). [X]`;
+    setTip(this.cancelBtn, `Cancel construction (${CONFIG.construction.cancelRefund * 100}% refund) or the last queued unit (${CONFIG.production.cancelRefund * 100}% refund).`);
     this.cancelBtn.addEventListener('click', () => input.action('cancel'));
     this.card.appendChild(this.cancelBtn);
     for (const a of ACTIONS) {
       const b = el('button', 'cmd');
+      b.dataset.action = a.id;
       const cost = a.build
         ? CONFIG.buildings[a.build].cost
         : a.train
@@ -238,7 +241,7 @@ export class Hud {
         b.classList.add('ability');
         b.innerHTML += `<span class="cmd-cost mana">${CONFIG.hero.abilities[a.ability].mana}</span><span class="cmd-cd"></span>`;
       }
-      b.title = `${a.tip} [${a.key}]`;
+      setTip(b, a.tip);
       b.addEventListener('click', () => input.action(a.id));
       if (a.slot !== undefined) {
         b.classList.add('item-slot');
@@ -251,6 +254,8 @@ export class Hud {
       this.buttons.set(a.id, b);
       this.card.appendChild(b);
     }
+    this.refreshKeys();
+    installTooltips();
     input.onSelectionChanged = () => (this.panelDirty = true);
     input.onMessage = (t) => this.notify(t);
     document.getElementById('help-btn')!.addEventListener('click', () => this.toggleHelp());
@@ -261,6 +266,16 @@ export class Hud {
         this.toggleHelp();
       }
     });
+  }
+
+  /** Show the current key map on the command card. */
+  refreshKeys(): void {
+    const keys = this.input.settings.keys;
+    for (const [id, b] of this.buttons) {
+      const bound = (keys as Record<string, string>)[id];
+      if (bound) setText(b.querySelector('.cmd-key')!, keyLabel(bound));
+    }
+    setText(this.cancelBtn.querySelector('.cmd-key')!, keyLabel(keys.cancel));
   }
 
   setGame(game: Game): void {
@@ -444,7 +459,7 @@ export class Hud {
           setText(btn.querySelector('.cmd-cost .w')!, String(c.wood));
           const problem = heroProblem(this.game, p.id, a.train);
           btn.disabled = !!problem;
-          btn.title = `${TRAIN_TIPS[a.train]}${problem ? ` (${problem})` : ''} [${a.key}]`;
+          setTip(btn, TRAIN_TIPS[a.train], problem);
         } else btn.disabled = !!missingRequirement(this.game, p.id, a.train);
         btn.classList.toggle('poor', p.gold < c.gold || p.wood < c.wood);
         continue;
@@ -459,7 +474,7 @@ export class Hud {
           const problem = researchProblem(this.game, p.id, ownB, r);
           btn.disabled = !!problem && !problem.startsWith('Not enough');
           btn.classList.toggle('poor', !!problem && problem.startsWith('Not enough'));
-          btn.title = `${CONFIG.research[r].desc}${problem ? ` (${researchPending(this.game, p.id, r) ? 'In progress' : problem})` : ''} [${a.key}]`;
+          setTip(btn, a.tip, problem ? (researchPending(this.game, p.id, r) ? 'In progress' : problem) : null);
         }
         continue;
       }
@@ -471,7 +486,7 @@ export class Hud {
           btn.disabled = !!problem && !problem.startsWith('Not enough');
           btn.classList.toggle('poor', !!problem && problem.startsWith('Not enough'));
           btn.classList.toggle('active', this.client.targetMode === 'flare');
-          btn.title = `${a.tip}${problem ? ` (${problem})` : ''} [F]`;
+          setTip(btn, a.tip, problem);
         }
         continue;
       }
@@ -481,7 +496,7 @@ export class Hud {
         setText(btn.querySelector('.cmd-label')!, it ? CONFIG.items[it].name : '(empty)');
         btn.disabled = !it || !CONFIG.items[it].consumable;
         btn.classList.toggle('has-item', !!it);
-        btn.title = it ? `${CONFIG.items[it].name}: ${CONFIG.items[it].desc}${CONFIG.items[it].consumable ? ' Click or press the key to use.' : ' Always active.'} Right-click to drop. [${a.key}]` : 'Empty inventory slot. Heroes pick up items by right-clicking them.';
+        setTip(btn, it ? `${CONFIG.items[it].desc}${CONFIG.items[it].consumable ? ' Click or press the key to use.' : ' Always active.'} Right-click to drop.` : 'Empty inventory slot. Heroes pick up items by right-clicking them.');
         continue;
       }
       if (a.buy) {
@@ -491,7 +506,7 @@ export class Hud {
           const problem = shopper ? buyProblem(this.game, p.id, shop.id, shopper.id, a.buy) : 'You need a hero next to the Trading Post.';
           btn.disabled = !!problem && !problem.startsWith('Not enough');
           btn.classList.toggle('poor', !!problem && problem.startsWith('Not enough'));
-          btn.title = `${a.tip}${problem ? ` (${problem})` : ''} [${a.key}]`;
+          setTip(btn, a.tip, problem);
         }
         continue;
       }
@@ -556,8 +571,8 @@ export class Hud {
     for (const e of sel) {
       if (e.kind !== 'unit') continue;
       const pt = el('button', 'portrait');
-      pt.title = `${CONFIG.units[e.type].name}: ${unitStatus(this.game, e)}`;
-      pt.style.setProperty('--team', this.game.player(e.owner).color);
+      setTip(pt, unitStatus(this.game, e), null, CONFIG.units[e.type].name);
+      pt.style.setProperty('--team', teamColor(this.game, e.owner));
       const hp = el('div', 'hp');
       hp.style.width = `${(e.hp / e.maxHp) * 100}%`;
       const icon = e.type !== 'worker' ? CONFIG.units[e.type].name[0] : e.carry.amount ? (e.carry.res === 'gold' ? '●' : '≡') : '';
@@ -679,7 +694,7 @@ export class Hud {
       const slot = el('button', `slot${q ? '' : ' empty'}`);
       if (q) {
         slot.textContent = nameOf(q)[0];
-        slot.title = `${nameOf(q)}: click to cancel (full refund)`;
+        setTip(slot, 'Click to cancel (full refund).', null, nameOf(q));
         const fill = el('div', 'fill');
         fill.style.width = `${q.progress * 100}%`;
         slot.appendChild(fill);
@@ -697,4 +712,68 @@ export class Hud {
     } else box.prepend(header);
     header.appendChild(slots);
   }
+}
+
+/** Tooltip content for an element; the name defaults to its button label and the key to its key badge. */
+export function setTip(elm: HTMLElement, body: string, problem?: string | null, name?: string): void {
+  elm.removeAttribute('title');
+  if (elm.dataset.tipBody !== body) elm.dataset.tipBody = body;
+  const pr = problem ?? '';
+  if ((elm.dataset.tipProblem ?? '') !== pr) elm.dataset.tipProblem = pr;
+  if (name !== undefined && elm.dataset.tipName !== name) elm.dataset.tipName = name;
+}
+
+let tooltipInstalled = false;
+
+/**
+ * One styled tooltip for the whole HUD, in place of the browser's small
+ * delayed ones: name and key, cost, what it does, and what is in the way.
+ */
+export function installTooltips(): void {
+  if (tooltipInstalled) return;
+  tooltipInstalled = true;
+  const tip = el('div', 'tooltip hidden');
+  tip.id = 'tooltip';
+  document.body.appendChild(tip);
+  let current: HTMLElement | null = null;
+  const show = (t: HTMLElement) => {
+    current = t;
+    const name = t.dataset.tipName ?? t.querySelector('.cmd-label')?.textContent ?? '';
+    const key = t.querySelector('.cmd-key')?.textContent ?? '';
+    const cost = t.querySelector('.cmd-cost:not(.mana)');
+    const mana = t.querySelector('.cmd-cost.mana')?.textContent;
+    const parts = [
+      `<div class="tip-head"><b>${escapeHtml(name)}</b>${key ? `<span class="tip-key">${escapeHtml(key)}</span>` : ''}</div>`,
+      cost ? `<div class="tip-cost">${cost.innerHTML}${mana ? ` <i class="m">${escapeHtml(mana)}</i>` : ''}</div>` : '',
+      `<div class="tip-body">${escapeHtml(t.dataset.tipBody ?? '')}</div>`,
+      t.dataset.tipProblem ? `<div class="tip-problem">${escapeHtml(t.dataset.tipProblem)}</div>` : '',
+    ];
+    tip.innerHTML = parts.join('');
+    tip.classList.remove('hidden');
+    const r = t.getBoundingClientRect();
+    const w = tip.offsetWidth;
+    const h = tip.offsetHeight;
+    tip.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2))}px`;
+    tip.style.top = `${r.top - h - 8 < 8 ? r.bottom + 8 : r.top - h - 8}px`;
+  };
+  document.addEventListener('mouseover', (e) => {
+    const t = (e.target as HTMLElement | null)?.closest?.('[data-tip-body]') as HTMLElement | null;
+    if (t && t !== current) show(t);
+    else if (!t && current) {
+      current = null;
+      tip.classList.add('hidden');
+    }
+  });
+  // Keep a visible tooltip current (problems change as money comes in).
+  setInterval(() => {
+    if (current && document.body.contains(current) && !current.classList.contains('hidden')) show(current);
+    else if (current) {
+      current = null;
+      tip.classList.add('hidden');
+    }
+  }, 300);
+}
+
+function escapeHtml(t: string): string {
+  return t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 }

@@ -2,6 +2,7 @@
 // progress bars, mine occupancy pips, floating delivery numbers and the
 // selection box. Positions come from projecting 3D points through the camera.
 
+import { hpColor, teamColor, view } from '../ui/view';
 import type { ClientState } from '../input/client';
 import { CONFIG } from '../sim/config';
 import type { Game } from '../sim/game';
@@ -50,7 +51,7 @@ export class Overlay {
     }
   }
 
-  private bar(x: number, y: number, h: number, w: number, frac: number, color: string, label?: string): void {
+  private bar(x: number, y: number, h: number, w: number, frac: number, color: string, label?: string, team?: string): void {
     const p = this.rig.project(x, y, h);
     if (!p.visible) return;
     const ctx = this.ctx;
@@ -60,6 +61,12 @@ export class Overlay {
     ctx.fillRect(px - 1, py - 1, w + 2, 7);
     ctx.fillStyle = color;
     ctx.fillRect(px, py, Math.round(w * Math.max(0, Math.min(1, frac))), 5);
+    // Team tab: a block of the owner's colour at the left end, so friend and
+    // foe read apart without relying on the bar's colour.
+    if (team) {
+      ctx.fillStyle = team;
+      ctx.fillRect(px - 5, py - 1, 4, 7);
+    }
     if (label) {
       ctx.font = '600 11px system-ui, sans-serif';
       ctx.textAlign = 'center';
@@ -182,20 +189,21 @@ export class Overlay {
         if (e.hero) {
           // Heroes always show health, mana and level.
           const head = e.type === 'hero' ? 1.7 : 1.25;
-          this.bar(x, y, head, 40, e.hp / e.maxHp, hpColor(e.hp / e.maxHp), `Lv ${e.hero.level}`);
+          this.bar(x, y, head, 40, e.hp / e.maxHp, hpColor(e.hp / e.maxHp), `Lv ${e.hero.level}`, teamColor(game, e.owner));
           this.bar(x, y, head - 0.12, 40, e.hero.mana / e.hero.maxMana, '#5a8cff');
           continue;
         }
-        // Selected or wounded units show health, so fights stay readable.
-        if (!selected.has(e.id) && e.hp >= e.maxHp) continue;
-        this.bar(x, y, 1.25, 30, e.hp / e.maxHp, hpColor(e.hp / e.maxHp));
+        // Health bars per the settings: always, when hurt or selected, or selected only.
+        const show = view.healthBars === 'always' || selected.has(e.id) || (view.healthBars === 'damaged' && e.hp < e.maxHp);
+        if (!show) continue;
+        this.bar(x, y, 1.25, 30, e.hp / e.maxHp, hpColor(e.hp / e.maxHp), undefined, teamColor(game, e.owner));
         if (e.type === 'cleric') this.bar(x, y, 1.13, 30, e.mana / CONFIG.cleric.mana, '#5a8cff');
       } else if (e.kind === 'building') {
         const top = e.w * 0.75 + 0.6;
         if (e.progress < 1 && e.owner === client.player) {
           this.bar(e.x, e.y, top * (0.3 + 0.7 * e.progress), 60, e.progress, '#f0b030', `${Math.floor(e.progress * 100)}%`);
-        } else if (selected.has(e.id) || e.hp < e.maxHp) {
-          this.bar(e.x, e.y, top, 70, e.hp / e.maxHp, hpColor(e.hp / e.maxHp));
+        } else if (view.healthBars === 'always' || selected.has(e.id) || (view.healthBars === 'damaged' && e.hp < e.maxHp)) {
+          this.bar(e.x, e.y, top, 70, e.hp / e.maxHp, hpColor(e.hp / e.maxHp), undefined, teamColor(game, e.owner));
         }
         const q = e.queue[0];
         if (q && e.owner === client.player) {
@@ -256,6 +264,4 @@ export class Overlay {
   }
 }
 
-function hpColor(f: number): string {
-  return f > 0.6 ? '#4cd964' : f > 0.3 ? '#f0c030' : '#ff4a3a';
-}
+

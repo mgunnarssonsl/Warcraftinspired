@@ -33,6 +33,14 @@ computer opponents. No campaign or story.
   (Balanced, Raider, Expander, Warden, Warlord, or Random) sit on top of
   it. It also gains economic recovery and an end-screen journal of its
   decisions. An optional income advantage is labelled as a cheat.
+- Phase F: saving, settings and usability:
+  - versioned saves that continue a match exactly, with an autosave and
+    file export;
+  - sound, graphics, camera and interface settings, and remappable
+    controls;
+  - interface scaling, readable tooltips and colour-blind friendly
+    teams;
+  - an interactive tutorial, and an end-of-match summary with charts.
 
 See [Roadmap](#roadmap).
 
@@ -46,7 +54,7 @@ npm run dev        # http://localhost:5173
                    # optional: ?difficulty=easy|normal|hard&style=random|balanced|raider|
                    #   expander|warden|warlord&adv=none|income25|income50
                    #   &map=vales|river|highland&seed=N
-                   #   &start=1 (skip the start screen)
+                   #   &start=1 (skip the start screen) · ?tutorial=1 (the tutorial)
 npm test           # simulation tests (vitest)
 npm run build      # typecheck + production bundle in dist/
 ```
@@ -81,7 +89,8 @@ npm run build      # typecheck + production bundle in dist/
 | Minimap | Left-click jumps the camera there, or aims a pending flare, attack-move or move. Right-click moves the selected units there. |
 | Space | Jump to the latest alert, or to the current selection |
 | P | Pause |
-| F10 or the Menu button | Menu: resume, restart, new match, surrender (pauses the game) |
+| F10 or the Menu button | Menu: resume, save, load, settings, restart, new match, surrender (pauses the game) |
+| Any of the keys above | Can be changed in Settings › Controls (number keys, Esc, F1 and F10 are fixed) |
 | `` ` `` / F3 | Debug overlay: blocked tiles (red) and the selected units' paths |
 | F1 / ? | Controls panel |
 
@@ -770,6 +779,82 @@ What the layouts are for:
 - **Camp markers:** found camps are marked on the minimap by level until
   you see them cleared.
 
+## Saving, settings and usability
+
+### Saving
+
+- **Where:** the menu (F10) saves to three slots in the browser, or exports
+  the match to a `.json` file. Matches also autosave every two minutes of
+  play and whenever you leave or hide the page. The start screen offers
+  Continue (the newest save), and Load reads a slot or a file.
+- **What a save holds:**
+  - the whole simulation: every unit's orders and Shift-queue, carried
+    resources, construction, training and research queues, attack wind-ups
+    and projectiles in flight, heroes with their items, cooldowns and buffs,
+    camps, items on the ground, explored ground and remembered buildings;
+  - what each player sees at that moment;
+  - commands issued since the last tick;
+  - the computer's complete state (memory, plans, journal);
+  - your camera and control groups.
+
+  A loaded match continues exactly as it would have. A test saves a match
+  between two computers at three points and compares 90 seconds of play
+  byte for byte against the unsaved original.
+- **Versions:** every save carries a format version. Saves from older
+  versions are upgraded one step at a time by a migration table. A save is
+  refused with a plain reason, never half-loaded, when it:
+  - comes from a newer version;
+  - is too old to upgrade;
+  - is damaged;
+  - is missing parts;
+  - uses an unknown map.
+
+  A full or disabled browser storage is reported, not thrown.
+
+### Settings (start screen or menu)
+
+| Tab | What you can change |
+| --- | --- |
+| Audio | mute, master, effects (construction, training, combat), alerts (attacks, sightings, result) |
+| Graphics | shadows, rendering resolution (50–100%), health bars: wounded and selected / always / selected only |
+| Camera | scroll speed, zoom speed, scrolling at the screen edge |
+| Interface | interface size (80–160%), colour-blind friendly teams, pause when the window loses focus |
+| Controls | the key of every command, building, camera and interface action |
+
+- **Changes and storage:** changes apply at once and are stored in the
+  browser, versioned like saves. A missing or odd value falls back to its
+  default, so a settings file from another version never blocks the game.
+- **Rebinding:** click an action, then press the new key. A key already in
+  use swaps with it, so two actions never share one. Number keys, Esc, F1
+  and F10 are fixed. Train, research, ability and item keys follow the
+  command card. The command card and its tooltips show the keys you chose.
+- **Colour-blind teams:**
+  - Teams become blue and orange.
+  - Health bars run blue, yellow, magenta instead of green to red.
+  - Every health bar carries a tab in its owner's colour.
+  - On the minimap your units are squares, enemies diamonds and neutral
+    guards circles.
+  - The summary charts draw the opponent dashed.
+- **Sound:** short synthesized cues for now; original sound is Phase G.
+
+### Tooltips, tutorial, summary
+
+- **Tooltips:** hovering a command shows one styled tooltip in place of the
+  browser's small delayed one. It lists the name and key, the cost in
+  gold, wood or mana, what the command does, and what stands in the way
+  (in its own colour, kept current as money comes in).
+- **Tutorial:** eleven short steps on Twin Vales against a computer that
+  never attacks. It covers the camera, selecting, gold, wood, a Laborer, a
+  Farm, a Barracks, Guards, a control group, attack-move and clearing a
+  camp. Each step waits for you to actually do it, glows the button to
+  press and shows progress. Any step can be skipped.
+- **Match summary:**
+  - Charts of gold and wood gathered, army size, Laborers and army value
+    over the match, from a sample of both sides every 30 seconds.
+  - A table: income per minute, bounty, most Laborers and largest army,
+    units trained and lost (by type), enemies destroyed, buildings, camps
+    cleared, upgrades and heroes.
+
 ## Architecture
 
 TypeScript and Vite, with three.js for 3D rendering. three.js is the only
@@ -1293,6 +1378,38 @@ which are never shipped to players.
     waves, the Warden fewer towers. Economy still decides most computer
     games, so the Expander leads and the Warden trails. Seats split
     118–120.
+- **Phase F tests:**
+  - `tests/save.test.ts` (10):
+    - a match saved three times continues byte-identical, computers
+      included;
+    - orders, cargo, queues, combat, heroes, fog, memory and projectiles
+      survive;
+    - a command given just before saving is carried out;
+    - damaged, foreign, too-new and incomplete saves are refused with
+      reasons;
+    - slots and a full storage are handled.
+  - `tests/settings.test.ts` (8): default keys, swap on rebind, fixed
+    keys, cleaning stored maps and settings, and settings from a newer
+    version.
+  - `tests/tutorial.test.ts` (2): a player doing what each step says goes
+    through all eleven in order, and the tutorial computer never attacks.
+    Writing this test found a real trap: the Farm step counted a placed
+    Farm, so a Laborer pulled away left it unfinished and the Guards later
+    stalled at the population cap. The step now waits for the Farm to
+    finish.
+- **Phase F in the browser (scripted):**
+  - The start screen offers Tutorial, Continue, Load and Settings.
+  - In Settings, interface size 125%, colour-blind teams and Attack on Q
+    were stored. The HUD grew, health bars turned blue, and the command
+    card showed Attack Q.
+  - Hovering Barracks showed the styled tooltip.
+  - Save to slot 1, then Load, reloaded the match at the same tick with
+    the same entities and a saved control group.
+  - A save marked format 99 was refused on the start screen: "comes from
+    a newer version of the game".
+  - The tutorial advanced on camera movement and selection.
+  - The end screen drew all five charts.
+  - No console errors.
 - **Not yet done:** human playtesting of feel and pacing, and frame-rate
   measurement on real GPUs. Software WebGL only manages ~2–3 fps, which says
   nothing about real hardware.
@@ -1352,6 +1469,25 @@ Phase E (done): smarter computer and difficulty settings.
 - Raids and focus fire.
 - An optional, labelled income advantage.
 - A decision journal on the end screen.
+
+Phase F (done): saving, settings and usability.
+
+- Versioned saves that continue a match exactly, with slots, an autosave
+  and file export.
+- Audio, graphics, camera and interface settings, and remappable
+  controls.
+- Interface scaling, structured tooltips and colour-blind friendly teams.
+- An eleven-step interactive tutorial and an end-of-match summary with
+  charts.
+
+Still open from Phase F:
+
+- **Saves are kept in browser storage** (about 360 KB each, so a handful
+  fit). Export to a file to keep one for good.
+- **Interface scaling uses CSS `zoom`.** It works in current Chrome,
+  Edge, Safari and Firefox (126+), but very old browsers ignore it.
+- **The tutorial covers the basics, not heroes or tech.** The F1 panel and
+  tooltips cover the rest.
 
 Still open from Phase E:
 

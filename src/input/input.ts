@@ -15,9 +15,11 @@ import { canAttack, isEnemy, targetable } from '../sim/combat';
 import type { Building, Entity, Unit } from '../sim/types';
 import type { Minimap } from '../ui/minimap';
 import type { ClientState, TargetMode } from './client';
+import { eventKey, type KeyAction } from './keymap';
+import { defaultSettings, type Settings } from '../ui/settings';
 
 const EDGE = 10; // px from the view edge that triggers scrolling
-const PAN_SPEED = 900; // px per second
+const PAN_SPEED = 900; // px per second at camera speed 1
 const DRAG_THRESHOLD = 5;
 
 export type Action =
@@ -52,6 +54,8 @@ export class InputController {
   private lastClick = { t: 0, id: 0 };
   private lastGroupKey = { t: 0, n: -1 };
   private framesSincePick = 0;
+  /** Player settings (keys, camera speed, edge panning); replaced when they change. */
+  settings: Settings = defaultSettings();
   onSelectionChanged: () => void = () => {};
   onMessage: (text: string) => void = () => {};
 
@@ -73,7 +77,8 @@ export class InputController {
       (e) => {
         e.preventDefault();
         const p = this.local(e);
-        this.rig.zoomAt(p.x, p.y, e.deltaY < 0 ? 1.12 : 1 / 1.12);
+        const step = 1 + 0.12 * this.settings.camera.zoomSpeed;
+        this.rig.zoomAt(p.x, p.y, e.deltaY < 0 ? step : 1 / step);
         this.mouse.moved = true;
       },
       { passive: false },
@@ -83,7 +88,7 @@ export class InputController {
       this.keyDown(e);
     });
     window.addEventListener('keyup', (e) => (this.shiftDown = e.shiftKey));
-    window.addEventListener('keyup', (e) => this.keys.delete(e.key));
+    window.addEventListener('keyup', (e) => this.keys.delete(eventKey(e)));
     window.addEventListener('blur', () => {
       this.keys.clear();
       this.mouse.inside = false;
@@ -101,11 +106,12 @@ export class InputController {
   update(dt: number): void {
     let dx = 0;
     let dy = 0;
-    if (this.keys.has('ArrowLeft')) dx -= 1;
-    if (this.keys.has('ArrowRight')) dx += 1;
-    if (this.keys.has('ArrowUp')) dy -= 1;
-    if (this.keys.has('ArrowDown')) dy += 1;
-    if (this.mouse.inside && !this.dragStart && !this.grab?.panning && document.hasFocus()) {
+    const held = (a: KeyAction) => this.keys.has(this.settings.keys[a]);
+    if (held('panLeft')) dx -= 1;
+    if (held('panRight')) dx += 1;
+    if (held('panUp')) dy -= 1;
+    if (held('panDown')) dy += 1;
+    if (this.settings.camera.edgePan && this.mouse.inside && !this.dragStart && !this.grab?.panning && document.hasFocus()) {
       const { x, y } = this.mouse;
       if (x < EDGE) dx -= 1;
       if (x > this.rig.viewW - EDGE) dx += 1;
@@ -113,7 +119,8 @@ export class InputController {
       if (y > this.rig.viewH - EDGE) dy += 1;
     }
     if (dx || dy) {
-      this.rig.pan(dx * PAN_SPEED * dt, dy * PAN_SPEED * dt);
+      const speed = PAN_SPEED * this.settings.camera.panSpeed;
+      this.rig.pan(dx * speed * dt, dy * speed * dt);
       this.mouse.moved = true;
     }
     // Picking raycasts are not free: refresh on movement, or a few times a second.
@@ -615,9 +622,12 @@ export class InputController {
 
   private keyDown(e: KeyboardEvent): void {
     if (e.target instanceof HTMLInputElement || this.client.modalOpen) return;
-    this.keys.add(e.key);
+    const key = eventKey(e);
+    this.keys.add(key);
     const k = e.key.toLowerCase();
-    if (e.key.startsWith('Arrow')) {
+    const map = this.settings.keys;
+    // A key bound to camera panning only pans (held, see update()).
+    if (key === map.panLeft || key === map.panRight || key === map.panUp || key === map.panDown) {
       e.preventDefault();
       return;
     }
@@ -674,61 +684,55 @@ export class InputController {
         return;
       }
     }
-    if (e.key === 'F2') {
-      e.preventDefault();
-      this.selectHero();
-      return;
-    }
     const hasWorkers = this.selectedWorkers().length > 0;
     for (const type of BUILDABLE) {
-      if (hasWorkers && k === CONFIG.buildings[type].hotkey.toLowerCase()) {
+      if (hasWorkers && key === map[`build:${type}`]) {
         this.action(`build:${type}`);
         return;
       }
     }
-    switch (k) {
-      case 'escape':
-        if (this.client.placing) this.client.placing = null;
-        else if (this.client.targetMode) this.client.targetMode = null;
-        else this.setSelection([]);
+    if (k === 'escape') {
+      if (this.client.placing) this.client.placing = null;
+      else if (this.client.targetMode) this.client.targetMode = null;
+      else this.setSelection([]);
+      return;
+    }
+    if (k === 'pause' || k === 'f3') {
+      e.preventDefault();
+      if (k === 'pause') this.client.paused = !this.client.paused;
+      else this.client.debug = !this.client.debug;
+      return;
+    }
+    const action = (Object.keys(map) as KeyAction[]).find((a) => map[a] === key && !a.startsWith('build:'));
+    if (!action) return;
+    switch (action) {
+      case 'move':
+      case 'stop':
+      case 'attack':
+      case 'hold':
+      case 'gather':
+      case 'return':
+      case 'cancel':
+        this.action(action);
         break;
-      case 's':
-        this.action('stop');
-        break;
-      case 'm':
-        this.action('move');
-        break;
-      case 'a':
-        this.action('attack');
-        break;
-      case 'h':
-        this.action('hold');
-        break;
-      case 'g':
-        this.action('gather');
-        break;
-      case 'r':
-        this.action('return');
-        break;
-      case 'x':
-        this.action('cancel');
-        break;
-      case '.':
+      case 'idleWorker':
         this.selectIdleWorker();
         break;
-      case ' ': {
+      case 'jumpAlert': {
         e.preventDefault();
         const a = this.minimap.lastAlert();
         if (a) this.rig.centerOn(a.x, a.y);
         else this.centerOnSelection();
         break;
       }
-      case 'f3':
-      case '`':
+      case 'selectHero':
+        e.preventDefault();
+        this.selectHero();
+        break;
+      case 'debug':
         e.preventDefault();
         this.client.debug = !this.client.debug;
         break;
-      case 'p':
       case 'pause':
         this.client.paused = !this.client.paused;
         break;

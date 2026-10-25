@@ -2,6 +2,7 @@
 // it), keeps one view object per entity, animates units from their orders,
 // and answers picking queries for the input layer.
 
+import { teamColor } from '../ui/view';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { ClientState } from '../input/client';
@@ -196,6 +197,33 @@ export class World3D {
   resize(w: number, h: number): void {
     this.renderer.setSize(w, h, false);
     this.rig.resize(w, h);
+  }
+
+  /** Graphics settings: shadows and rendering resolution. */
+  applyGraphics(g: { shadows: boolean; resolution: number }): void {
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2) * g.resolution);
+    if (this.renderer.shadowMap.enabled !== g.shadows) {
+      this.renderer.shadowMap.enabled = g.shadows;
+      this.sun.castShadow = g.shadows;
+      // Lit materials compile with or without shadow code: rebuild them.
+      this.scene.traverse((o) => {
+        const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+        if (Array.isArray(m)) m.forEach((x) => (x.needsUpdate = true));
+        else if (m) m.needsUpdate = true;
+      });
+    }
+    const size = this.renderer.getSize(new THREE.Vector2());
+    this.renderer.setSize(size.x, size.y, false);
+  }
+
+  /** Team colours changed (colour-blind setting): rebuild units and buildings in the new colours. */
+  recolor(): void {
+    for (const v of this.units.values()) this.removePickable(v.root);
+    for (const v of this.buildings.values()) this.removePickable(v.root);
+    for (const g of this.memoryGhosts.values()) this.scene.remove(g.root);
+    this.units.clear();
+    this.buildings.clear();
+    this.memoryGhosts.clear();
   }
 
   // ---- static world ------------------------------------------------------------
@@ -477,7 +505,7 @@ export class World3D {
         let g = this.memoryGhosts.get(m.id);
         if (!g || g.tier !== m.tier || g.done !== m.done) {
           if (g) this.scene.remove(g.root);
-          const parts = makeBuilding(m.type, this.game.player(m.owner).color, m.w, m.tier);
+          const parts = makeBuilding(m.type, teamColor(this.game, m.owner), m.w, m.tier);
           parts.root.position.set(m.x, 0, m.y);
           parts.scaffold.visible = !m.done;
           parts.model.scale.y = m.done ? 1 : 0.5;
@@ -555,7 +583,7 @@ export class World3D {
     this.rallyFlag.visible = !!r;
     if (!r || !b) return;
     this.rallyFlag.position.set(r.x, 0, r.y);
-    (this.rallyCloth.material as THREE.MeshStandardMaterial).color.set(this.game.player(b.owner).color);
+    (this.rallyCloth.material as THREE.MeshStandardMaterial).color.set(teamColor(this.game, b.owner));
     this.rallyCloth.rotation.y = Math.sin(now * 3) * 0.25;
   }
 
@@ -717,7 +745,7 @@ export class World3D {
   private syncUnit(u: Unit, alpha: number, now: number): void {
     let v = this.units.get(u.id);
     if (!v) {
-      v = makeUnit(u.type, this.game.player(u.owner).color);
+      v = makeUnit(u.type, teamColor(this.game, u.owner));
       v.root.userData.entityId = u.id;
       this.units.set(u.id, v);
       this.scene.add(v.root);
@@ -770,7 +798,7 @@ export class World3D {
     let v = this.buildings.get(b.id);
     if (!v || v.type !== b.type || v.tier !== b.tier) {
       if (v) this.removePickable(v.root); // e.g. a Keep fortified into a Castle
-      const parts = makeBuilding(b.type, this.game.player(b.owner).color, b.w, b.tier);
+      const parts = makeBuilding(b.type, teamColor(this.game, b.owner), b.w, b.tier);
       v = { ...parts, type: b.type, tier: b.tier };
       v.root.position.set(b.x, 0, b.y);
       v.root.userData.entityId = b.id;

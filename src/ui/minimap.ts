@@ -1,6 +1,7 @@
 // Top-down minimap: terrain, resources, buildings, units, the camera's view
 // trapezoid (projected from the 3D camera) and alert pings.
 
+import { teamColor } from './view';
 import type { ClientState } from '../input/client';
 import type { CameraRig } from '../render3d/cameraRig';
 import type { Game } from '../sim/game';
@@ -83,7 +84,7 @@ export class Minimap {
       for (const m of vision.remembered(me)) {
         const b = this.game.building(m.id);
         if (b && vision.canSee(me, b)) continue;
-        ctx.strokeStyle = this.game.player(m.owner).color;
+        ctx.strokeStyle = teamColor(this.game, m.owner);
         ctx.strokeRect(m.tx * sx - 0.5, m.ty * sy - 0.5, m.w * sx + 1, m.h * sy + 1);
       }
     }
@@ -94,14 +95,31 @@ export class Minimap {
         const pad = e.type === 'goldmine' && e.miners > CONFIG.resources.goldmine.maxMiners ? 1 : 0; // rich mines read bigger
         ctx.fillRect(e.tx * sx - pad, e.ty * sy - pad, Math.max(1, e.w * sx) + 2 * pad, Math.max(1, e.h * sy) + 2 * pad);
       } else if (e.kind === 'building') {
-        ctx.fillStyle = this.game.player(e.owner).color;
+        ctx.fillStyle = teamColor(this.game, e.owner);
         ctx.fillRect(e.tx * sx - 1, e.ty * sy - 1, e.w * sx + 2, e.h * sy + 2);
         ctx.strokeStyle = e.progress < 1 ? '#f0b030' : '#fff';
         ctx.lineWidth = 1;
         ctx.strokeRect(e.tx * sx - 1, e.ty * sy - 1, e.w * sx + 2, e.h * sy + 2);
       } else if (!e.hidden) {
-        ctx.fillStyle = client.selected.includes(e.id) ? '#ffffff' : this.game.player(e.owner).color;
-        ctx.fillRect(e.x * sx - 1.5, e.y * sy - 1.5, 3, 3);
+        // Shape as well as colour tells sides apart: your units are squares,
+        // enemies diamonds, neutral camp guards circles.
+        ctx.fillStyle = client.selected.includes(e.id) ? '#ffffff' : teamColor(this.game, e.owner);
+        const x = e.x * sx;
+        const y = e.y * sy;
+        if (e.owner === me) ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
+        else if (neutral(e.owner)) {
+          ctx.beginPath();
+          ctx.arc(x, y, 1.6, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          ctx.beginPath();
+          ctx.moveTo(x, y - 2.4);
+          ctx.lineTo(x + 2.4, y);
+          ctx.lineTo(x, y + 2.4);
+          ctx.lineTo(x - 2.4, y);
+          ctx.closePath();
+          ctx.fill();
+        }
       }
     }
     // Fog: black where never explored, dimmed where not currently visible.
