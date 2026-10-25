@@ -660,3 +660,17 @@ table.stats td:first-child {
   border-color: #7dbf6a;
   color: #d4f5c8;
 }
+
+/* Start screen: map and opponent side by side, options stacked. */
+.choices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+.choices .difficulty {
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+.choices .difficulty button {
+  padding: 6px 10px;
+}

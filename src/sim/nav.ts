@@ -40,30 +40,33 @@ export class NavGrid {
   }
 
   /** Can a circle of radius r stand at (x, y) without overlapping blocked tiles? */
-  canStand(x: number, y: number, r: number): boolean {
+  canStand(x: number, y: number, r: number, ry = r): boolean {
     return (
-      this.passable(Math.floor(x - r), Math.floor(y - r)) &&
-      this.passable(Math.floor(x + r), Math.floor(y - r)) &&
-      this.passable(Math.floor(x - r), Math.floor(y + r)) &&
-      this.passable(Math.floor(x + r), Math.floor(y + r))
+      this.passable(Math.floor(x - r), Math.floor(y - ry)) &&
+      this.passable(Math.floor(x + r), Math.floor(y - ry)) &&
+      this.passable(Math.floor(x - r), Math.floor(y + ry)) &&
+      this.passable(Math.floor(x + r), Math.floor(y + ry))
     );
   }
 
   /**
-   * Straight-line walkability with clearance r. Samples every STEP tiles; the
-   * padding covers the corner a diagonal sweep can poke out between samples.
+   * Straight-line walkability with clearance r. Samples every STEP tiles; each
+   * sample's box grows by half a step along the line only, so consecutive
+   * boxes cover the whole sweep without narrowing sideways clearance.
    */
   lineClear(x0: number, y0: number, x1: number, y1: number, r: number): boolean {
     const STEP = 0.1;
-    const rr = r + STEP * 0.6;
     const dx = x1 - x0;
     const dy = y1 - y0;
     const len = Math.hypot(dx, dy);
     const steps = Math.max(1, Math.ceil(len / STEP));
+    const px = Math.abs(dx) / steps / 2 + 1e-6;
+    const py = Math.abs(dy) / steps / 2 + 1e-6;
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
       // Endpoints only need plain clearance; they are where units actually stop.
-      if (!this.canStand(x0 + dx * t, y0 + dy * t, i === 0 || i === steps ? r : rr)) return false;
+      const end = i === 0 || i === steps;
+      if (!this.canStand(x0 + dx * t, y0 + dy * t, end ? r : r + px, end ? r : r + py)) return false;
     }
     return true;
   }

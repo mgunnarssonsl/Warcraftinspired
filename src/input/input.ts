@@ -34,7 +34,8 @@ export type Action =
   | `cast:${AbilityId}`
   | `item:${number}`
   | `drop:${number}`
-  | `buy:${ItemId}`;
+  | `buy:${ItemId}`
+  | 'flare';
 
 /** Hotkeys of the hero's inventory slots. */
 export const ITEM_KEYS = ['z', 'x', 'c'];
@@ -348,6 +349,16 @@ export class InputController {
       }
     }
     if (!g) return;
+    // A remembered enemy building in the fog: go and attack whatever is there.
+    const ghost = this.game.vision
+      .remembered(player)
+      .find((m) => g.x >= m.tx && g.x < m.tx + m.w && g.y >= m.ty && g.y < m.ty + m.h);
+    const fighters = units.filter(canAttack);
+    if (ghost && fighters.length) {
+      this.game.issue({ type: 'attackMove', player, units: fighters.map((u) => u.id), x: ghost.x, y: ghost.y, queued: shift });
+      this.world.addMarker(ghost.x, ghost.y, now, '#ff5a4a');
+      return;
+    }
     this.game.issue({ type: 'move', player, units: units.map((u) => u.id), x: g.x, y: g.y, queued: shift });
     this.world.addMarker(g.x, g.y, now);
   }
@@ -378,6 +389,11 @@ export class InputController {
     const units = this.ownSelectedUnits();
     const player = this.client.player;
     const now = this.now();
+    if (mode === 'flare') {
+      const g = this.rig.screenToGround(sx, sy);
+      if (g) this.targetAtMap(g.x, g.y);
+      return;
+    }
     if (mode.startsWith('cast:')) {
       const ability = mode.slice(5) as AbilityId;
       const def = CONFIG.hero.abilities[ability];
@@ -481,6 +497,13 @@ export class InputController {
       this.game.issue({ type: name.startsWith('item:') ? 'useItem' : 'dropItem', player, units: [hero.id], slot });
       return;
     }
+    if (name === 'flare') {
+      const b = this.selectedOwnBuilding();
+      if (b?.type !== 'hq') return;
+      this.client.placing = null;
+      this.client.targetMode = 'flare';
+      return;
+    }
     if (name.startsWith('buy:')) {
       const shop = this.selectedShop();
       const hero = shop && this.shopper(shop);
@@ -529,6 +552,30 @@ export class InputController {
     const next = idle[(i + 1) % idle.length];
     this.setSelection([next.id]);
     this.rig.centerOn(next.x, next.y);
+  }
+
+  /**
+   * A click on the minimap (or ground) while targeting: fire the Signal
+   * Flare there, or attack-move / move the selection. True if handled.
+   */
+  targetAtMap(x: number, y: number): boolean {
+    const mode = this.client.targetMode;
+    const player = this.client.player;
+    if (mode === 'flare') {
+      const b = this.selectedOwnBuilding();
+      if (b) this.game.issue({ type: 'flare', player, buildingId: b.id, x, y });
+      this.client.targetMode = null;
+      return true;
+    }
+    const units = this.ownSelectedUnits();
+    if ((mode === 'attack' || mode === 'move') && units.length) {
+      if (mode === 'attack') this.game.issue({ type: 'attackMove', player, units: units.filter(canAttack).map((u) => u.id), x, y, queued: this.shiftDown });
+      else this.game.issue({ type: 'move', player, units: units.map((u) => u.id), x, y, queued: this.shiftDown });
+      this.world.addMarker(x, y, this.now(), mode === 'attack' ? '#ff5a4a' : undefined);
+      if (!this.shiftDown) this.client.targetMode = null;
+      return true;
+    }
+    return false;
   }
 
   /** Select a hero (F2): the next one each press when there are two. */
@@ -593,6 +640,10 @@ export class InputController {
         this.action(`research:${next}`);
         return;
       }
+    }
+    if (building?.type === 'hq' && building.progress >= 1 && k === 'f') {
+      this.action('flare');
+      return;
     }
     const shop = this.selectedShop();
     if (shop) {

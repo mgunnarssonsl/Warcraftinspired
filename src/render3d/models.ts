@@ -293,6 +293,16 @@ function makeLancer(team: string): WorkerParts {
   return { root, body, legL, legR, tool, ...noTools() };
 }
 
+/** Outrider: a lighter rider on a smaller horse, carrying a pennant pole. */
+function makeOutrider(team: string): WorkerParts {
+  const p = makeLancer(team);
+  p.body.scale.setScalar(1.25);
+  p.tool.clear();
+  p.tool.add(mesh(box(0.025, 0.6, 0.025), mat('#7a5733'), 0, 0.2, 0));
+  p.tool.add(mesh(box(0.012, 0.12, 0.18), mat(team), 0, 0.44, 0.09));
+  return p;
+}
+
 /** Cleric: long robe and hood, a staff topped with a glowing orb. */
 function makeCleric(team: string): WorkerParts {
   const base = soldierBase(team, 1.4, '#d9d2c0');
@@ -340,6 +350,7 @@ export function makeHammerGeometry(): THREE.BufferGeometry {
 export function makeUnit(type: UnitType, team: string): WorkerParts {
   if (type === 'hero') return makeHero(team);
   if (type === 'lancer') return makeLancer(team);
+  if (type === 'outrider') return makeOutrider(team);
   if (type === 'ranger') return makeRanger(team);
   if (type === 'sage') return makeSage(team);
   if (type === 'wolf') return makeWolf();
@@ -387,7 +398,8 @@ export interface MineParts {
   glow: THREE.Mesh;
 }
 
-export function makeMine(): MineParts {
+/** A gold mine; a rich one (more miners at once) grows big glowing crystals. */
+export function makeMine(rich = false): MineParts {
   const root = new THREE.Group();
   const rock = mat('#857864');
   const mound = mesh(new THREE.DodecahedronGeometry(1.45, 0), rock, 0, 0.35, -0.1);
@@ -408,6 +420,15 @@ export function makeMine(): MineParts {
     n.rotation.set(x * 3, z * 5, y);
     root.add(n);
     nuggets.push(n);
+  }
+  if (rich) {
+    const crystal = mat('#ffe27a', { emissive: 0x8a6400, rough: 0.2 });
+    for (const [x, y, z, s] of [[-0.55, 1.35, -0.2, 0.32], [0.45, 1.45, -0.45, 0.26], [0.05, 1.6, 0.05, 0.36], [0.9, 1.1, 0.1, 0.22]]) {
+      const c = mesh(new THREE.OctahedronGeometry(s, 0), crystal, x, y, z);
+      c.scale.y = 1.8;
+      c.rotation.set(x, z * 3, 0.3);
+      root.add(c);
+    }
   }
   // Timbered entrance on the front face.
   const wood = mat('#6b4a2b');

@@ -2,7 +2,7 @@
 // and advances the simulation one fixed tick at a time. Rendering, input and
 // AI never mutate state directly; they submit Commands.
 
-import { CONFIG, type BuildingType, type CampRole, type ItemId, type UnitType } from './config';
+import { CONFIG, type BuildingType, type ItemId, type UnitType } from './config';
 import { applyCommand, applyQueued, type Command } from './commands';
 import { updateCombat, updateCombatOrder } from './combat';
 import { checkOutcome } from './outcome';
@@ -47,11 +47,12 @@ export class Game {
     this.vision = new Vision(this);
   }
 
-  /** Build the standard skirmish starting state for a seed. */
-  static create(seed: number): Game {
-    const layout = generateMap(seed);
+  /** Build the skirmish starting state for a map and seed. */
+  static create(seed: number, mapId?: string): Game {
+    const layout = generateMap(seed, mapId);
     const state: GameState = {
       seed,
+      mapId: layout.def.id,
       tick: 0,
       nextId: 1,
       rng: seed | 0,
@@ -71,6 +72,7 @@ export class Game {
           stats: emptyStats(),
           research: {},
           heroes: [],
+          flareReady: 0,
         }),
       ),
       entities: {},
@@ -82,6 +84,7 @@ export class Game {
       items: [],
       camps: [],
       reveals: [],
+      memory: [],
     };
     const game = new Game(state);
     for (const i of layout.trees) {
@@ -89,7 +92,10 @@ export class Game {
       const y = (i - x) / layout.width;
       game.addResource('tree', x, y, CONFIG.resources.tree.wood);
     }
-    for (const m of layout.mines) game.addResource('goldmine', m.tx, m.ty, m.amount);
+    for (const m of layout.mines) {
+      const kind = CONFIG.mineKinds[m.kind];
+      game.addResource('goldmine', m.tx, m.ty, kind.gold, kind.miners);
+    }
     layout.starts.forEach((s, p) => {
       const hq = game.addBuilding('hq', p, s.hq.tx, s.hq.ty);
       game.spawnUnitsNear('worker', p, hq, CONFIG.match.startWorkers);
@@ -110,36 +116,47 @@ export class Game {
       stats: emptyStats(),
       research: {},
       heroes: [],
+      flareReady: 0,
     });
-    // Each camp of a mirrored pair has the same guards and drops the same item.
+    // Camps guard mines, and lairs guard treasure. Each camp of a mirrored
+    // pair has the same guards and drops the same item.
     const dropsUsed: Record<number, number> = {};
-    for (let i = 0; i < layout.mines.length; i += 2) {
-      const role = layout.mines[i].role as CampRole;
-      const def = CONFIG.camps[role];
-      if (!def) continue;
-      const pool = CONFIG.campDrops[def.level as 1 | 2 | 3] as readonly ItemId[];
-      const n = (dropsUsed[def.level] = (dropsUsed[def.level] ?? 0) + 1);
-      const drop = pool[(n - 1 + (seed >>> 0)) % pool.length];
-      const m = layout.mines[i];
-      const size = CONFIG.resources.goldmine.size;
-      const spots = game.freeTilesAround({ tx: m.tx, ty: m.ty, w: size, h: size }, def.guards.length);
-      const camps = [
-        { level: def.level, x: m.tx + size / 2, y: m.ty + size / 2, drop, cleared: false },
-        { level: def.level, x: layout.width - m.tx - size / 2, y: layout.height - m.ty - size / 2, drop, cleared: false },
-      ];
+    const pickDrop = (tier: 1 | 2 | 3) => {
+      const pool = CONFIG.campDrops[tier] as readonly ItemId[];
+      const n = (dropsUsed[tier] = (dropsUsed[tier] ?? 0) + 1);
+      return pool[(n - 1 + (seed >>> 0)) % pool.length];
+    };
+    const addCampPair = (level: number, x: number, y: number, guards: readonly UnitType[], around: Footprint, drop: ItemId) => {
+      const spots = game.freeTilesAround(around, guards.length);
       const first = state.camps.length;
-      state.camps.push(...camps);
-      def.guards.forEach((type, k) => {
+      state.camps.push({ level, x, y, drop, cleared: false, seenClear: 0 }, { level, x: layout.width - x, y: layout.height - y, drop, cleared: false, seenClear: 0 });
+      guards.forEach((type, k) => {
         const s = spots[k];
         if (!s) return;
-        [[s.x + 0.5, s.y + 0.5], [layout.width - s.x - 0.5, layout.height - s.y - 0.5]].forEach(([x, y], side) => {
-          const u = game.addUnit(type, neutral, x, y);
-          u.home = { x, y };
+        [[s.x + 0.5, s.y + 0.5], [layout.width - s.x - 0.5, layout.height - s.y - 0.5]].forEach(([gx, gy], side) => {
+          const u = game.addUnit(type, neutral, gx, gy);
+          u.home = { x: gx, y: gy };
           u.camp = first + side;
         });
       });
+    };
+    const size = CONFIG.resources.goldmine.size;
+    for (let i = 0; i < layout.mines.length; i += 2) {
+      const m = layout.mines[i];
+      if (!m.camp) continue;
+      const level = m.camp as 1 | 2 | 3;
+      addCampPair(level, m.tx + size / 2, m.ty + size / 2, CONFIG.campLevels[level], { tx: m.tx, ty: m.ty, w: size, h: size }, pickDrop(level));
     }
-    game.placeObjectives(neutral);
+    for (let i = 0; i < layout.lairs.length; i += 2) {
+      const l = layout.lairs[i];
+      // A lair's treasure is one tier better than its guards' level.
+      const tier = Math.min(3, l.level + 1) as 2 | 3;
+      addCampPair(l.level, l.x, l.y, CONFIG.lairGuards[l.level], { tx: Math.floor(l.x), ty: Math.floor(l.y), w: 1, h: 1 }, pickDrop(tier));
+    }
+    if (layout.objectives.length) {
+      // Map-authored objectives; public map knowledge, like the mines.
+      for (const o of layout.objectives) game.addBuilding(o.type, neutral, o.tx, o.ty).seenBy = (1 << state.players.length) - 1;
+    } else game.placeObjectives(neutral);
     return game;
   }
 
@@ -287,7 +304,7 @@ export class Game {
     return this.state.nextId++;
   }
 
-  addResource(type: ResourceNode['type'], tx: number, ty: number, amount: number): ResourceNode {
+  addResource(type: ResourceNode['type'], tx: number, ty: number, amount: number, miners: number = CONFIG.resources.goldmine.maxMiners): ResourceNode {
     const size = type === 'goldmine' ? CONFIG.resources.goldmine.size : 1;
     const node: ResourceNode = {
       id: this.newId(),
@@ -302,6 +319,7 @@ export class Game {
       y: ty + size / 2,
       amount,
       maxAmount: amount,
+      miners,
     };
     this.state.entities[node.id] = node;
     this.lists = null;
@@ -494,6 +512,11 @@ export class Game {
   }
 
   /** Start (or keep) moving toward a goal. Re-plans only if the goal changed. */
+  /** Did the unit's last attempt to reach this goal fail? */
+  moveFailed(u: Unit, goal: MoveGoal): boolean {
+    return u.move?.state === 'failed' && sameGoal(u.move.goal, goal);
+  }
+
   moveTo(u: Unit, goal: MoveGoal): void {
     if (u.move && sameGoal(u.move.goal, goal) && u.move.state === 'moving') return;
     u.move = {

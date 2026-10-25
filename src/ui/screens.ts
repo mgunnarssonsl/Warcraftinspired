@@ -4,12 +4,14 @@
 import type { Difficulty } from '../ai/computer';
 import { TICK_RATE } from '../sim/config';
 import type { Game } from '../sim/game';
+import { mapById, MAPS } from '../sim/maps';
 
 export type Modal = 'start' | 'menu' | 'end' | null;
 
 export interface MatchSettings {
   seed: number;
   difficulty: Difficulty;
+  mapId: string;
 }
 
 const DIFFICULTIES: Array<{ id: Difficulty; label: string; blurb: string }> = [
@@ -20,7 +22,7 @@ const DIFFICULTIES: Array<{ id: Difficulty; label: string; blurb: string }> = [
 
 /** Reload into a new match (a clean page is the most reliable reset). */
 export function startMatch(s: MatchSettings): void {
-  const q = new URLSearchParams({ seed: String(s.seed), difficulty: s.difficulty, start: '1' });
+  const q = new URLSearchParams({ seed: String(s.seed), difficulty: s.difficulty, map: s.mapId, start: '1' });
   location.search = q.toString();
 }
 
@@ -66,6 +68,7 @@ export class Screens {
 
   showStart(): void {
     let picked: Difficulty = this.settings.difficulty;
+    let pickedMap = this.settings.mapId;
     this.open(
       'start',
       `<h1>Ironvale</h1>
@@ -73,14 +76,11 @@ export class Screens {
       <div class="intro">
         <div>
           <h3>Economy</h3>
-          <p>Laborers walk to gold mines and trees, carry what they gather and bring it home. Only delivered resources count.
-          Two Laborers fit inside a mine at once; about five keep one busy.</p>
+          <p>Laborers carry gold and wood home; only delivered resources count. About five keep a mine busy.</p>
           <h3>Base</h3>
-          <p>Farms raise your population limit. A Lumber Mill by the forest shortens wood trips. The Barracks trains Guards and Archers.
-          Fortify the Keep to a Castle for Lancers, Clerics and Mangonels, then to a Citadel.</p>
+          <p>Farms raise population, a Lumber Mill by the forest shortens wood trips. Fortify the Keep to a Castle, then a Citadel, for stronger units.</p>
           <h3>Heroes and the map</h3>
-          <p>The Hall of Valor raises a hero (Marshal, Pathfinder or Sage; a second with the Castle) who levels up from kills nearby and carries three items.
-          Camps guard the richer mines and drop items; Trading Posts and Healing Fountains sit between the bases. You only see what your units see: scout.</p>
+          <p>Heroes level up and carry items. Camps guard the richer mines and drop treasure. You only see what your units see: scout.</p>
         </div>
         <div>
           <h3>Controls</h3>
@@ -97,21 +97,37 @@ export class Screens {
           <p>Guards beat Lancers, Lancers beat Archers, Archers beat Guards. Clerics heal nearby allies on their own. Mangonels wreck buildings but need protecting.</p>
         </div>
       </div>
-      <h3>Opponent</h3>
-      <div class="difficulty">
-        ${DIFFICULTIES.map((d) => `<button data-d="${d.id}" class="${d.id === picked ? 'picked' : ''}"><b>${d.label}</b><span>${d.blurb}</span></button>`).join('')}
+      <div class="choices">
+        <div>
+          <h3>Map</h3>
+          <div class="difficulty">
+            ${MAPS.map((m) => `<button data-m="${m.id}" class="${m.id === pickedMap ? 'picked' : ''}"><b>${m.name}</b><span>${m.blurb}</span></button>`).join('')}
+          </div>
+        </div>
+        <div>
+          <h3>Opponent</h3>
+          <div class="difficulty">
+            ${DIFFICULTIES.map((d) => `<button data-d="${d.id}" class="${d.id === picked ? 'picked' : ''}"><b>${d.label}</b><span>${d.blurb}</span></button>`).join('')}
+          </div>
+        </div>
       </div>
       <p class="fine">The computer follows exactly the same rules as you: no bonus resources, no hidden information.</p>
       <div class="actions"><button class="primary" id="go">Start match</button></div>`,
     );
-    this.root.querySelectorAll<HTMLButtonElement>('.difficulty button').forEach((b) =>
+    this.root.querySelectorAll<HTMLButtonElement>('button[data-d]').forEach((b) =>
       b.addEventListener('click', () => {
         picked = b.dataset.d as Difficulty;
-        this.root.querySelectorAll('.difficulty button').forEach((x) => x.classList.toggle('picked', x === b));
+        this.root.querySelectorAll('button[data-d]').forEach((x) => x.classList.toggle('picked', x === b));
+      }),
+    );
+    this.root.querySelectorAll<HTMLButtonElement>('button[data-m]').forEach((b) =>
+      b.addEventListener('click', () => {
+        pickedMap = b.dataset.m!;
+        this.root.querySelectorAll('button[data-m]').forEach((x) => x.classList.toggle('picked', x === b));
       }),
     );
     this.on('#go', () => {
-      if (picked !== this.settings.difficulty) startMatch({ seed: this.settings.seed, difficulty: picked });
+      if (picked !== this.settings.difficulty || pickedMap !== this.settings.mapId) startMatch({ seed: this.settings.seed, difficulty: picked, mapId: pickedMap });
       else this.close();
     });
   }
@@ -122,7 +138,7 @@ export class Screens {
     this.open(
       'menu',
       `<h2>Paused</h2>
-      <p class="fine">Opponent: ${this.settings.difficulty} · match time ${fmtTime(this.game.state.tick)} · seed ${this.settings.seed}</p>
+      <p class="fine">Map: ${mapById(this.settings.mapId).name} · opponent: ${this.settings.difficulty} · match time ${fmtTime(this.game.state.tick)} · seed ${this.settings.seed}</p>
       <div class="stack">
         <button class="primary" id="resume">Resume</button>
         <button id="restart">Restart (same map and opponent)</button>
@@ -132,7 +148,7 @@ export class Screens {
     );
     this.on('#resume', () => this.close());
     this.on('#restart', () => startMatch(this.settings));
-    this.on('#new', () => startMatch({ seed: newSeed(), difficulty: this.settings.difficulty }));
+    this.on('#new', () => startMatch({ ...this.settings, seed: newSeed() }));
     this.on('#surrender', () => {
       this.onSurrender();
       this.close();
@@ -175,9 +191,9 @@ export class Screens {
         <button id="watch">Keep watching</button>
       </div>`,
     );
-    this.on('#again', () => startMatch({ seed: newSeed(), difficulty: this.settings.difficulty }));
+    this.on('#again', () => startMatch({ ...this.settings, seed: newSeed() }));
     this.on('#change', () => {
-      const q = new URLSearchParams({ seed: String(newSeed()), difficulty: this.settings.difficulty });
+      const q = new URLSearchParams({ seed: String(newSeed()), difficulty: this.settings.difficulty, map: this.settings.mapId });
       location.search = q.toString();
     });
     this.on('#watch', () => this.close());

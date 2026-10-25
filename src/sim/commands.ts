@@ -1,7 +1,7 @@
 // Commands are the only way players (human or AI) affect the simulation.
 // They are validated here: a player can only command their own living units.
 
-import { CONFIG, type AbilityId, type BuildingType, type ItemId, type ResearchId, type UnitType } from './config';
+import { CONFIG, secondsToTicks, type AbilityId, type BuildingType, type ItemId, type ResearchId, type UnitType } from './config';
 import { buyItem, dropItem, useItem } from './items';
 import { cancelConstruction, checkPlacement, resumeBuild, shortfall, startBuild } from './construction';
 import type { Game } from './game';
@@ -28,6 +28,7 @@ export type Command =
   | { type: 'useItem'; player: number; units: number[]; slot: number }
   | { type: 'dropItem'; player: number; units: number[]; slot: number }
   | { type: 'buyItem'; player: number; shopId: number; heroId: number; item: ItemId }
+  | { type: 'flare'; player: number; buildingId: number; x: number; y: number }
   | { type: 'build'; player: number; units: number[]; buildingType: BuildingType; tx: number; ty: number; queued?: boolean }
   | { type: 'resumeBuild'; player: number; units: number[]; buildingId: number }
   | { type: 'cancelBuild'; player: number; buildingId: number }
@@ -65,6 +66,9 @@ export function applyCommand(game: Game, cmd: Command): void {
     case 'research':
       if (!(cmd.research in CONFIG.research) || game.state.players[cmd.player]?.defeated) return;
       return enqueueResearch(game, cmd.player, cmd.buildingId, cmd.research);
+    case 'flare':
+      if (game.state.players[cmd.player]?.defeated) return;
+      return fireFlare(game, cmd.player, cmd.buildingId, cmd.x, cmd.y);
     case 'buyItem':
       if (!(cmd.item in CONFIG.items) || game.state.players[cmd.player]?.defeated) return;
       return buyItem(game, cmd.player, cmd.shopId, cmd.heroId, cmd.item);
@@ -326,4 +330,32 @@ export function formationSlots(game: Game, units: Unit[], x: number, y: number):
     out[i] = { x: slots[best].x, y: slots[best].y };
   }
   return out;
+}
+
+/** Why `player` cannot fire a Signal Flare from building `buildingId` now, or null. */
+export function flareProblem(game: Game, player: number, buildingId: number): string | null {
+  const b = game.building(buildingId);
+  if (!b || b.owner !== player || b.type !== 'hq') return 'Signal Flares are fired from a Keep.';
+  if (b.progress < 1) return 'The Keep is not finished.';
+  const p = game.player(player);
+  if (p.flareReady > game.state.tick) return `Signal Flare ready in ${Math.ceil((p.flareReady - game.state.tick) / 20)}s.`;
+  if (p.gold < CONFIG.flare.gold) return `Not enough gold (${CONFIG.flare.gold} needed).`;
+  return null;
+}
+
+function fireFlare(game: Game, player: number, buildingId: number, x: number, y: number): void {
+  const problem = flareProblem(game, player, buildingId);
+  if (problem) {
+    game.emit({ type: 'cantCast', player, reason: problem });
+    return;
+  }
+  const { width, height } = game.state.map;
+  const f = CONFIG.flare;
+  const p = game.player(player);
+  p.gold -= f.gold;
+  p.flareReady = game.state.tick + secondsToTicks(f.cooldown);
+  const fx = Math.max(0, Math.min(width, x));
+  const fy = Math.max(0, Math.min(height, y));
+  game.state.reveals.push({ owner: player, x: fx, y: fy, radius: f.radius, until: game.state.tick + secondsToTicks(f.seconds) });
+  game.emit({ type: 'flare', player, x: fx, y: fy });
 }

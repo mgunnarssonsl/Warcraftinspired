@@ -50,6 +50,8 @@ export interface Player {
   /** The player's hero, once trained: kept while dead so it can be revived. */
   /** Every hero this player has raised, alive or awaiting revival. */
   heroes: HeroRecord[];
+  /** Tick from which this player's next Signal Flare is ready. */
+  flareReady: number;
 }
 
 export interface HeroRecord {
@@ -98,9 +100,31 @@ export interface Camp {
   y: number;
   drop: ItemId;
   cleared: boolean;
+  /** Players (bitmask) who have seen this camp cleared. */
+  seenClear: number;
 }
 
-/** A temporary view of the map (Far Sight). */
+/**
+ * An enemy building as a player last saw it. Kept until that spot is seen
+ * again: a building destroyed out of sight stays on your map as a ghost.
+ */
+export interface RememberedBuilding {
+  id: number;
+  type: BuildingType;
+  owner: number;
+  tx: number;
+  ty: number;
+  w: number;
+  h: number;
+  x: number;
+  y: number;
+  tier: number;
+  done: boolean;
+  /** Tick it was last seen. */
+  tick: number;
+}
+
+/** A temporary view of the map (Far Sight, Signal Flare). */
 export interface Reveal {
   owner: number;
   x: number;
@@ -338,6 +362,8 @@ export interface ResourceNode extends EntityBase, Footprint {
   type: NodeType;
   amount: number;
   maxAmount: number;
+  /** Gold mines: workers that fit inside at once (rich mines hold more). */
+  miners: number;
 }
 
 export type Entity = Unit | Building | ResourceNode;
@@ -350,6 +376,8 @@ export interface MapData {
 
 export interface GameState {
   seed: number;
+  /** Which map (src/sim/maps.ts) this match is played on. */
+  mapId: string;
   tick: number;
   nextId: number;
   rng: number;
@@ -372,11 +400,14 @@ export interface GameState {
   /** Items lying on the map. */
   items: GroundItem[];
   camps: Camp[];
-  /** Active Far Sight reveals. */
+  /** Active Far Sight and Signal Flare reveals. */
   reveals: Reveal[];
+  /** Per player: enemy buildings as last seen. */
+  memory: RememberedBuilding[][];
 }
 
 export type GameEvent =
+  | { type: 'flare'; player: number; x: number; y: number }
   | { type: 'itemDropped'; id: number; item: ItemId; x: number; y: number }
   | { type: 'itemPicked'; player: number; hero: number; item: ItemId; x: number; y: number }
   | { type: 'itemUsed'; player: number; hero: number; item: ItemId; x: number; y: number }

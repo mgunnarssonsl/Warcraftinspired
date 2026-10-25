@@ -102,6 +102,29 @@ export const CONFIG = {
       bounty: 0,
       attack: { type: 'pierce' as AttackType, damage: 15, range: 5.5, cooldown: 1.5, windup: 0.45, acquire: 7, projectileSpeed: 12, minRange: 0, splash: 0 },
     },
+    // A scout: fast, sharp-eyed, cheap; it does not pick fights.
+    outrider: {
+      name: 'Outrider',
+      hp: 180,
+      speed: 4.3,
+      radius: 0.38,
+      /** Vision radius in tiles. */
+      sight: 12,
+      pop: 1,
+      cost: { gold: 70, wood: 0 },
+      trainSeconds: 14,
+      trainedAt: 'barracks',
+      requires: null,
+      /** Research that must be complete (a tier), or null. */
+      tech: null as string | null,
+      hotkey: 'R',
+      armor: 0,
+      armorType: 'light' as ArmorType,
+      /** Experience granted to the killer's nearby hero, and gold bounty to the killer. */
+      xp: 15,
+      bounty: 0,
+      attack: { type: 'normal' as AttackType, damage: 5, range: 0.4, cooldown: 1.5, windup: 0.3, acquire: 0, projectileSpeed: 0, minRange: 0, splash: 0 },
+    },
     // ---- tier II (requires Fortify to Castle) ----
     lancer: {
       name: 'Lancer',
@@ -446,16 +469,21 @@ export const CONFIG = {
   },
 
   /**
-   * Neutral camps guard mines. Level sets their strength and what the last
-   * guard drops when the camp is wiped out: level 1 a consumable, level 2 a
-   * tier-1 item, level 3 a tier-2 item. Mirrored camps drop the same item.
+   * Neutral camps guard mines (and lairs guard treasure). Level sets their
+   * strength and what the last guard drops when the camp is wiped out:
+   * level 1 a consumable, level 2 a tier-1 item, level 3 a tier-2 item.
+   * Mirrored camps drop the same item.
    */
-  camps: {
-    // The small mine beside each base stays unguarded: a camp there would
-    // maul Laborers before anyone has an army.
-    natural: { level: 1, guards: ['brigand', 'wolf'] },
-    far: { level: 2, guards: ['chief', 'brigand', 'poacher'] },
-    center: { level: 3, guards: ['brute', 'chief', 'poacher'] },
+  /** Guards by camp level. Maps decide where camps of each level stand. */
+  campLevels: {
+    1: ['brigand', 'wolf'],
+    2: ['chief', 'brigand', 'poacher'],
+    3: ['brute', 'chief', 'poacher'],
+  },
+  /** Treasure lairs (camps with no mine) drop one tier better than their level. */
+  lairGuards: {
+    2: ['chief', 'wolf', 'wolf', 'poacher'],
+    3: ['brute', 'brute', 'poacher'],
   },
   campDrops: {
     1: ['draught', 'tonic', 'salve', 'scroll'],
@@ -467,6 +495,17 @@ export const CONFIG = {
   shop: {
     range: 4,
     stock: ['blade', 'mail', 'charm', 'draught', 'tonic', 'scroll', 'salve'],
+  },
+
+  /**
+   * Signal Flare: any finished Keep can light up a spot anywhere on the map
+   * for a few seconds. Costs gold; one flare per player per cooldown.
+   */
+  flare: {
+    gold: 25,
+    radius: 8,
+    seconds: 8,
+    cooldown: 40,
   },
 
   /** Healing Fountains heal every unit near them, any owner. */
@@ -884,6 +923,10 @@ export const CONFIG = {
         heroes: ['hero'] as Array<'hero' | 'ranger' | 'sage'>,
         /** Sends a hero to buy items at Trading Posts. */
         shops: false,
+        /** Outriders it keeps scouting (0 = none). */
+        scouts: 0,
+        /** Fires Signal Flares to find the enemy. */
+        flares: false,
         firstAttackSeconds: 540,
         waveSize: 4,
         waveGrowth: 2,
@@ -912,6 +955,8 @@ export const CONFIG = {
         adapt: true,
         heroes: ['hero', 'sage'] as Array<'hero' | 'ranger' | 'sage'>,
         shops: true,
+        scouts: 1,
+        flares: true,
         firstAttackSeconds: 400,
         waveSize: 6,
         waveGrowth: 3,
@@ -934,6 +979,8 @@ export const CONFIG = {
         adapt: true,
         heroes: ['hero', 'ranger'] as Array<'hero' | 'ranger' | 'sage'>,
         shops: true,
+        scouts: 1,
+        flares: true,
         firstAttackSeconds: 300,
         waveSize: 7,
         waveGrowth: 3,
@@ -951,6 +998,11 @@ export const CONFIG = {
     goldWorkersPerMine: 5,
     /** A wave falls back when reduced to this share of its launch size. */
     retreatShare: 0.35,
+    /** Scouts it will train in a whole match (replacing ones that die). */
+    maxScouts: 3,
+    /** Tiles of extra walk a rich mine (per extra miner) and a full-size mine are worth. */
+    richMineBonus: 12,
+    fullMineBonus: 5,
     /** Gold on hand before it sends a hero shopping. */
     shopGold: 350,
     /** Earliest time (seconds) it researches Mule Carts. */
@@ -1009,12 +1061,17 @@ export const CONFIG = {
   },
 
   /** Gold amounts for each mine role on the skirmish map. */
-  mines: {
-    start: 7000,
-    small: 800,
-    natural: 9000,
-    far: 9000,
-    center: 12000,
+  /**
+   * Mine kinds: the reward side of an expansion. A rich mine holds three
+   * miners at once instead of two (half again the income) and lasts longer;
+   * maps put them behind the toughest camps and furthest from home.
+   */
+  mineKinds: {
+    start: { name: 'Gold Mine', gold: 7000, miners: 2 },
+    tiny: { name: 'Small Gold Mine', gold: 800, miners: 2 },
+    small: { name: 'Small Gold Mine', gold: 3000, miners: 2 },
+    standard: { name: 'Gold Mine', gold: 9000, miners: 2 },
+    rich: { name: 'Rich Gold Mine', gold: 14000, miners: 3 },
   },
 
   movement: {
@@ -1034,7 +1091,7 @@ export type ResearchId = keyof typeof CONFIG.research;
 export type AbilityId = keyof typeof CONFIG.hero.abilities;
 export type ItemId = keyof typeof CONFIG.items;
 export type HeroType = keyof typeof CONFIG.heroTypes;
-export type CampRole = keyof typeof CONFIG.camps;
+export type MineKind = keyof typeof CONFIG.mineKinds;
 
 export const HERO_TYPES = Object.keys(CONFIG.heroTypes) as HeroType[];
 export function isHeroType(t: string): t is HeroType {

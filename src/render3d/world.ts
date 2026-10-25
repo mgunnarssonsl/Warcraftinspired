@@ -61,6 +61,7 @@ export class World3D {
   private sun: THREE.DirectionalLight;
   private units = new Map<number, WorkerParts>();
   private items = new Map<number, THREE.Group>();
+  private memoryGhosts = new Map<number, { root: THREE.Group; tier: number; done: boolean }>();
   private buildings = new Map<number, BuildingParts & { type: BuildingType; tier: number }>();
   private mines = new Map<number, MineParts>();
   private trunks!: THREE.InstancedMesh;
@@ -359,6 +360,12 @@ export class World3D {
         this.addMarker(e.x, e.y, now, '#ffe9a8');
       } else if (e.type === 'cast' && (e.ability === 'slow' || e.ability === 'mark' || e.ability === 'ward')) {
         this.burst(e.x, 0.8, e.y, 12, BUFF_COLORS[e.ability], 1.4, now);
+      } else if (e.type === 'flare') {
+        // A flare is seen by whoever lit it (and anyone already watching that spot).
+        if (e.player === this.viewer || this.tileVisible(e.x, e.y)) {
+          this.addMarker(e.x, e.y, now, '#ffb040');
+          this.burst(e.x, 3.5, e.y, 30, '#ffd070', 2.2, now);
+        }
       } else if (e.type === 'teleport') {
         this.burst(e.fromX, 0.6, e.fromY, 20, '#b8d8ff', 2.4, now);
         this.burst(e.x, 0.6, e.y, 20, '#b8d8ff', 2.4, now);
@@ -448,10 +455,43 @@ export class World3D {
 
   // ---- per-frame sync ------------------------------------------------------------
 
-  /** Is this entity visible to the viewer (fog of war)? */
+  /**
+   * Is this entity visible to the viewer right now (fog of war)? Enemy
+   * buildings out of view are shown as remembered ghosts instead (syncGhosts),
+   * so nothing about them updates until they are seen again.
+   */
   perceived(e: Entity): boolean {
     if (this.reveal || e.owner === this.viewer || e.kind === 'resource') return true;
-    return e.kind === 'unit' ? this.game.vision.canSee(this.viewer, e) : this.game.vision.knows(this.viewer, e);
+    if (e.kind === 'building' && this.game.state.players[e.owner]?.neutral) return true; // public map objectives
+    return this.game.vision.canSee(this.viewer, e);
+  }
+
+  /** Ghosts of enemy buildings as last seen, drawn where the viewer cannot see now. */
+  private syncGhosts(): void {
+    const live = new Set<number>();
+    if (!this.reveal) {
+      for (const m of this.game.vision.remembered(this.viewer)) {
+        const b = this.game.building(m.id);
+        if (b && this.perceived(b)) continue;
+        live.add(m.id);
+        let g = this.memoryGhosts.get(m.id);
+        if (!g || g.tier !== m.tier || g.done !== m.done) {
+          if (g) this.scene.remove(g.root);
+          const parts = makeBuilding(m.type, this.game.player(m.owner).color, m.w, m.tier);
+          parts.root.position.set(m.x, 0, m.y);
+          parts.scaffold.visible = !m.done;
+          parts.model.scale.y = m.done ? 1 : 0.5;
+          g = { root: parts.root, tier: m.tier, done: m.done };
+          this.memoryGhosts.set(m.id, g);
+          this.scene.add(g.root);
+        }
+      }
+    }
+    for (const [id, g] of this.memoryGhosts) {
+      if (live.has(id)) continue;
+      this.scene.remove(g.root);
+      this.memoryGhosts.delete(id);
+    }
   }
 
   private tileVisible(x: number, y: number): boolean {
@@ -490,6 +530,7 @@ export class World3D {
       this.buildings.delete(id);
     }
     this.syncItems(now);
+    this.syncGhosts();
     this.updateDying(now);
     this.updateArrows(alpha, now);
     for (const [id, v] of this.mines) if (!seen.has(id)) (this.removePickable(v.root), this.mines.delete(id));
@@ -746,7 +787,7 @@ export class World3D {
   private syncMine(m: ResourceNode, now: number): void {
     let v = this.mines.get(m.id);
     if (!v) {
-      v = makeMine();
+      v = makeMine(m.miners > CONFIG.resources.goldmine.maxMiners);
       v.root.position.set(m.x, 0, m.y);
       v.root.userData.entityId = m.id;
       this.mines.set(m.id, v);

@@ -35,7 +35,7 @@ describe('economic growth through the standard rules', () => {
     const hq = g.buildings().find((b) => b.owner === P)!;
     const mines = g.resources().filter((r) => r.type === 'goldmine').sort((a, b) => dist(a, hq) - dist(b, hq));
     const startMine = mines[0];
-    const natural = mines.find((m) => m.maxAmount === CONFIG.mines.natural && dist(m, hq) < 40)!;
+    const natural = mines.find((m) => m.maxAmount === CONFIG.mineKinds.standard.gold && dist(m, hq) < 40)!;
     const nearestTree = (p: { x: number; y: number }) =>
       g.resources().filter((r) => r.type === 'tree').sort((a, b) => dist(a, p) - dist(b, p))[0];
     const ws = g.units().filter((u) => u.owner === P);

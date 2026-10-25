@@ -160,7 +160,8 @@ export function updateBuilder(game: Game, u: Unit, o: BuildOrder): void {
 
   if (o.phase === 'toSite') {
     if (!atRect(u, f)) {
-      game.moveTo(u, { kind: 'rect', tx: f.tx, ty: f.ty, w: f.w, h: f.h });
+      const goal = { kind: 'rect', tx: f.tx, ty: f.ty, w: f.w, h: f.h } as const;
+      if (!game.moveFailed(u, goal)) game.moveTo(u, goal);
       if (u.move?.state === 'failed') fail(game, u, 'The site cannot be reached.', f.tx + f.w / 2, f.ty + f.h / 2);
       return;
     }

@@ -210,7 +210,7 @@ export class Overlay {
         if (p.visible && p.x > -20 && p.x < canvas.width + 20) {
           let inside = 0;
           for (const u of game.units()) if (u.hidden && u.order?.type === 'gather' && u.order.nodeId === e.id) inside++;
-          const slots = CONFIG.resources.goldmine.maxMiners;
+          const slots = e.miners;
           for (let i = 0; i < slots; i++) {
             ctx.beginPath();
             ctx.arc(p.x - ((slots - 1) * 12) / 2 + i * 12, p.y, 4, 0, Math.PI * 2);

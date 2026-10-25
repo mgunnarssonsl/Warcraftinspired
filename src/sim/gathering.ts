@@ -198,7 +198,7 @@ function depleteMine(game: Game, node: ResourceNode): void {
 function tryStartWork(game: Game, u: Unit, o: GatherOrder, node: ResourceNode): void {
   u.move = null;
   if (node.type === 'goldmine') {
-    if (workingCount(game, node.id) < CONFIG.resources.goldmine.maxMiners) {
+    if (workingCount(game, node.id) < node.miners) {
       o.phase = 'working';
       o.timer = secondsToTicks(CONFIG.units.worker.mineSeconds);
       u.hidden = true;
@@ -238,7 +238,7 @@ export function updateGatherer(game: Game, u: Unit, o: GatherOrder): void {
         return;
       }
       if (o.phase === 'waiting') o.phase = 'toNode';
-      game.moveTo(u, rectGoal(node));
+      if (!game.moveFailed(u, rectGoal(node))) game.moveTo(u, rectGoal(node));
       if (u.move?.state === 'failed') {
         u.move = null;
         retarget(game, u, o, node.id);
@@ -322,7 +322,7 @@ export function updateGatherer(game: Game, u: Unit, o: GatherOrder): void {
         afterDelivery(game, u, o);
         return;
       }
-      game.moveTo(u, rectGoal(drop));
+      if (!game.moveFailed(u, rectGoal(drop))) game.moveTo(u, rectGoal(drop));
       if (u.move?.state === 'failed') goIdle(u);
       return;
     }

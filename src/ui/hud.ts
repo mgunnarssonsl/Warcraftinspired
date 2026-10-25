@@ -9,6 +9,7 @@ import { canAfford } from '../sim/construction';
 import type { Game } from '../sim/game';
 import { abilitiesOf, rank } from '../sim/hero';
 import { buyProblem } from '../sim/items';
+import { flareProblem } from '../sim/commands';
 import { heroProblem, missingRequirement, trainableAt, trainCost } from '../sim/production';
 import { armorValue, attackDamage, attackRange, healAmount, researchAt, researched, researchPending, researchProblem } from '../sim/tech';
 import type { Building, Entity, GameEvent, Unit } from '../sim/types';
@@ -75,6 +76,7 @@ interface ActionDef {
   ability?: AbilityId;
   slot?: number;
   buy?: ItemId;
+  flare?: boolean;
 }
 
 const BUILD_TIPS: Record<BuildingType, string> = {
@@ -97,6 +99,7 @@ const TRAIN_TIPS: Record<UnitType, string> = {
   archer: 'Archer: fragile ranged soldier with pierce damage. Shreds lightly armored units (Archers, Clerics); weak against Lancers and buildings.',
   lancer: 'Lancer: fast cavalry in medium armor that shrugs off arrows. Runs down Archers, Clerics and Mangonels; loses to Guards.',
   cleric: 'Cleric: support. Automatically heals the most wounded nearby ally while it has mana. Its weak magic bolt burns heavy armor (Guards). Fragile.',
+  outrider: 'Outrider: a fast, cheap scout that sees far. It does not pick fights; use it to find the enemy and watch expansions.',
   mangonel: 'Mangonel: siege. Lobs boulders 8 tiles that crush buildings and splash clumps where they land; moving units can dodge. Cannot hit anything within 2 tiles; easy prey for Lancers.',
   brigand: '',
   poacher: '',
@@ -160,6 +163,13 @@ const ACTIONS: ActionDef[] = [
       tip: `${d.desc} ${aim}; ${reach}. ${d.mana} mana, ${d.cooldown}s cooldown. Learned at hero level ${d.learnLevel}; stronger at levels 3 and 5.`,
     };
   }),
+  {
+    id: 'flare' as Action,
+    label: 'Signal Flare',
+    key: 'F',
+    flare: true,
+    tip: `Light up any spot on the map (click the ground or the minimap) for ${CONFIG.flare.seconds}s. ${CONFIG.flare.gold} gold, once every ${CONFIG.flare.cooldown}s.`,
+  },
   ...[0, 1, 2].map((i) => ({
     id: `item:${i}` as Action,
     label: '—',
@@ -217,7 +227,9 @@ export class Hud {
             ? CONFIG.research[a.research].cost
             : a.buy
               ? { gold: CONFIG.items[a.buy].price, wood: 0 }
-              : null;
+              : a.flare
+                ? { gold: CONFIG.flare.gold, wood: 0 }
+                : null;
       b.innerHTML =
         `<span class="cmd-label">${a.label}</span><span class="cmd-key">${a.key}</span>` +
         (cost ? `<span class="cmd-cost"><i class="g">${cost.gold}</i> <i class="w">${cost.wood}</i></span>` : '');
@@ -270,6 +282,45 @@ export class Hud {
 
   /** Called when an attack alert fires (e.g. to ping the minimap). */
   onAlert: (x: number, y: number) => void = () => {};
+  /** Called when scouting spots something worth knowing (a softer ping). */
+  onSighting: (x: number, y: number) => void = () => {};
+  private sightedBuildings = new Set<number>();
+  private armyInView = false;
+  private lastArmySighting = -1e9;
+  private lastSightingCheck = 0;
+
+  /**
+   * Scouting cues: the first sighting of each enemy building (a new Keep is
+   * called out as an expansion) and of an enemy army (3+ soldiers), with a
+   * minimap ping. Only what the viewer's own units and flares reveal.
+   */
+  private checkSightings(nowMs: number): void {
+    if (nowMs - this.lastSightingCheck < 500) return;
+    this.lastSightingCheck = nowMs;
+    const me = this.client.player;
+    const vision = this.game.vision;
+    const firstLook = this.sightedBuildings.size === 0 && this.game.state.tick < 20;
+    for (const m of vision.remembered(me)) {
+      if (this.sightedBuildings.has(m.id)) continue;
+      this.sightedBuildings.add(m.id);
+      if (firstLook) continue;
+      const name = CONFIG.buildings[m.type].name;
+      this.notify(m.type === 'hq' ? `Enemy ${name} spotted: a base or an expansion. (Space: jump there)` : `Enemy ${name} spotted.`, m.type === 'hq' ? 'alert' : '');
+      this.onSighting(m.x, m.y);
+    }
+    const soldiers = this.game
+      .units()
+      .filter((u) => u.owner !== me && !this.game.player(u.owner).neutral && u.type !== 'worker' && vision.canSee(me, u));
+    const inView = soldiers.length >= 3;
+    if (inView && !this.armyInView && nowMs - this.lastArmySighting > 25000) {
+      this.lastArmySighting = nowMs;
+      const x = soldiers.reduce((s, u) => s + u.x, 0) / soldiers.length;
+      const y = soldiers.reduce((s, u) => s + u.y, 0) / soldiers.length;
+      this.notify(`Enemy army sighted: ${soldiers.length} soldiers. (Space: jump there)`, 'alert');
+      this.onSighting(x, y);
+    }
+    this.armyInView = inView;
+  }
   private lastAlert = { t: -1e9, x: 0, y: 0 };
 
   handleEvents(events: GameEvent[]): void {
@@ -337,6 +388,7 @@ export class Hud {
 
   update(nowMs: number): void {
     const p = this.game.player(this.client.player);
+    if (!p.defeated) this.checkSightings(nowMs);
     setText(this.gold, String(p.gold));
     setText(this.wood, String(p.wood));
     const used = this.game.popUsed(p.id);
@@ -355,7 +407,8 @@ export class Hud {
       const e = this.game.get(id);
       if (!e) return false;
       if (this.client.revealAll || e.owner === this.client.player || e.kind === 'resource') return true;
-      return e.kind === 'unit' ? this.game.vision.canSee(this.client.player, e) : this.game.vision.knows(this.client.player, e);
+      if (e.kind === 'building' && this.game.player(e.owner).neutral) return true;
+      return this.game.vision.canSee(this.client.player, e);
     });
     if (alive.length !== this.client.selected.length) {
       this.client.selected = alive;
@@ -407,6 +460,18 @@ export class Hud {
           btn.disabled = !!problem && !problem.startsWith('Not enough');
           btn.classList.toggle('poor', !!problem && problem.startsWith('Not enough'));
           btn.title = `${CONFIG.research[r].desc}${problem ? ` (${researchPending(this.game, p.id, r) ? 'In progress' : problem})` : ''} [${a.key}]`;
+        }
+        continue;
+      }
+      if (a.flare) {
+        const keep = ownB?.type === 'hq' && ownB.progress >= 1 ? ownB : undefined;
+        btn.classList.toggle('hidden', !keep);
+        if (keep) {
+          const problem = flareProblem(this.game, p.id, keep.id);
+          btn.disabled = !!problem && !problem.startsWith('Not enough');
+          btn.classList.toggle('poor', !!problem && problem.startsWith('Not enough'));
+          btn.classList.toggle('active', this.client.targetMode === 'flare');
+          btn.title = `${a.tip}${problem ? ` (${problem})` : ''} [F]`;
         }
         continue;
       }
@@ -569,8 +634,16 @@ export class Hud {
       const done = researchAt(e.type).filter((r) => researched(this.game, e.owner, r));
       if (done.length && e.owner === this.client.player) row('Researched', done.map((r) => CONFIG.research[r].name).join(', '));
     } else if (e.type === 'goldmine') {
-      box.appendChild(el('div', 'sel-title', CONFIG.resources.goldmine.name));
+      const rich = e.miners > CONFIG.resources.goldmine.maxMiners;
+      box.appendChild(el('div', 'sel-title', rich ? CONFIG.mineKinds.rich.name : CONFIG.resources.goldmine.name));
       row('Gold left', `${e.amount} / ${e.maxAmount}`);
+      if (rich) row('Rich', `${e.miners} Laborers mine at once: half again the income`);
+      // The risk side, as far as you know: a camp you have found and not seen cleared.
+      const me = this.client.player;
+      const camp = this.game.state.camps.find(
+        (c) => Math.hypot(c.x - e.x, c.y - e.y) < 5 && this.game.vision.isExplored(me, Math.floor(c.x), Math.floor(c.y)) && !(c.seenClear & (1 << me)),
+      );
+      if (camp) row('Guarded', `level ${camp.level} camp (drops ${CONFIG.items[camp.drop].name})`);
       let inside = 0;
       let waiting = 0;
       for (const u of this.game.units()) {
@@ -579,7 +652,7 @@ export class Hud {
         if (o.phase === 'working') inside++;
         if (o.phase === 'waiting') waiting++;
       }
-      row('Miners inside', `${inside} / ${CONFIG.resources.goldmine.maxMiners}${waiting ? ` (+${waiting} waiting)` : ''}`);
+      row('Miners inside', `${inside} / ${e.miners}${waiting ? ` (+${waiting} waiting)` : ''}`);
     } else {
       box.appendChild(el('div', 'sel-title', CONFIG.resources.tree.name));
       row('Wood left', `${e.amount} / ${e.maxAmount}`);

@@ -25,6 +25,9 @@ computer opponents. No campaign or story.
 - Phase C: three heroes with distinct roles, items and a three-slot
   inventory, camps at three levels that drop items, Trading Posts and
   Healing Fountains, and explicit death and revival rules
+- Phase D: map control and exploration. It adds three hand-designed maps,
+  mines with different risks and rewards, fog that remembers what you saw,
+  scouting tools (the Outrider and the Signal Flare) and sighting cues.
 
 See [Roadmap](#roadmap).
 
@@ -35,7 +38,8 @@ Requires Node 20+.
 ```sh
 npm install
 npm run dev        # http://localhost:5173
-                   # optional: ?difficulty=easy|normal|hard&seed=N&start=1 (skip the start screen)
+                   # optional: ?difficulty=easy|normal|hard&map=vales|river|highland&seed=N
+                   #           &start=1 (skip the start screen)
 npm test           # simulation tests (vitest)
 npm run build      # typecheck + production bundle in dist/
 ```
@@ -59,6 +63,7 @@ npm run build      # typecheck + production bundle in dist/
 | Z, X, C (hero selected) | Use the item in that inventory slot. Right-click a slot to drop it. |
 | Right-click an item (hero selected) | Walk over and pick it up |
 | Q, W, E, R, T, Y, D (Trading Post selected) | Buy that item for your hero standing next to the Post |
+| F, then click (Keep selected) | Signal Flare: light up any spot on the map (25 gold). The click can be on the minimap. |
 | Right-click (Keep or Barracks selected) | Set the rally point. On a mine or tree, newly trained Laborers start gathering there. |
 | Click a queue slot | Cancel that unit (full refund) |
 | X | Cancel construction (75% refund), or the last queued unit (full refund) |
@@ -66,7 +71,7 @@ npm run build      # typecheck + production bundle in dist/
 | Ctrl+1–9 / 1–9 | Set / recall a control group (press twice to center the camera) |
 | Hold and drag the right or middle mouse button | Grab the map and drag it: the ground under the cursor follows the mouse. A right-click released without dragging is still a normal command. |
 | Arrows, screen edge | Pan the camera. The mouse wheel zooms toward the cursor, and the camera tilts flatter as you zoom in. |
-| Minimap | Left-click jumps the camera there. Right-click moves the selected units there. |
+| Minimap | Left-click jumps the camera there, or aims a pending flare, attack-move or move. Right-click moves the selected units there. |
 | Space | Jump to the latest alert, or to the current selection |
 | P | Pause |
 | F10 or the Menu button | Menu: resume, restart, new match, surrender (pauses the game) |
@@ -76,7 +81,7 @@ npm run build      # typecheck + production bundle in dist/
 | Building | Q | W | E |
 | --- | --- | --- | --- |
 | Keep | Laborer | Fortify to Castle, then to Citadel | Mule Carts |
-| Barracks | Guard | Archer | Lancer (tier II) |
+| Barracks | Guard | Archer | Lancer (tier II); R trains an Outrider |
 | Hall of Valor | Marshal (or revive) | Pathfinder (or revive) | Sage (or revive) |
 | Blacksmith | weapons I–III | armor I–III | |
 | Lumber Mill | Bow Saws | Longbows (tier II) | |
@@ -132,12 +137,21 @@ These are the rules as implemented. All numbers live in `src/sim/config.ts`.
   pays the same costs, has the same population limits and build times, and
   gets no extra resources. It plays under the same fog of war. It knows:
   - enemy units it currently sees;
-  - enemy buildings it has seen;
+  - enemy buildings it has seen, as it last saw them (the same memory
+    you get);
   - camps it has spotted;
   - the public start locations.
 
   When it knows of no enemy building, its waves head for the enemy start
   location first, then search mine sites.
+- **Scouting:** Normal and Hard train one Outrider after the first
+  Barracks (up to three over a match, if scouts die). It tours the enemy
+  start and then every expansion, nearest to the enemy first, skipping camps
+  it knows. When a wave has no known building to aim at, they fire a Signal
+  Flare over the spot first. Easy does neither.
+- **Expansions:** it weighs a mine's reward against its walk: a rich mine is
+  worth 12 tiles more walking, a full-size one 5. It skips mines next to any
+  Keep it knows of, its own or remembered enemy ones.
 - **Memory, not cheating:** it remembers enemy soldiers it has seen for two
   minutes (forgetting any it saw die), and counts them when judging whether
   it is strong enough to attack. Without this it would attack into an army
@@ -176,7 +190,8 @@ These are the rules as implemented. All numbers live in `src/sim/config.ts`.
     hero (or the toughest fighter) with Stormhammer, and uses Battle Cry when
     3 or more allies are close.
   - Between attacks, Normal and Hard take the army and hero to clear camps on
-    their own half of the map for experience and bounty.
+    their own half of the map for experience and bounty: first camps they
+    have actually spotted (lairs included), then mines they have not checked.
   - Normal and Hard build a Blacksmith. They research Forged Blades, Studded
     Armor and Bow Saws, then fortify to a Castle (Normal at 12:00, Hard at
     9:00) and research the tier II upgrades.
@@ -400,7 +415,7 @@ All numbers are in `CONFIG.units[*].attack`, `CONFIG.combat` and
 
 ## Fair seats
 
-The map is point-symmetric, so neither starting position should be better.
+Every map is point-symmetric, so neither starting position should be better.
 AI-vs-AI playtests showed one was: in the first Phase B run, player 1 won
 64% of evenly matched games. A mirror check found the causes. It steps two
 identical computers and compares each side with the other rotated 180°,
@@ -460,7 +475,14 @@ there is no systematic bias.
 
   The minimap shows the same.
 - **What fog hides:** enemy units are shown only while you can see them.
-  Enemy buildings stay shown, and attackable, once you have seen them.
+  Enemy buildings are live only while in view. Out of view you see a
+  *remembered* building: a dimmed ghost in the 3D view and an outline on the
+  minimap, as it was when you last saw it (a foundation stays a foundation).
+  A building destroyed out of sight stays in your memory until you look at
+  the spot again. Right-clicking a ghost attack-moves to it.
+- **Camps in memory:** a camp you have found is marked on the minimap by its
+  level (yellow 1, orange 2, red 3). The marker stays until you see the camp
+  cleared, so someone else clearing it out of your sight doesn't tell you.
 - **The same rules for everyone:** auto-targeting, towers and attack orders
   only work on what the owner can see. A unit ordered to chase a target out
   of sight runs to where it was last seen, and picks the chase back up if it
@@ -596,26 +618,87 @@ Three heroes with distinct roles, trained at the Hall of Valor (hotkey V;
   | Swift Boots | camp drop only | +0.6 speed |
   | Gauntlets of Might | camp drop only | +9 damage |
   | Seer's Circlet | camp drop only | +120 mana |
-- **Camps** guard the richer mines at three levels. When the last guard of
+- **Camps** guard the richer mines at three levels; each map places them
+  (see [Maps](#maps-and-map-control)). When the last guard of
   a camp dies, it drops an item where it fell. Selecting a guard shows its
   camp's level and drop.
 
   | Level | Where | Guards | Drops |
   | --- | --- | --- | --- |
   | 1 | Natural expansions | Brigand, Timber Wolf | a consumable |
-  | 2 | Far expansions | Brigand Chief, Brigand, Poacher | a tier-1 item |
-  | 3 | Centre mines | Bog Brute, Brigand Chief, Poacher | a tier-2 item (Boots, Gauntlets or Circlet) |
+  | 2 | Far expansions; Rivercross lair | Brigand Chief, Brigand, Poacher (lair: Chief, two Wolves, Poacher) | a tier-1 item (lair: tier 2) |
+  | 3 | Rich mines; Highland lair | Bog Brute, Brigand Chief, Poacher (lair: two Brutes, Poacher) | a tier-2 item (Boots, Gauntlets or Circlet) |
 
-  Mirrored camps drop the same item. The small mine beside each base stays
-  unguarded: a camp there mauled Laborers in testing.
+  A *lair* guards no mine; it is there for the hero's experience and the
+  item. The level-2 lair drops a top-tier item; the level-3 lair has harder
+  guards than a level-3 mine camp for the same drop. Mirrored camps drop the
+  same item. The small mine beside each base stays unguarded: a camp there
+  mauled Laborers in testing.
 - **Trading Posts** (two) sell the first seven items to any hero standing
   within 4 tiles. Select the Post and press the item's key (Q, W, E, R, T,
   Y, D).
 - **Healing Fountains** (two) heal every unit within 5 tiles, any owner, by
   15 health and 3 mana per second.
-- **Placement:** Posts and Fountains sit on the line of points equally far
-  from both starts, at least 9 tiles from any mine. Like mines, they are
-  known from the start. They can't be attacked.
+- **Placement:** Rivercross and Highland Crown place them by hand. On Twin
+  Vales they sit on the line of points equally far from both starts, at
+  least 9 tiles from any mine. Like mines, they are known from the start.
+  They can't be attacked.
+
+## Maps and map control
+
+Maps are data (`src/sim/maps.ts`). Each is authored for one half and
+rotated 180° for the other, so both starts get the same distances, mines,
+camps and objectives (tested tile for tile). The seed only roughens forest
+and lake edges; a map's strategic layout never changes. Pick the map on the
+start screen, or with `?map=vales|river|highland`.
+
+**Mines.** Every expansion trades safety against reward:
+
+| Kind | Gold | Miners at once | Typical guard |
+| --- | --- | --- | --- |
+| Start | 7000 | 2 | none |
+| Small (pocket) | 800–3000 | 2 | none |
+| Standard | 9000 | 2 | level 1 (natural) or 2 (far) |
+| Rich | 14000 | **3** | level 3 |
+
+A rich mine supports a third miner, so one Keep there earns half as much
+again. It is shown larger on the minimap and labelled *Rich* when selected.
+A mine panel also says *Guarded* when you know of a camp beside it.
+
+**The maps** (walking distance in tiles from the Keep door; the enemy Keep
+is 86–94 away on all three):
+
+| Map | Idea | Safe | Natural | Contested | Rich |
+| --- | --- | --- | --- | --- | --- |
+| **Twin Vales** | Open valleys split by ridges with gaps; many routes, little to hold. | tiny 800 at 10 | 21 (camp 1) | far mine behind the forest at 33 (camp 2) | centre flank at 44 (camp 3) |
+| **Rivercross** | A river runs corner to corner; three fords are the only crossings. Holding a ford holds a route. | pocket 3000 at 16 | 15 (camp 1) | ford mine at 36 and far mine at 43 (camp 2); a level-2 lair; Trading Post and Fountain on your bank | centre at 31 beside the middle ford (camp 3) |
+| **Highland Crown** | A walled plateau in the centre, entered by two ramps that face the flanks. | pocket 3000 at 19 | 17 (camp 1) | flank mine at 39 (camp 2); Trading Post on the low road | on the crown at 52 (camp 3), with a Fountain; a level-3 lair below the wall |
+
+What the layouts are for:
+- **Rivercross:** the rich mine is close but sits on the main crossing,
+  where the armies meet.
+- **Highland Crown:** the rich mines are the furthest walk, but the plateau
+  is easy to defend from its two ramps.
+- **Every map:** a safe pocket mine lets a cautious player expand without a
+  fight.
+
+**Exploration and information.**
+- **Remembered buildings:** see [Fog of war](#fog-of-war). What you know of
+  the enemy is what you last saw, for you and the computer alike.
+- **Outrider** (Barracks, R; 70 gold, 1 population):
+  - a fast (4.3) scout with 12 sight, the widest of any unit;
+  - 180 health, and it never picks fights on its own.
+- **Signal Flare** (Keep, F; 25 gold, once every 40 s per player): lights
+  up an 8-tile circle anywhere for 8 s. It works through the minimap too.
+- **Sighting cues:**
+  - The first time you see each enemy building, a notice says so and the
+    minimap pings yellow. An enemy Keep is called out as *a base or an
+    expansion*.
+  - Three or more enemy soldiers coming into view gives *Enemy army
+    sighted*, at most every 25 s.
+  - Space jumps to the latest cue.
+- **Camp markers:** found camps are marked on the minimap by level until
+  you see them cleared.
 
 ## Architecture
 
@@ -632,13 +715,14 @@ src/sim/      deterministic simulation (no DOM access)
   movement.ts   path following, unit separation, stuck recovery
   pathfinding.ts  grid A* (8-way, no corner cutting) + line-of-sight smoothing
   nav.ts        derived passability grid, footprints, connected components
-  mapgen.ts     "Twin Vales": point-symmetric 96×72 skirmish map
+  maps.ts       hand-designed maps as data (mines, camps, lairs, objectives, terrain features)
+  mapgen.ts     builds a point-symmetric map from its definition
   rng.ts        seeded PRNG + hash/value noise
   construction.ts placement checks, construction model, cancel/refund
   production.ts training queues, population reservation, rally, refunds
   combat.ts     targeting, attack orders, wind-up/cooldown, projectiles, armor, death
   outcome.ts    defeat, victory, draw, surrender
-  vision.ts     fog of war: per-player visibility, explored tiles, seen buildings
+  vision.ts     fog of war: per-player visibility, explored tiles, remembered buildings
   tech.ts       research rules and effective damage / armor / carry
   hero.ts       experience, levels, bounty, abilities, stun and buffs
 src/render3d/ three.js view (reads state, never writes it)

@@ -5,6 +5,7 @@ import { emptyStats, TERRAIN, type GameState } from '../src/sim/types';
 export function emptyGame(width = 32, height = 24): Game {
   const state: GameState = {
     seed: 1,
+    mapId: 'test',
     tick: 0,
     nextId: 1,
     rng: 1,
@@ -23,6 +24,7 @@ export function emptyGame(width = 32, height = 24): Game {
       stats: emptyStats(),
       research: {},
       heroes: [],
+      flareReady: 0,
     })),
     entities: {},
     projectiles: [],
@@ -33,6 +35,7 @@ export function emptyGame(width = 32, height = 24): Game {
     items: [],
     camps: [],
     reveals: [],
+    memory: [],
   };
   return new Game(state);
 }

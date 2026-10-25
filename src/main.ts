@@ -9,6 +9,7 @@ import { Overlay } from './render3d/overlay';
 import { World3D } from './render3d/world';
 import { TICK_SECONDS } from './sim/config';
 import { Game } from './sim/game';
+import { mapById } from './sim/maps';
 import { Hud } from './ui/hud';
 import { Minimap } from './ui/minimap';
 import { Objectives } from './ui/objectives';
@@ -19,12 +20,13 @@ const params = new URLSearchParams(location.search);
 const seed = params.has('seed') ? Number(params.get('seed')) | 0 : newSeed();
 const difficultyParam = params.get('difficulty');
 const difficulty: Difficulty = difficultyParam === 'easy' || difficultyParam === 'hard' ? difficultyParam : 'normal';
+const mapId = mapById(params.get('map') ?? undefined).id;
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const overlayCanvas = document.getElementById('overlay') as HTMLCanvasElement;
 const minimapCanvas = document.getElementById('minimap') as HTMLCanvasElement;
 
-const game = Game.create(seed);
+const game = Game.create(seed, mapId);
 const client = createClientState(0);
 const world = new World3D(canvas, game);
 const overlay = new Overlay(overlayCanvas, game, world.rig);
@@ -37,9 +39,10 @@ const hud = new Hud(game, client, input);
 const computer = new ComputerPlayer(1, difficulty);
 game.player(1).name = `Computer (${difficulty})`;
 hud.onAlert = (x, y) => minimap.ping(x, y, '#ff4a3a', now());
+hud.onSighting = (x, y) => minimap.ping(x, y, '#ffd84a', now());
 const objectives = new Objectives(game, client.player);
 objectives.onComplete = (text) => hud.notify(`Objective complete: ${text}`, 'good');
-const screens = new Screens(game, { seed, difficulty }, client.player);
+const screens = new Screens(game, { seed, difficulty, mapId }, client.player);
 screens.onClose = () => {
   client.modalOpen = false;
   // After the match, "Keep watching" lifts the fog so the whole map can be seen.
@@ -79,6 +82,8 @@ world.rig.centerOn(home.x + 4, home.y);
 
 minimapCanvas.addEventListener('mousedown', (e) => {
   const p = minimap.toMap(e.clientX, e.clientY);
+  // A targeting mode (Signal Flare, attack-move, move) aims at the clicked spot.
+  if (e.button === 0 && input.targetAtMap(p.x, p.y)) return;
   if (e.button === 0) world.rig.centerOn(p.x, p.y);
   else if (e.button === 2) {
     const ids = client.selected.filter((id) => game.unit(id)?.owner === client.player);

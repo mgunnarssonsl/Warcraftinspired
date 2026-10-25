@@ -6,6 +6,10 @@ import type { CameraRig } from '../render3d/cameraRig';
 import type { Game } from '../sim/game';
 import type { GameEvent } from '../sim/types';
 import { TERRAIN } from '../sim/types';
+import { CONFIG } from '../sim/config';
+
+/** Camp markers by level: easy yellow, medium orange, hard red. */
+const CAMP_COLORS: Record<number, string> = { 1: '#f0d060', 2: '#f09a40', 3: '#e0503a' };
 
 interface Ping {
   x: number;
@@ -70,13 +74,25 @@ export class Minimap {
     ctx.drawImage(this.base, 0, 0, this.canvas.width, this.canvas.height);
     const vision = this.game.vision;
     const me = client.player;
+    const neutral = (owner: number) => !!this.game.state.players[owner]?.neutral;
     const seen = (e: import('../sim/types').Entity) =>
-      client.revealAll || e.owner === me || (e.kind === 'unit' ? vision.canSee(me, e) : e.kind === 'building' ? vision.knows(me, e) : true);
+      client.revealAll || e.owner === me || e.kind === 'resource' || (e.kind === 'building' && neutral(e.owner)) || vision.canSee(me, e);
+    // Enemy buildings out of view: outlines where they were last seen.
+    if (!client.revealAll) {
+      ctx.lineWidth = 1;
+      for (const m of vision.remembered(me)) {
+        const b = this.game.building(m.id);
+        if (b && vision.canSee(me, b)) continue;
+        ctx.strokeStyle = this.game.player(m.owner).color;
+        ctx.strokeRect(m.tx * sx - 0.5, m.ty * sy - 0.5, m.w * sx + 1, m.h * sy + 1);
+      }
+    }
     for (const e of Object.values(this.game.state.entities)) {
       if (!seen(e)) continue;
       if (e.kind === 'resource') {
-        ctx.fillStyle = e.type === 'tree' ? '#1f4526' : '#ffd84a';
-        ctx.fillRect(e.tx * sx, e.ty * sy, Math.max(1, e.w * sx), Math.max(1, e.h * sy));
+        ctx.fillStyle = e.type === 'tree' ? '#1f4526' : e.miners > CONFIG.resources.goldmine.maxMiners ? '#ffe9a8' : '#ffd84a';
+        const pad = e.type === 'goldmine' && e.miners > CONFIG.resources.goldmine.maxMiners ? 1 : 0; // rich mines read bigger
+        ctx.fillRect(e.tx * sx - pad, e.ty * sy - pad, Math.max(1, e.w * sx) + 2 * pad, Math.max(1, e.h * sy) + 2 * pad);
       } else if (e.kind === 'building') {
         ctx.fillStyle = this.game.player(e.owner).color;
         ctx.fillRect(e.tx * sx - 1, e.ty * sy - 1, e.w * sx + 2, e.h * sy + 2);
@@ -103,6 +119,20 @@ export class Minimap {
       fctx.putImageData(img, 0, 0);
       ctx.imageSmoothingEnabled = true;
       ctx.drawImage(this.fogCanvas, 0, 0, this.canvas.width, this.canvas.height);
+    }
+    // Camps you have found, marked with their level until you see them cleared.
+    ctx.font = 'bold 8px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const c of this.game.state.camps) {
+      const known = client.revealAll ? !c.cleared : vision.isExplored(me, Math.floor(c.x), Math.floor(c.y)) && !(c.seenClear & (1 << me));
+      if (!known) continue;
+      ctx.fillStyle = CAMP_COLORS[c.level] ?? '#c0392b';
+      ctx.beginPath();
+      ctx.arc(c.x * sx, c.y * sy, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#1a140c';
+      ctx.fillText(String(c.level), c.x * sx, c.y * sy + 0.5);
     }
     // Camera view: the ground trapezoid under the screen corners.
     const corners = [

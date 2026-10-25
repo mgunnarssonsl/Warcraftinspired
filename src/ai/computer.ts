@@ -25,6 +25,7 @@ import { hasCompleted, heroProblem, missingRequirement, trainableAt, trainCost }
 import { researched, researchPending, researchProblem } from '../sim/tech';
 import type { Building, Entity, ResourceNode, Unit } from '../sim/types';
 import { findSite } from './placement';
+import { flareProblem } from '../sim/commands';
 
 export type Difficulty = keyof typeof CONFIG.ai.profiles;
 type Widen<T> = T extends number ? number : T extends boolean ? boolean : T;
@@ -104,7 +105,9 @@ export class ComputerPlayer {
     const out: Array<Unit | Building> = [];
     const v = game.vision;
     for (const u of game.units()) if (isEnemy(game, this.player, u.owner) && !u.hidden && v.canSee(this.player, u)) out.push(u);
-    for (const b of game.buildings()) if (isEnemy(game, this.player, b.owner) && v.knows(this.player, b)) out.push(b);
+    // Buildings in view right now; ones seen earlier are in vision memory
+    // (as last seen), which is what waves aim at.
+    for (const b of game.buildings()) if (isEnemy(game, this.player, b.owner) && v.canSee(this.player, b)) out.push(b);
     for (const u of out) {
       if (u.kind !== 'unit' || !game.player(u.owner).neutral || !u.home) continue;
       if (!this.campsSeen.some((c) => dist(c, u.home!) < 4)) this.campsSeen.push({ ...u.home });
@@ -134,7 +137,9 @@ export class ComputerPlayer {
     const P = this.player;
     const units = game.units().filter((u) => u.owner === P);
     const workers = units.filter((u) => u.type === 'worker');
-    const army = units.filter((u) => u.type !== 'worker');
+    // Scouts are not soldiers: they scout and stay out of waves.
+    const army = units.filter((u) => u.type !== 'worker' && u.type !== 'outrider');
+    this.scoutRoutes(game, units.filter((u) => u.type === 'outrider'));
     const buildings = game.buildings().filter((b) => b.owner === P);
     const keeps = buildings.filter((b) => b.type === 'hq' && b.progress >= 1);
     const plan = this.planBuilding(game, workers, buildings);
@@ -282,12 +287,18 @@ export class ComputerPlayer {
     const home = buildings.find((b) => b.type === 'hq') ?? buildings[0];
     if (!home) return undefined;
     const hostiles = [...this.visible(game).filter((e) => e.kind === 'unit'), ...this.campsSeen];
+    const keeps = [
+      ...game.buildings().filter((b) => b.type === 'hq' && b.owner === this.player),
+      ...game.vision.remembered(this.player).filter((m) => m.type === 'hq'),
+    ];
+    // Reward against distance: a rich mine is worth a longer walk, a small one less.
+    const cost = (m: ResourceNode) => dist(m, home) - CONFIG.ai.richMineBonus * (m.miners - CONFIG.resources.goldmine.maxMiners) - (m.amount >= CONFIG.mineKinds.standard.gold ? CONFIG.ai.fullMineBonus : 0);
     return game
       .resources()
       .filter((m) => m.type === 'goldmine' && m.amount > 2000)
-      .filter((m) => !game.buildings().some((b) => b.type === 'hq' && distToRect(m.x, m.y, b) < 12))
+      .filter((m) => !keeps.some((b) => distToRect(m.x, m.y, b) < 12))
       .filter((m) => !hostiles.some((h) => dist(h, m) < 9)) // guarded: leave it
-      .sort((a, b) => dist(a, home) - dist(b, home))[0];
+      .sort((a, b) => cost(a) - cost(b))[0];
   }
 
   private siteFor(game: Game, type: BuildingType, buildings: Building[], keeps: Building[]) {
@@ -379,6 +390,13 @@ export class ComputerPlayer {
       }
     }
     this.research(game, buildings, reserve);
+    // Keep a scout or two out once there is a Barracks.
+    const rax = buildings.find((b) => b.type === 'barracks' && b.progress >= 1 && b.queue.length < 2);
+    const scouts = game.units().filter((u) => u.owner === P && u.type === 'outrider').length + buildings.reduce((n, b) => n + b.queue.filter((q) => q.unit === 'outrider').length, 0);
+    if (rax && scouts < this.profile.scouts && this.scoutsTrained < CONFIG.ai.maxScouts && me.gold - reserve.gold >= CONFIG.units.outrider.cost.gold) {
+      game.issue({ type: 'train', player: P, buildingId: rax.id, unit: 'outrider' });
+      this.scoutsTrained++;
+    }
     const mix = this.wantedMix(game);
     const total = Object.values(mix).reduce((a, b) => a + b, 0) || 1;
     const counts = new Map<UnitType, number>();
@@ -455,6 +473,43 @@ export class ComputerPlayer {
       if (me.gold - reserve.gold - CONFIG.ai.researchBuffer < def.cost.gold || me.wood - reserve.wood < def.cost.wood) return;
       game.issue({ type: 'research', player: P, buildingId: b.id, research: id });
       return; // one new research per think
+    }
+  }
+
+  private scoutsTrained = 0;
+  private lastFlare = -1e9;
+
+  /** Light up a spot with a Signal Flare from one of its Keeps, if it can. */
+  private flare(game: Game, keeps: Building[], at: { x: number; y: number }): void {
+    const now = game.state.tick;
+    if (!this.profile.flares || now - this.lastFlare < secondsToTicks(CONFIG.flare.cooldown)) return;
+    const keep = keeps.find((k) => !flareProblem(game, this.player, k.id));
+    if (!keep || game.player(this.player).gold < CONFIG.flare.gold + CONFIG.ai.researchBuffer) return;
+    this.lastFlare = now;
+    game.issue({ type: 'flare', player: this.player, buildingId: keep.id, x: at.x, y: at.y });
+  }
+
+  /** Next stop on each Outrider's route. */
+  private scoutStop = new Map<number, number>();
+
+  /**
+   * Outriders tour the enemy start and every expansion, nearest to the
+   * enemy first, skipping camps it knows about; an idle scout heads on.
+   */
+  private scoutRoutes(game: Game, scouts: Unit[]): void {
+    if (!scouts.length) return;
+    const P = this.player;
+    const foe = game.state.starts.find((_, p) => p !== P && !game.player(p).neutral);
+    if (!foe) return;
+    const stops = [foe, ...game.resources().filter((m) => m.type === 'goldmine').map((m) => ({ x: m.x, y: m.y }))]
+      .filter((s) => !this.campsSeen.some((c) => dist(c, s) < 7))
+      .sort((a, b) => dist(a, foe) - dist(b, foe));
+    for (const s of scouts) {
+      if (s.order !== null) continue;
+      const i = this.scoutStop.get(s.id) ?? 0;
+      const stop = stops[i % stops.length];
+      this.scoutStop.set(s.id, i + 1);
+      game.issue({ type: 'move', player: P, units: [s.id], x: stop.x, y: stop.y });
     }
   }
 
@@ -574,7 +629,7 @@ export class ComputerPlayer {
         const def = CONFIG.hero.abilities[ability];
         if (ability === 'farsight') {
           // Scout the enemy base before a wave goes in blind.
-          const known = enemies.some((e) => e.kind === 'building' && !game.player(e.owner).neutral);
+          const known = game.vision.remembered(P).some((m) => !game.player(m.owner).neutral);
           const start = game.state.starts.find((_, p) => p !== P && !game.player(p).neutral && !game.player(p).defeated);
           if (!known && this.wave.length && start && tryCast(ability, -1, start.x, start.y)) break;
           continue;
@@ -684,7 +739,7 @@ export class ComputerPlayer {
     const idleWave = waveUnits.filter((u) => u.orderQueue.length === 0 && (u.order === null || u.order.type === 'move'));
     if (!idleWave.length) return;
     const c = centroid(waveUnits);
-    const targets: Array<{ x: number; y: number }> = enemies.filter((e) => e.kind === 'building' && !game.player(e.owner).neutral);
+    const targets: Array<{ x: number; y: number }> = game.vision.remembered(P).filter((m) => !game.player(m.owner).neutral);
     // No known enemy building: search. Start locations first, then mine
     // sites (where expansions go), skipping places a wave already checked.
     if (!targets.length) {
@@ -700,6 +755,8 @@ export class ComputerPlayer {
     }
     if (!targets.length) return;
     const t = targets.reduce((a, b) => (dist(b, c) < dist(a, c) ? b : a));
+    // Searching blind: light up the spot first.
+    if (!game.vision.remembered(P).some((m) => !game.player(m.owner).neutral)) this.flare(game, keeps, t);
     this.lastWaveOrder = now;
     // March around known camps rather than through them: detour waypoints
     // first (Shift-queued, as a player would), then on to the target.
@@ -772,12 +829,20 @@ export class ComputerPlayer {
     if (!home) return null;
     const mine = game.state.starts[this.player];
     const enemyStarts = game.state.starts.filter((_, p) => p !== this.player);
-    const keepsKnown = game.buildings().filter((b) => b.type === 'hq' && (b.owner === this.player || game.vision.knows(this.player, b)));
+    const keepsKnown = [
+      ...game.buildings().filter((b) => b.type === 'hq' && b.owner === this.player),
+      ...game.vision.remembered(this.player).filter((m) => m.type === 'hq'),
+    ];
+    const ownHalf = (p: { x: number; y: number }) => enemyStarts.every((e) => dist(p, mine) < dist(p, e));
+    // Camps it has actually spotted (lairs included) first, then mines it has
+    // not checked yet.
+    const camps = this.campsSeen.filter((c) => ownHalf(c) && !this.cleared.has(`${c.x},${c.y}`)).sort((a, b) => dist(a, home) - dist(b, home));
+    if (camps[0]) return { x: camps[0].x, y: camps[0].y };
     const options = game
       .resources()
       .filter((m) => m.type === 'goldmine' && !this.cleared.has(`${m.x},${m.y}`))
       .filter((m) => !keepsKnown.some((k) => distToRect(m.x, m.y, k) < 12))
-      .filter((m) => enemyStarts.every((e) => dist(m, mine) < dist(m, e)))
+      .filter(ownHalf)
       .sort((a, b) => dist(a, home) - dist(b, home));
     return options[0] ? { x: options[0].x, y: options[0].y } : null;
   }

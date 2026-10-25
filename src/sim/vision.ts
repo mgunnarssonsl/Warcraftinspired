@@ -10,7 +10,7 @@
 
 import { CONFIG } from './config';
 import type { Game } from './game';
-import type { Building, Entity, Unit } from './types';
+import type { Building, Entity, RememberedBuilding, Unit } from './types';
 
 export class Vision {
   readonly w: number;
@@ -76,6 +76,42 @@ export class Vision {
     // Remember which players have laid eyes on each building.
     for (const b of game.buildings())
       for (let p = 0; p < state.players.length; p++) if (!(b.seenBy & (1 << p)) && this.seesBuilding(p, b)) b.seenBy |= 1 << p;
+    this.updateMemory();
+  }
+
+  /**
+   * Last-seen snapshots of enemy buildings: refreshed while in view, kept
+   * while out of view, dropped once the spot is in view and the building is
+   * no longer there.
+   */
+  private updateMemory(): void {
+    const { game } = this;
+    const state = game.state;
+    while (state.memory.length < state.players.length) state.memory.push([]);
+    for (let p = 0; p < state.players.length; p++) {
+      if (state.players[p].neutral) continue;
+      for (const c of state.camps) if (c.cleared && !(c.seenClear & (1 << p)) && this.isVisible(p, Math.floor(c.x), Math.floor(c.y))) c.seenClear |= 1 << p;
+      const mem = state.memory[p];
+      for (const b of game.buildings()) {
+        if (b.owner === p || state.players[b.owner]?.neutral || !this.seesBuilding(p, b)) continue;
+        const snap = { id: b.id, type: b.type, owner: b.owner, tx: b.tx, ty: b.ty, w: b.w, h: b.h, x: b.x, y: b.y, tier: b.tier, done: b.progress >= 1, tick: state.tick };
+        const i = mem.findIndex((m) => m.id === b.id);
+        if (i >= 0) mem[i] = snap;
+        else mem.push(snap);
+      }
+      state.memory[p] = mem.filter((m) => {
+        const live = game.building(m.id);
+        if (live && live.tx === m.tx && live.ty === m.ty) return true;
+        // Gone (or replaced): forget it only once its footprint is in view.
+        for (let ty = m.ty; ty < m.ty + m.h; ty++) for (let tx = m.tx; tx < m.tx + m.w; tx++) if (this.isVisible(p, tx, ty)) return false;
+        return true;
+      });
+    }
+  }
+
+  /** Enemy buildings this player remembers (as last seen). */
+  remembered(player: number): readonly RememberedBuilding[] {
+    return this.game.state.memory[player] ?? [];
   }
 
   private seesBuilding(p: number, b: Building): boolean {
