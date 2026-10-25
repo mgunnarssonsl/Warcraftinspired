@@ -1082,6 +1082,58 @@ which are never shipped to players.
   - **Seats:** identical computers split 5–5 over ten maps. The strategy
     runs leaned slightly toward player 2 (153–123), which is within noise
     but worth watching.
+- **Phase D tests** (`tests/maps.test.ts`), run on every map:
+  - Exact point symmetry of terrain, trees, mines, camps, lairs and
+    objectives.
+  - Mirrored walking distances from both Keeps to every mine and objective.
+  - Risk and reward: rich mines carry level-3 camps and lie further than
+    the natural mine, and an unguarded mine is near home.
+  - Rivercross: the fords are the only crossings. Highland Crown: the
+    ramps are the only way onto the plateau.
+  - A rich mine works three miners at once.
+  - A building destroyed out of sight stays remembered until you look.
+  - A camp counts as cleared only once you have seen it cleared.
+  - Signal Flare reveal, cost, expiry and cooldown.
+  - The Outrider's sight and its passive stance.
+  - A Hard computer finds the enemy base within 6 minutes on each map.
+- **A bug the maps exposed:** on Rivercross the computer's Barracks
+  builder stood wedged in a one-tile gap between two buildings and never
+  arrived. The straight-line check padded its samples sideways as well as
+  forward, so the builder could not step along the gap. A builder whose
+  move had failed also re-issued the move every tick, which reset the
+  failure, so it never gave up. Both are fixed: the padding applies only
+  along the direction of travel, and a failed move to the same goal is no
+  longer retried. Gatherers had the same retry loop.
+- **Phase D in the browser (scripted, Rivercross):**
+  - The start screen lists the three maps with their descriptions.
+  - With the Keep selected, F plus a minimap click on the enemy base fired
+    a flare (gold 500 → 475, cooldown set). The notices read "Enemy Lumber
+    Mill spotted", "Enemy Farm spotted" and "Enemy army sighted", with
+    yellow minimap pings.
+  - After the flare faded, the enemy base stayed as 6 remembered ghosts in
+    the fog.
+  - R on a Barracks trained an Outrider.
+  - No console errors.
+- **Phase D balance (computer games):** 4 openings, 3 maps, 4 seeds, both
+  seats (144 games, all Hard):
+
+  | Map | standard | rush | eco | turtle |
+  | --- | --- | --- | --- | --- |
+  | Twin Vales | 13 | 3 | **21** | 10 |
+  | Rivercross | 7 | 2 | 10 | **17** |
+  | Highland Crown | 13 | 1 | 13 | **15** |
+
+  Each map rewards a different plan:
+  - **Twin Vales:** the open map favours the fast expansion.
+  - **Rivercross:** holding the fords with towers wins.
+  - **Highland Crown:** sits between the two.
+
+  Overall:
+  - Rush won only 6 of 72, the open Phase A item below.
+  - 19 games hit the 30-minute limit, mostly turtle or eco mirrors on
+    Rivercross.
+  - Seats went 56–69 toward player 2, close to the Phase C lean (153–123)
+    and still within noise. Worth watching.
 - **Not yet done:** human playtesting of feel and pacing, and frame-rate
   measurement on real GPUs. Software WebGL only manages ~2–3 fps, which says
   nothing about real hardware.
@@ -1121,6 +1173,19 @@ Phase C (done): heroes, items and neutral objectives.
 - Trading Posts and Healing Fountains.
 - Explicit death and revival rules.
 - A computer that uses all of it.
+
+Phase D (done): map control and exploration.
+
+- Three hand-designed maps with rivers and fords, a walled plateau and
+  ramps, pocket, natural, far and rich mines, and lairs.
+- Fog that remembers enemy buildings as last seen, and camps until seen
+  cleared.
+- The Outrider, the Signal Flare and sighting cues.
+- A computer that scouts, weighs expansions by reward and attacks what it
+  remembers.
+
+Still open from Phase D: human playtests of each map's routes and timings,
+and long stalemates when both sides turtle on Rivercross.
 
 Still open from Phase A, ideally driven by human playtesting:
 
