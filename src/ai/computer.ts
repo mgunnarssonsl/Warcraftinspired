@@ -948,9 +948,12 @@ export class ComputerPlayer {
     const P = this.player;
     const now = game.state.tick;
     const enemies = this.seen;
-    const threats = enemies.filter(
+    let threats = enemies.filter(
       (e): e is Unit => e.kind === 'unit' && e.type !== 'outrider' && buildings.some((b) => distToRect(e.x, e.y, b) < CONFIG.ai.defendRadius),
     );
+    // A lone Laborer walking through is a scout, not an attack: towers and
+    // nearby soldiers deal with it on their own.
+    if (threats.every((t) => t.type === 'worker') && threats.length < 2) threats = [];
     this.wave = this.wave.filter((id) => game.unit(id));
     this.heroRecovery(game, army, keeps);
     const fit = army.filter((u) => !this.healing.has(u.id));
