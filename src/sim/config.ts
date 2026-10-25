@@ -16,6 +16,23 @@ export type ArmorType = 'light' | 'medium' | 'heavy' | 'fortified' | 'hero';
 
 /** Relative weights of the soldier types a computer player aims to field. */
 export type ArmyMix = { guard: number; archer: number; lancer: number; cleric: number; mangonel: number };
+/** How a strategic style shifts a difficulty profile (timings multiply, counts add). */
+export type StyleAdjust = {
+  attackTiming?: number;
+  expandTiming?: number;
+  castleTiming?: number;
+  waveSize?: number;
+  waveGrowth?: number;
+  towers?: number;
+  workerTarget?: number;
+  maxKeeps?: number;
+  creepParty?: number;
+  mix?: ArmyMix;
+  /** Sends small raiding parties at enemy Laborers between waves. */
+  raids?: boolean;
+  /** Builds its Hall of Valor before the Barracks and raises heroes first. */
+  heroesEarly?: boolean;
+};
 
 export const CONFIG = {
   match: {
@@ -943,6 +960,33 @@ export const CONFIG = {
         creeps: false,
         /** Simultaneous constructions it will manage. */
         builders: 1,
+        /** Most Keeps it will run at once. */
+        maxKeeps: 2,
+        // ---- decision quality (what difficulty is mostly about) ----
+        /** Seconds before it reacts to enemies at its base. */
+        reactSeconds: 6,
+        /** Seconds between checks for idle Laborers. */
+        idleCheckSeconds: 10,
+        /** A wave falls back when reduced to this share of its launch size. */
+        retreatShare: 0.25,
+        /** Judges each fight: falls back from a stronger force, recalls a wave to defend. */
+        judgeFights: false,
+        /** Gathers a wave before it marches, so it arrives together. */
+        regroup: false,
+        /** Sends new soldiers after a wave that is already out. */
+        reinforce: false,
+        /** Soldiers switch to wounded enemies and heroes in their reach. */
+        focusFire: false,
+        /** Laborers run from an army they cannot fight, and come back after. */
+        pullWorkers: false,
+        /** A badly hurt hero leaves the fight to heal. */
+        heroRetreat: false,
+        /** Saves gold to rebuild when its last Keep is going down. */
+        saveForKeep: false,
+        /** When (seconds) a Laborer walks over to look at the enemy base; null = never. */
+        scoutWorkerSeconds: null as number | null,
+        /** Changes plan on what it has scouted (early pressure, towers, expansions). */
+        readsIntel: false,
       },
       normal: {
         thinkSeconds: 1.0,
@@ -967,6 +1011,19 @@ export const CONFIG = {
         citadelSeconds: null as number | null,
         creeps: true,
         builders: 1,
+        maxKeeps: 2,
+        reactSeconds: 2.5,
+        idleCheckSeconds: 3,
+        retreatShare: 0.35,
+        judgeFights: true,
+        regroup: true,
+        reinforce: false,
+        focusFire: false,
+        pullWorkers: true,
+        heroRetreat: true,
+        saveForKeep: true,
+        scoutWorkerSeconds: 120 as number | null,
+        readsIntel: true,
       },
       hard: {
         thinkSeconds: 0.5,
@@ -991,13 +1048,99 @@ export const CONFIG = {
         citadelSeconds: 960 as number | null,
         creeps: true,
         builders: 2,
+        maxKeeps: 3,
+        reactSeconds: 1,
+        idleCheckSeconds: 0.5,
+        retreatShare: 0.35,
+        judgeFights: true,
+        regroup: true,
+        reinforce: true,
+        focusFire: true,
+        pullWorkers: true,
+        heroRetreat: true,
+        saveForKeep: true,
+        scoutWorkerSeconds: 75 as number | null,
+        readsIntel: true,
       },
+    },
+    /**
+     * Strategic styles, layered on a difficulty: what it plans, not how well
+     * it plays. Timings multiply the difficulty's, counts add to them.
+     */
+    styles: {
+      balanced: {
+        name: 'Balanced',
+        blurb: 'Expands on schedule and attacks when it judges itself stronger.',
+        adjust: {} as StyleAdjust,
+      },
+      raider: {
+        name: 'Raider',
+        blurb: 'Strikes early and often with small, fast groups aimed at your Laborers. Expands late.',
+        adjust: {
+          attackTiming: 0.65,
+          expandTiming: 1.6,
+          castleTiming: 1.25,
+          waveSize: -2,
+          waveGrowth: -1,
+          towers: -1,
+          raids: true,
+          mix: { guard: 3, archer: 1, lancer: 3, cleric: 0, mangonel: 0 },
+        } as StyleAdjust,
+      },
+      expander: {
+        name: 'Expander',
+        blurb: 'Takes mines early, up to three Keeps, and attacks late with a large army.',
+        adjust: { attackTiming: 1.5, expandTiming: 0.45, waveSize: 4, workerTarget: 3, maxKeeps: 1, towers: -1 } as StyleAdjust,
+      },
+      warden: {
+        name: 'Warden',
+        blurb: 'Walls up with towers, fortifies early and pushes late with siege.',
+        adjust: {
+          attackTiming: 1.5,
+          castleTiming: 0.7,
+          waveSize: 4,
+          towers: 3,
+          mix: { guard: 3, archer: 2, lancer: 0.5, cleric: 1, mangonel: 2 },
+        } as StyleAdjust,
+      },
+      warlord: {
+        name: 'Warlord',
+        blurb: 'Raises heroes first and hunts camps for items and levels, then hits with its heroes leading.',
+        adjust: { attackTiming: 1.1, creepParty: -2, heroesEarly: true, castleTiming: 0.85 } as StyleAdjust,
+      },
+    },
+    /**
+     * Optional computer advantages, chosen before a match and always shown
+     * as such. Without one, the computer plays by exactly your rules.
+     */
+    advantages: {
+      none: { name: 'None', income: 0 },
+      income25: { name: '+25% income (cheat)', income: 0.25 },
+      income50: { name: '+50% income (cheat)', income: 0.5 },
     },
     /** Enemies this close to any of its buildings trigger defence. */
     defendRadius: 14,
+    /** Laborers it puts on a mine that holds two miners at once (two more per extra miner). */
     goldWorkersPerMine: 5,
-    /** A wave falls back when reduced to this share of its launch size. */
-    retreatShare: 0.35,
+    /** Judging a fight: falls back when the enemy near its wave is this much stronger. */
+    retreatOdds: 1.4,
+    /** A regrouping wave marches once this share of it has gathered (or after regroupSeconds). */
+    regroupShare: 0.8,
+    regroupSeconds: 20,
+    /** Smallest group it sends to join a wave already out. */
+    reinforceGroup: 3,
+    /** A hero leaves a fight below this share of health, and returns above backShare. */
+    heroRetreatShare: 0.3,
+    heroBackShare: 0.75,
+    /** A raid lasts at most this long (seconds), with this many soldiers. */
+    raidSeconds: 45,
+    raidSize: 4,
+    /** Intel: enemy soldiers seen on its half before this time (seconds) count as early pressure... */
+    earlyPressureSeconds: 300,
+    /** ...when there are at least this many. */
+    earlyPressureSoldiers: 3,
+    /** Known enemy towers that read as a defensive player (it expands and techs instead). */
+    turtleTowers: 3,
     /** Scouts it will train in a whole match (replacing ones that die). */
     maxScouts: 3,
     /** Tiles of extra walk a rich mine (per extra miner) and a full-size mine are worth. */
@@ -1060,7 +1203,6 @@ export const CONFIG = {
     treeSearchRadius: 12,
   },
 
-  /** Gold amounts for each mine role on the skirmish map. */
   /**
    * Mine kinds: the reward side of an expansion. A rich mine holds three
    * miners at once instead of two (half again the income) and lasts longer;

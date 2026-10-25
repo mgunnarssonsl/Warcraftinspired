@@ -674,3 +674,61 @@ table.stats td:first-child {
 .choices .difficulty button {
   padding: 6px 10px;
 }
+
+/* Start screen: style and advantage chips. */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chips button {
+  background: var(--panel-2);
+  border: 1px solid var(--edge);
+  color: var(--text);
+  border-radius: 14px;
+  padding: 4px 11px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+}
+.chips button.picked {
+  border-color: #e8cf8f;
+  box-shadow: inset 0 0 0 1px #e8cf8f;
+}
+.chips button.cheat {
+  color: #ffb5a0;
+}
+.chips button.cheat.picked {
+  border-color: #ff7a5c;
+  box-shadow: inset 0 0 0 1px #ff7a5c;
+}
+#subtitle .cheat {
+  color: #ffb5a0;
+}
+
+/* End screen: the computer's decisions. */
+.journal {
+  margin-top: 10px;
+}
+.journal summary {
+  cursor: pointer;
+  color: #e8cf8f;
+}
+.journal ol {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  max-height: 180px;
+  overflow: auto;
+  font-size: 13px;
+}
+.journal li {
+  padding: 2px 0;
+  border-bottom: 1px solid rgba(107, 86, 52, 0.25);
+}
+.journal .when {
+  display: inline-block;
+  width: 46px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}

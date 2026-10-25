@@ -52,6 +52,13 @@ export interface Player {
   heroes: HeroRecord[];
   /** Tick from which this player's next Signal Flare is ready. */
   flareReady: number;
+  /**
+   * Optional handicap for a computer player, chosen before the match and
+   * labelled as a cheat: extra share of every delivery (0 = none).
+   */
+  incomeBonus: number;
+  /** Fraction of a resource owed by the bonus, carried to the next delivery. */
+  incomeOwed: number;
 }
 
 export interface HeroRecord {

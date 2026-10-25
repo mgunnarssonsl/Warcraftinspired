@@ -1,8 +1,9 @@
-// Full-screen panels: start (introduction + difficulty), in-game menu
-// (resume, surrender, restart) and the end-of-match summary.
+// Full-screen panels: start (introduction, map and opponent), in-game menu
+// (resume, surrender, restart) and the end-of-match summary, which also
+// shows the computer's plan and its main decisions.
 
-import type { Difficulty } from '../ai/computer';
-import { TICK_RATE } from '../sim/config';
+import type { AdvantageId, Difficulty, StyleId } from '../ai/profile';
+import { CONFIG, TICK_RATE } from '../sim/config';
 import type { Game } from '../sim/game';
 import { mapById, MAPS } from '../sim/maps';
 
@@ -12,18 +13,29 @@ export interface MatchSettings {
   seed: number;
   difficulty: Difficulty;
   mapId: string;
+  /** The opponent's strategic style, or 'random' (fixed by the seed, revealed at the end). */
+  style: StyleId | 'random';
+  advantage: AdvantageId;
 }
 
+/** Difficulty is how well it plays; the style (below) is what it plans. */
 const DIFFICULTIES: Array<{ id: Difficulty; label: string; blurb: string }> = [
-  { id: 'easy', label: 'Easy', blurb: 'Slow to build, attacks late with small groups.' },
-  { id: 'normal', label: 'Normal', blurb: 'Steady build-up; attacks when it thinks it is stronger.' },
-  { id: 'hard', label: 'Hard', blurb: 'Fast economy, two Barracks, early and growing pressure.' },
+  { id: 'easy', label: 'Easy', blurb: 'Slow to react and to notice idle Laborers; never retreats or adapts.' },
+  { id: 'normal', label: 'Normal', blurb: 'Scouts, adapts its army, regroups and falls back from bad fights.' },
+  { id: 'hard', label: 'Hard', blurb: 'Reacts at once, focuses fire, reinforces its attacks, runs three Keeps.' },
 ];
 
 /** Reload into a new match (a clean page is the most reliable reset). */
 export function startMatch(s: MatchSettings): void {
-  const q = new URLSearchParams({ seed: String(s.seed), difficulty: s.difficulty, map: s.mapId, start: '1' });
+  const q = new URLSearchParams({ seed: String(s.seed), difficulty: s.difficulty, map: s.mapId, style: s.style, adv: s.advantage, start: '1' });
   location.search = q.toString();
+}
+
+/** "Hard Raider", with the style kept secret while a random one is in play. */
+export function opponentLabel(s: MatchSettings, resolved: StyleId, reveal: boolean): string {
+  const level = s.difficulty[0].toUpperCase() + s.difficulty.slice(1);
+  const style = s.style === 'random' && !reveal ? 'random style' : CONFIG.ai.styles[resolved].name;
+  return `${level} · ${style}`;
 }
 
 export function newSeed(): number {
@@ -42,6 +54,9 @@ export class Screens {
   onSurrender: () => void = () => {};
   /** How the viewer was defeated, recorded from simulation events. */
   defeatReason: 'eliminated' | 'surrendered' | null = null;
+
+  /** The style the computer actually plays, and its decision journal. */
+  opponent: { style: StyleId; journal: ReadonlyArray<{ tick: number; text: string }> } = { style: 'balanced', journal: [] };
 
   constructor(
     private game: Game,
@@ -69,6 +84,13 @@ export class Screens {
   showStart(): void {
     let picked: Difficulty = this.settings.difficulty;
     let pickedMap = this.settings.mapId;
+    let pickedStyle: StyleId | 'random' = this.settings.style;
+    let pickedAdv: AdvantageId = this.settings.advantage;
+    const styles: Array<{ id: StyleId | 'random'; name: string; blurb: string }> = [
+      { id: 'random', name: 'Random', blurb: 'One of the styles below, kept secret until the end of the match.' },
+      ...(Object.entries(CONFIG.ai.styles) as Array<[StyleId, (typeof CONFIG.ai.styles)[StyleId]]>).map(([id, st]) => ({ id, name: st.name, blurb: st.blurb })),
+    ];
+    const styleBlurb = (id: string) => styles.find((x) => x.id === id)!.blurb;
     this.open(
       'start',
       `<h1>Ironvale</h1>
@@ -109,9 +131,18 @@ export class Screens {
           <div class="difficulty">
             ${DIFFICULTIES.map((d) => `<button data-d="${d.id}" class="${d.id === picked ? 'picked' : ''}"><b>${d.label}</b><span>${d.blurb}</span></button>`).join('')}
           </div>
+          <h3>Style</h3>
+          <div class="chips">
+            ${styles.map((st) => `<button data-s="${st.id}" class="${st.id === pickedStyle ? 'picked' : ''}">${st.name}</button>`).join('')}
+          </div>
+          <p class="fine" id="style-blurb">${styleBlurb(pickedStyle)}</p>
+          <h3>Computer advantage</h3>
+          <div class="chips">
+            ${(Object.entries(CONFIG.ai.advantages) as Array<[AdvantageId, { name: string }]>).map(([id, a]) => `<button data-a="${id}" class="${id === pickedAdv ? 'picked' : ''}${id === 'none' ? '' : ' cheat'}">${a.name}</button>`).join('')}
+          </div>
         </div>
       </div>
-      <p class="fine">The computer follows exactly the same rules as you: no bonus resources, no hidden information.</p>
+      <p class="fine">Without an advantage the computer plays by exactly your rules: the same costs, the same fog of war, no hidden information. An advantage is a cheat and is always shown as one.</p>
       <div class="actions"><button class="primary" id="go">Start match</button></div>`,
     );
     this.root.querySelectorAll<HTMLButtonElement>('button[data-d]').forEach((b) =>
@@ -126,8 +157,23 @@ export class Screens {
         this.root.querySelectorAll('button[data-m]').forEach((x) => x.classList.toggle('picked', x === b));
       }),
     );
+    this.root.querySelectorAll<HTMLButtonElement>('button[data-s]').forEach((b) =>
+      b.addEventListener('click', () => {
+        pickedStyle = b.dataset.s as StyleId | 'random';
+        this.root.querySelectorAll('button[data-s]').forEach((x) => x.classList.toggle('picked', x === b));
+        this.root.querySelector('#style-blurb')!.textContent = styleBlurb(pickedStyle);
+      }),
+    );
+    this.root.querySelectorAll<HTMLButtonElement>('button[data-a]').forEach((b) =>
+      b.addEventListener('click', () => {
+        pickedAdv = b.dataset.a as AdvantageId;
+        this.root.querySelectorAll('button[data-a]').forEach((x) => x.classList.toggle('picked', x === b));
+      }),
+    );
     this.on('#go', () => {
-      if (picked !== this.settings.difficulty || pickedMap !== this.settings.mapId) startMatch({ seed: this.settings.seed, difficulty: picked, mapId: pickedMap });
+      const next: MatchSettings = { seed: this.settings.seed, difficulty: picked, mapId: pickedMap, style: pickedStyle, advantage: pickedAdv };
+      const same = (Object.keys(next) as Array<keyof MatchSettings>).every((k) => next[k] === this.settings[k]);
+      if (!same) startMatch(next);
       else this.close();
     });
   }
@@ -138,7 +184,7 @@ export class Screens {
     this.open(
       'menu',
       `<h2>Paused</h2>
-      <p class="fine">Map: ${mapById(this.settings.mapId).name} · opponent: ${this.settings.difficulty} · match time ${fmtTime(this.game.state.tick)} · seed ${this.settings.seed}</p>
+      <p class="fine">Map: ${mapById(this.settings.mapId).name} · opponent: ${opponentLabel(this.settings, this.opponent.style, over)}${this.settings.advantage === 'none' ? '' : ` · ${CONFIG.ai.advantages[this.settings.advantage].name}`} · match time ${fmtTime(this.game.state.tick)} · seed ${this.settings.seed}</p>
       <div class="stack">
         <button class="primary" id="resume">Resume</button>
         <button id="restart">Restart (same map and opponent)</button>
@@ -182,9 +228,12 @@ export class Screens {
       `<h1 class="${title.toLowerCase()}">${title}</h1>
       <p class="lead">${reason} Match time ${fmtTime(o.tick)}.</p>
       <table class="stats">
-        <tr><th></th>${players.map((p) => `<th style="color:${p.color}">${p.id === this.viewer ? 'You' : `Computer (${this.settings.difficulty})`}</th>`).join('')}</tr>
+        <tr><th></th>${players.map((p) => `<th style="color:${p.color}">${p.id === this.viewer ? 'You' : 'Computer'}</th>`).join('')}</tr>
         ${rows.map(([k, f]) => `<tr><td>${k}</td>${players.map((_, i) => `<td>${f(i)}</td>`).join('')}</tr>`).join('')}
       </table>
+      <h3>Your opponent: ${opponentLabel(this.settings, this.opponent.style, true)}${this.settings.style === 'random' ? ' (picked at random)' : ''}</h3>
+      <p class="fine">${CONFIG.ai.styles[this.opponent.style].blurb}${this.settings.advantage === 'none' ? ' It had no advantage.' : ` It had an advantage: ${CONFIG.ai.advantages[this.settings.advantage].name}.`}</p>
+      ${this.journalHtml()}
       <div class="actions">
         <button class="primary" id="again">Play again</button>
         <button id="change">Change opponent</button>
@@ -193,9 +242,22 @@ export class Screens {
     );
     this.on('#again', () => startMatch({ ...this.settings, seed: newSeed() }));
     this.on('#change', () => {
-      const q = new URLSearchParams({ seed: String(newSeed()), difficulty: this.settings.difficulty, map: this.settings.mapId });
+      const q = new URLSearchParams({ seed: String(newSeed()), difficulty: this.settings.difficulty, map: this.settings.mapId, style: this.settings.style, adv: this.settings.advantage });
       location.search = q.toString();
     });
     this.on('#watch', () => this.close());
   }
+
+  /** What the computer did and why, from its journal (shown only after the match). */
+  private journalHtml(): string {
+    const j = this.opponent.journal;
+    if (!j.length) return '';
+    return `<details class="journal" open><summary>What the computer did (${j.length})</summary><ol>${j
+      .map((e) => `<li><span class="when">${fmtTime(e.tick)}</span>${escapeHtml(e.text)}</li>`)
+      .join('')}</ol></details>`;
+  }
+}
+
+function escapeHtml(t: string): string {
+  return t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 }

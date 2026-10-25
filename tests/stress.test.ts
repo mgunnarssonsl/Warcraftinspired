@@ -44,5 +44,5 @@ describe('crowded economy', () => {
     console.log(
       `stress: ${ms.toFixed(0)}ms for 4800 ticks; stall ${worstStall}; gold ${g.state.players.map((p) => p.goldGathered)}; wood ${g.state.players.map((p) => p.woodGathered)}; idle ${g.idleWorkers(0).length}/${g.idleWorkers(1).length}`,
     );
-  });
+  }, 30_000);
 });

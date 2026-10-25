@@ -3,17 +3,18 @@
 // interpolation.
 
 import { ComputerPlayer, type Difficulty } from './ai/computer';
+import { randomStyle, STYLES, type AdvantageId, type StyleId } from './ai/profile';
 import { createClientState } from './input/client';
 import { InputController } from './input/input';
 import { Overlay } from './render3d/overlay';
 import { World3D } from './render3d/world';
-import { TICK_SECONDS } from './sim/config';
+import { CONFIG, TICK_SECONDS } from './sim/config';
 import { Game } from './sim/game';
 import { mapById } from './sim/maps';
 import { Hud } from './ui/hud';
 import { Minimap } from './ui/minimap';
 import { Objectives } from './ui/objectives';
-import { newSeed, Screens } from './ui/screens';
+import { newSeed, opponentLabel, Screens, type MatchSettings } from './ui/screens';
 import './style.css';
 
 const params = new URLSearchParams(location.search);
@@ -21,6 +22,13 @@ const seed = params.has('seed') ? Number(params.get('seed')) | 0 : newSeed();
 const difficultyParam = params.get('difficulty');
 const difficulty: Difficulty = difficultyParam === 'easy' || difficultyParam === 'hard' ? difficultyParam : 'normal';
 const mapId = mapById(params.get('map') ?? undefined).id;
+const styleParam = params.get('style');
+const style: StyleId | 'random' = STYLES.includes(styleParam as StyleId) ? (styleParam as StyleId) : 'random';
+const advParam = params.get('adv');
+const advantage: AdvantageId = advParam && advParam in CONFIG.ai.advantages ? (advParam as AdvantageId) : 'none';
+const settings: MatchSettings = { seed, difficulty, mapId, style, advantage };
+// A random style is fixed by the seed: the same match plays the same opponent.
+const playedStyle: StyleId = style === 'random' ? randomStyle(seed) : style;
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const overlayCanvas = document.getElementById('overlay') as HTMLCanvasElement;
@@ -36,20 +44,30 @@ const minimap = new Minimap(minimapCanvas, game);
 const now = () => performance.now() / 1000;
 const input = new InputController(canvas, game, world, client, minimap, now);
 const hud = new Hud(game, client, input);
-const computer = new ComputerPlayer(1, difficulty);
+const computer = new ComputerPlayer(1, difficulty, playedStyle);
 game.player(1).name = `Computer (${difficulty})`;
+// The only advantage a computer can have: chosen up front, shown as a cheat.
+game.player(1).incomeBonus = CONFIG.ai.advantages[advantage].income;
 hud.onAlert = (x, y) => minimap.ping(x, y, '#ff4a3a', now());
 hud.onSighting = (x, y) => minimap.ping(x, y, '#ffd84a', now());
 const objectives = new Objectives(game, client.player);
 objectives.onComplete = (text) => hud.notify(`Objective complete: ${text}`, 'good');
-const screens = new Screens(game, { seed, difficulty, mapId }, client.player);
+const screens = new Screens(game, settings, client.player);
+screens.opponent = { style: playedStyle, journal: computer.journal };
 screens.onClose = () => {
   client.modalOpen = false;
   // After the match, "Keep watching" lifts the fog so the whole map can be seen.
   if (game.state.outcome) client.revealAll = true;
 };
 screens.onSurrender = () => game.issue({ type: 'surrender', player: client.player });
-document.getElementById('subtitle')!.textContent = `skirmish vs ${difficulty} computer`;
+const subtitle = document.getElementById('subtitle')!;
+subtitle.textContent = `skirmish vs ${opponentLabel(settings, playedStyle, false)} computer`;
+if (advantage !== 'none') {
+  const cheat = document.createElement('span');
+  cheat.className = 'cheat';
+  cheat.textContent = ` · ${CONFIG.ai.advantages[advantage].name}`;
+  subtitle.append(cheat);
+}
 const openMenu = () => {
   screens.showMenu();
   client.modalOpen = screens.current !== null;

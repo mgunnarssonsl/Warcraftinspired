@@ -6,34 +6,30 @@
 import { afterAll, describe, it } from 'vitest';
 
 declare const process: { env: Record<string, string | undefined> };
-import { ComputerPlayer, type ProfileOverrides } from '../src/ai/computer';
+import { ComputerPlayer, type Difficulty, type ProfileOverrides, type StyleId } from '../src/ai/computer';
 import { Game } from '../src/sim/game';
 import { MAPS } from '../src/sim/maps';
 
-const STRATEGIES: Record<string, ProfileOverrides> = {
-  // Development paths
-  standard: {},
-  rush: { workerTarget: 10, barracksAtWorkers: 6, extraBarracksAtWorkers: 7, maxBarracks: 2, firstAttackSeconds: 200, waveSize: 5, waveGrowth: 2, expandSeconds: 99999, upgrades: false, castleSeconds: null, creeps: false, towers: 0, assessStrength: false },
-  eco: { workerTarget: 16, expandSeconds: 240, firstAttackSeconds: 600, waveSize: 10, towers: 0 },
-  turtle: { towers: 4, firstAttackSeconds: 720, waveSize: 12 },
-  // Army compositions (fixed, no adapting)
-  classic: { mix: { guard: 3, archer: 2, lancer: 0, cleric: 0, mangonel: 0 }, adapt: false, castleSeconds: null },
-  knights: { mix: { guard: 1, archer: 1, lancer: 4, cleric: 0, mangonel: 0 }, adapt: false, castleSeconds: 360 },
-  holy: { mix: { guard: 3, archer: 1, lancer: 0, cleric: 2, mangonel: 0 }, adapt: false, castleSeconds: 360 },
-  // Hero choices (first hero; the second comes with the Castle)
-  marshal: { heroes: ['hero', 'ranger'] },
-  pathfinder: { heroes: ['ranger', 'sage'] },
-  sage: { heroes: ['sage', 'hero'] },
-  // Map activity: no heroes at all, or heroes that never clear camps
-  nohero: { heroes: [], creeps: false, shops: false },
-  nocreep: { creeps: false, shops: false },
-  siege: { mix: { guard: 3, archer: 2, lancer: 0, cleric: 0, mangonel: 1 }, adapt: false, castleSeconds: 360 },
+// Each strategy is a style (src/sim/config.ts, CONFIG.ai.styles) plus
+// optional overrides for experiments.
+const STRATEGIES: Record<string, { style: StyleId; o?: ProfileOverrides }> = {
+  balanced: { style: 'balanced' },
+  raider: { style: 'raider' },
+  expander: { style: 'expander' },
+  warden: { style: 'warden' },
+  warlord: { style: 'warlord' },
+  // Experiments
+  rush: { style: 'balanced', o: { workerTarget: 10, barracksAtWorkers: 6, extraBarracksAtWorkers: 7, maxBarracks: 2, firstAttackSeconds: 200, waveSize: 5, waveGrowth: 2, expandSeconds: 99999, upgrades: false, castleSeconds: null, creeps: false, towers: 0, assessStrength: false } },
+  nohero: { style: 'balanced', o: { heroes: [], creeps: false, shops: false } },
+  nocreep: { style: 'balanced', o: { creeps: false, shops: false } },
 };
 const SEEDS = [3, 4, 5, 6];
+// Difficulty of both sides, or two ("hard,easy") for a ladder check.
+const LEVELS = (process.env.LEVELS ?? 'hard').split(',') as Difficulty[];
 const MAP_IDS = process.env.MAPS?.split(',') ?? MAPS.map((m) => m.id);
 const MAX_MINUTES = 30;
 
-const names = (process.env.STRATEGIES?.split(',') ?? Object.keys(STRATEGIES)).filter((n) => n in STRATEGIES);
+const names = (process.env.STRATEGIES?.split(',') ?? ['balanced', 'raider', 'expander', 'warden', 'warlord']).filter((n) => n in STRATEGIES);
 const tally = Object.fromEntries(names.map((n) => [n, { won: 0, lost: 0, none: 0, minutes: 0, games: 0 }]));
 const seats = { first: 0, second: 0 };
 const perMap = Object.fromEntries(MAP_IDS.map((m) => [m, Object.fromEntries(names.map((n) => [n, 0]))]));
@@ -47,7 +43,8 @@ describe('strategy round robin', () => {
             it(`${mapId} seed ${seed}: ${a} vs ${b}`, async () => {
               await new Promise((r) => setTimeout(r, 0)); // let the test runner breathe between long games
               const g = Game.create(seed, mapId);
-              const ais = [new ComputerPlayer(0, 'hard', STRATEGIES[a]), new ComputerPlayer(1, 'hard', STRATEGIES[b])];
+              const [la, lb] = [LEVELS[0], LEVELS[1] ?? LEVELS[0]];
+              const ais = [new ComputerPlayer(0, a === names[i] ? la : lb, STRATEGIES[a].style, STRATEGIES[a].o), new ComputerPlayer(1, b === names[i] ? la : lb, STRATEGIES[b].style, STRATEGIES[b].o)];
               for (let t = 0; t < 20 * 60 * MAX_MINUTES && !g.state.outcome; t++) {
                 g.step();
                 for (const ai of ais) ai.update(g);

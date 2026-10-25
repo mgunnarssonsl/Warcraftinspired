@@ -38,8 +38,10 @@ Requires Node 20+.
 ```sh
 npm install
 npm run dev        # http://localhost:5173
-                   # optional: ?difficulty=easy|normal|hard&map=vales|river|highland&seed=N
-                   #           &start=1 (skip the start screen)
+                   # optional: ?difficulty=easy|normal|hard&style=random|balanced|raider|
+                   #   expander|warden|warlord&adv=none|income25|income50
+                   #   &map=vales|river|highland&seed=N
+                   #   &start=1 (skip the start screen)
 npm test           # simulation tests (vitest)
 npm run build      # typecheck + production bundle in dist/
 ```
@@ -131,107 +133,157 @@ These are the rules as implemented. All numbers live in `src/sim/config.ts`.
 
 ## Computer opponent
 
-`src/ai/computer.ts`; profiles in `CONFIG.ai`.
+`src/ai/computer.ts` (behaviour) and `src/ai/profile.ts` (difficulty ×
+style); all numbers in `CONFIG.ai`.
+
+Every opponent is a **difficulty** combined with a **style**:
+- the difficulty sets how well it plays: how quickly it reacts, how
+  carefully it judges fights, how attentive its economy is;
+- the style sets what it plans: when it attacks and expands, what it builds
+  and fields.
+
+Any style can be played at any difficulty. Choose both on the start screen,
+or with `?difficulty=…&style=…`. The style can also be **Random**: it is
+picked from the match seed, so a replayed seed meets the same opponent, and
+it stays hidden until the end screen.
+
+### Fair play, and the one labelled exception
 
 - **Same rules as you.** It acts only through the same commands you use. It
   pays the same costs, has the same population limits and build times, and
-  gets no extra resources. It plays under the same fog of war. It knows:
+  plays under the same fog of war. It knows:
   - enemy units it currently sees;
-  - enemy buildings it has seen, as it last saw them (the same memory
-    you get);
+  - enemy buildings as it last saw them (the same memory you get);
   - camps it has spotted;
   - the public start locations.
 
-  When it knows of no enemy building, its waves head for the enemy start
-  location first, then search mine sites.
-- **Scouting:** Normal and Hard train one Outrider after the first
-  Barracks (up to three over a match, if scouts die). It tours the enemy
-  start and then every expansion, nearest to the enemy first, skipping camps
-  it knows. When a wave has no known building to aim at, they fire a Signal
-  Flare over the spot first. Easy does neither.
-- **Expansions:** it weighs a mine's reward against its walk: a rich mine is
-  worth 12 tiles more walking, a full-size one 5. It skips mines next to any
-  Keep it knows of, its own or remembered enemy ones.
-- **Memory, not cheating:** it remembers enemy soldiers it has seen for two
-  minutes (forgetting any it saw die), and counts them when judging whether
-  it is strong enough to attack. Without this it would attack into an army
-  it had just watched walk into the fog.
-- **Routes:** waves march around neutral camps they know of, using queued
-  waypoints like a player would, instead of fighting them on the way.
+  A test checks that an enemy hidden in unexplored fog leaves every command
+  it issues unchanged.
+- **Advantages are opt-in and always labelled.** The start screen offers
+  "Computer advantage: none / +25% income (cheat) / +50% income (cheat)".
+  The default is none.
+  - An advantage adds that share to every delivery the computer makes, as
+    whole gold or wood, carrying fractions over. It doesn't speed up its
+    gathering or change anything else.
+  - When chosen, the top bar, the menu and the end screen all say so.
+  - It is a rule of the simulation (`Player.incomeBonus`), not a hidden
+    AI trick.
+
+### Difficulty: decision quality
+
+| | Easy | Normal | Hard |
+| --- | --- | --- | --- |
+| Thinks every | 2 s | 1 s | 0.5 s |
+| Reacts to an attack on its base after | 6 s | 2.5 s | 1 s |
+| Notices idle Laborers every | 10 s | 3 s | 0.5 s |
+| Scouts | no | Laborer at 2:00, then an Outrider; flares | Laborer at 1:15, then an Outrider; flares |
+| Changes plan on what it scouted | no | yes | yes |
+| Adapts its army to yours | no | yes | yes |
+| Checks it is stronger before attacking | no | yes | yes |
+| Judges fights (retreats from a stronger force, defends in proportion) | no | yes | yes |
+| Regroups before marching | no | yes | yes |
+| Reinforces a wave already out | no | no | yes |
+| Focus fire | no | no | yes |
+| Pulls Laborers away from an army they can't fight | no | yes | yes |
+| Pulls a badly hurt hero out to heal | no | yes | yes |
+| Saves to rebuild a falling last Keep | no | yes | yes |
+| Laborers per Keep (max) / Barracks / most Keeps | 11 / 1 / 2 | 12 / 2 / 2 | 13 / 2 / 3 |
+| Upgrades, Castle | no | yes, Castle 12:00 | yes, Castle 9:00, Citadel 16:00 |
+
+Easy is not only slower. It defends with everything it has whether the
+raid is one Guard or ten, fights on until a wave is three-quarters dead,
+and leaves Laborers idle for a while.
+
+### Styles: different plans
+
+Times are the Hard figures; at other difficulties they scale the same way.
+
+| Style | Plan | Hard: first attack / expansion |
+| --- | --- | --- |
+| **Balanced** | Expands on schedule and attacks when it judges itself stronger. | 5:00 / 7:00 |
+| **Raider** | Small groups of its fastest soldiers raid your Laborers from about 2:30; smaller, earlier waves; Lancer-heavy; expands late. | 3:15 / 11:12 |
+| **Expander** | Takes mines early, up to three Keeps (two more Laborers each), then attacks late with a large army. | 7:30 / 3:09 |
+| **Warden** | Four towers, an early Castle, a siege-heavy army, and a late, heavy push. | 7:30 / 7:00 |
+| **Warlord** | Hall of Valor before the Barracks, heroes first, hunts camps with a smaller party for items and levels. | 5:30 / 7:00 |
+
+### What it does, in layers
+
+- **Economy and recovery:**
+  - About 5 Laborers per mine beside a Keep (7 on a rich mine), plus a
+    small wood crew. Rally points send new Laborers straight to work.
+  - After heavy losses (below 60% of its peak), Laborers come before the
+    army.
+  - When its last Keep is below half health, Normal and Hard keep enough
+    gold to rebuild it.
+  - When the Keep is gone, a new one comes first, at the nearest mine with
+    no enemy known nearby. If it can't afford one, the army clears camps
+    for the bounty until it can.
+  - Idle Laborers go back to work. "Lost" ones go back to a home mine:
+    gold haulers whose mine has no Keep beside it any more, and woodcutters
+    far from any drop-off.
+- **Scouting and intel:**
+  - A Laborer looks at the enemy base early, then an Outrider tours the
+    expansions, and flares light up a target it has lost track of.
+  - From what it has seen, it takes a posture:
+    - **threatened:** enemy soldiers on its side of the map before 5:00,
+      or two Barracks scouted. It holds its army home, adds a tower and
+      waits to expand.
+    - **greedy:** three or more enemy towers, a defensive opponent. It
+      expands and fortifies sooner.
+  - Its attack target weighs distance against towers it remembers near the
+    target, and prefers an outlying expansion to the main base.
+- **Adapting:** Normal and Hard shift the mix toward counters of the
+  soldiers they have seen: Lancers against Archers, Clerics and siege;
+  Guards against Lancers; Clerics against Guards.
+- **Defence:**
+  - It answers an attack on any of its buildings with enough defenders,
+    nearest first, to outmatch it by half again (Easy sends everything).
+  - It recalls an attack wave only when the threat is serious.
+  - With a second Keep, Laborers in the path of an army leave for it. With
+    no soldiers near, Laborers fight off a small raid (not on Easy).
+- **Attack waves:**
+  - A wave launches at the wave size, after the first-attack time, once it
+    judges itself stronger.
+  - It gathers at the staging point before marching, so it arrives
+    together.
+  - It falls back when it meets a force 1.4× its strength, or when it has
+    lost 65% of its units (75% on Easy). The next wave is larger.
+  - On Hard, soldiers trained meanwhile follow as reinforcements.
+  - Waves route around camps they know of.
 - **Heroes and items:**
-  - Easy raises a Marshal.
-  - Normal raises a Marshal, then a Sage once fortified.
-  - Hard raises a Marshal, then a Pathfinder.
-  - In a fight, every hero uses all its abilities by kind: it heals or wards
-    the most hurt ally, stuns, marks or slows the biggest threat (heroes
-    first), and drops Volley or Flame Burst where enemies bunch up.
-  - A Pathfinder casts Far Sight on the enemy start before a wave goes in
-    blind.
-  - Heroes pick up camp drops nearby. They drink a Draught when badly hurt
-    and read a Scroll of Return when about to die.
-  - With spare gold and a free slot, Normal and Hard send a hero to buy at
-    the nearest Trading Post.
-- **Army composition:** each difficulty aims for a mix of soldier types.
-  - Easy uses Guards and Archers only.
-  - Normal and Hard also field Lancers, Clerics and Mangonels once
-    fortified.
-  - Normal and Hard adapt the mix to enemy soldiers they have seen: more
-    Lancers against Archers, Clerics and siege; more Guards against
-    Lancers; more Clerics against Guards.
-  - Hard fortifies to a Citadel at 16:00 for the tier III upgrades.
-- **Fair seats:** both computers think on the same ticks. Its
-  building-placement search runs in the mirrored order for the player in the
-  rotated half of the map, so both sides build mirror-image bases. See
-  [Fair seats](#fair-seats).
-- **Heroes and upgrades:**
-  - It builds a Hall of Valor after its first Barracks, then trains its hero
-    and revives it when it falls.
-  - In fights the hero heals the most wounded ally with Mend, stuns the enemy
-    hero (or the toughest fighter) with Stormhammer, and uses Battle Cry when
-    3 or more allies are close.
-  - Between attacks, Normal and Hard take the army and hero to clear camps on
-    their own half of the map for experience and bounty: first camps they
-    have actually spotted (lairs included), then mines they have not checked.
-  - Normal and Hard build a Blacksmith. They research Forged Blades, Studded
-    Armor and Bow Saws, then fortify to a Castle (Normal at 12:00, Hard at
-    9:00) and research the tier II upgrades.
-- **Economy:**
-  - About 5 Laborers per mine next to one of its Keeps, plus a small wood
-    crew that shrinks when wood is plentiful.
-  - Rally points send new Laborers straight to work, and idle ones are put
-    back to work.
-- **Building:** it plans one building at a time, in this priority order:
-  1. Farms, kept ahead of its population needs
-  2. Barracks
-  3. Lumber Mill, next to the nearest forest
-  4. Watch Tower
-  5. A second Barracks (once it has enough Laborers)
-  6. An expansion Keep at the nearest unguarded mine
-- **Placing buildings:** it keeps the lanes between Keeps and mines clear. It
-  sets aside money for builders still walking to their sites, and puts a new
-  builder on any foundation that was left unfinished.
-- **Army:** a mix of Guards and Archers gathers at a staging point in front of
-  its base.
-  - **Defending:** it attack-moves its army toward any enemy near its
-    buildings, recalling an attack wave if the threat is large. On Normal and
-    Hard, nearby Laborers fight back when no soldiers are close.
-  - **Attacking:** once its army reaches the wave size, it attack-moves on
-    your nearest building. On Normal and Hard it first checks that it is
-    stronger than your army; it attacks regardless once its army reaches 24
-    units. A wave falls back at 35% strength, and the next wave is larger.
-- **Difficulty** changes only decisions, never rules:
+  - In a fight, heroes use every ability by kind: heal or ward the most
+    hurt ally, stun, mark or slow the biggest threat, area damage where
+    enemies bunch up.
+  - They drink a Draught when badly hurt and read a Scroll of Return when
+    about to die. With nothing left to drink, a hero below 30% health walks
+    to the nearest Fountain or home, and returns at 75%.
+  - Heroes pick up camp drops and shop at Trading Posts with gold it can
+    spare.
+  - Between attacks, the army and hero clear camps. When it wants to
+    expand and the mine it wants is guarded, that camp comes first.
+- **Building:** one plan at a time, in this order:
+  1. Farms, kept ahead of demand
+  2. Barracks (the Warlord builds its Hall of Valor first)
+  3. Lumber Mill
+  4. Hall of Valor
+  5. Towers
+  6. Blacksmith
+  7. Chapel and Siege Works, once fortified and if its mix wants them
+  8. More Barracks
+  9. Expansions
 
-  | | Easy | Normal | Hard |
-  | --- | --- | --- | --- |
-  | Thinks every | 2 s | 1 s | 0.5 s |
-  | Laborers per Keep (max) | 11 | 12 | 13 |
-  | Barracks | 1 | 2 | 2 |
-  | First attack / wave size | 9:00, 4 | 6:40, 6 | 5:00, 7 |
-  | Expands at | 15:00 | 10:00 | 7:00 |
-  | Checks strength before attacking | no | yes | yes |
+  It sets aside money for builders still walking to their sites and
+  finishes foundations whose builder was lost, unless enemies are at the
+  site.
+- **Its journal:** the computer records its main decisions as it goes. The
+  end screen lists them, with times, under "What the computer did":
+  - what it scouted, and the posture it took;
+  - expansions and fortifications;
+  - each attack, raid and retreat;
+  - recoveries and Laborers moved to safety.
 
-  It also expands early if gold is the bottleneck, or if its home mine runs
-  low.
+  The journal is shown only after the match, so it reveals nothing during
+  play.
 
 ## Construction rules (current)
 

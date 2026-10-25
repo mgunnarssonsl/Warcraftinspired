@@ -307,7 +307,11 @@ export function updateGatherer(game: Game, u: Unit, o: GatherOrder): void {
       }
       if (atRect(u, drop)) {
         const p = game.player(u.owner);
-        const amount = u.carry.amount;
+        // An income advantage (a labelled cheat) adds its share, whole units only.
+        const owed = u.carry.amount * p.incomeBonus + p.incomeOwed;
+        const bonus = Math.floor(owed + 1e-9);
+        p.incomeOwed = owed - bonus;
+        const amount = u.carry.amount + bonus;
         if (res === 'gold') {
           p.gold += amount;
           p.goldGathered += amount;

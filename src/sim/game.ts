@@ -73,6 +73,8 @@ export class Game {
           research: {},
           heroes: [],
           flareReady: 0,
+          incomeBonus: 0,
+          incomeOwed: 0,
         }),
       ),
       entities: {},
@@ -117,6 +119,8 @@ export class Game {
       research: {},
       heroes: [],
       flareReady: 0,
+      incomeBonus: 0,
+      incomeOwed: 0,
     });
     // Camps guard mines, and lairs guard treasure. Each camp of a mirrored
     // pair has the same guards and drops the same item.
