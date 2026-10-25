@@ -991,6 +991,8 @@ export const CONFIG = {
         countsDefences: false,
         /** Puts banked wood to use: more units that cost wood, an earlier Castle. */
         usesSurplus: false,
+        /** Expands as soon as it is safe (no threat known, an army at home), not on a timer. */
+        expandWhenSafe: false,
       },
       normal: {
         thinkSeconds: 1.0,
@@ -1030,6 +1032,7 @@ export const CONFIG = {
         readsIntel: true,
         countsDefences: false,
         usesSurplus: true,
+        expandWhenSafe: false,
       },
       hard: {
         thinkSeconds: 0.5,
@@ -1069,6 +1072,7 @@ export const CONFIG = {
         readsIntel: true,
         countsDefences: true,
         usesSurplus: true,
+        expandWhenSafe: true,
       },
     },
     /**
@@ -1098,7 +1102,7 @@ export const CONFIG = {
       expander: {
         name: 'Expander',
         blurb: 'Takes mines early, up to three Keeps, and attacks late with a large army.',
-        adjust: { attackTiming: 1.5, expandTiming: 0.6, waveSize: 2, workerTarget: 2, maxKeeps: 1, towers: -1 } as StyleAdjust,
+        adjust: { attackTiming: 1.5, expandTiming: 0.4, waveSize: 2, workerTarget: 2, maxKeeps: 1, towers: -1 } as StyleAdjust,
       },
       warden: {
         name: 'Warden',
@@ -1175,6 +1179,9 @@ export const CONFIG = {
     woodSurplus: 600,
     /** Assessing players attack only with this strength advantage... */
     attackAdvantage: 1.15,
+    /** Expanding when safe: not before this time (seconds), and with this many soldiers home. */
+    safeExpandSeconds: 180,
+    safeExpandArmy: 3,
     /** Counting defences: a defender fights at home with this edge... */
     defenderEdge: 1.25,
     /** ...and each tower it has seen counts for this many Guards. */

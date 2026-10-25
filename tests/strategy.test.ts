@@ -108,7 +108,7 @@ describe('economic recovery', () => {
   }, 30_000);
 
   it('saves enough to rebuild while its last Keep is going down', () => {
-    const { g, step } = grow(240);
+    const { g, step } = grow(240, 'hard', 'balanced', { expandWhenSafe: false });
     const keep = keepsOf(g, 0)[0];
     keep.hp = keep.maxHp * 0.4;
     g.player(0).gold = 500;
@@ -245,7 +245,7 @@ describe('fights', () => {
   });
 
   it('a badly hurt hero with nothing to drink leaves the fight to heal', () => {
-    const { g, ai, step } = grow(300, 'hard');
+    const { g, ai, step } = grow(300, 'hard', 'balanced', { expandWhenSafe: false });
     const hero = mine(g, 0).find((u) => u.hero);
     expect(hero).toBeDefined();
     hero!.hero!.items = hero!.hero!.items.map(() => null);
@@ -283,9 +283,14 @@ describe('styles over a match', () => {
     expect(raider).toBeLessThan(secondsToTicks(240));
   }, 120_000);
 
-  it('the Expander takes a second Keep first', () => {
+  it('the Expander expands no later than anyone, and runs the most Keeps', () => {
     const exp = first(match('expander').ai, 'Expanding');
-    for (const s of ['balanced', 'raider', 'warden'] as const) expect(exp).toBeLessThan(first(match(s).ai, 'Expanding'));
+    const keeps = (s: StyleId) => match(s).g.buildings().filter((b) => b.owner === 0 && b.type === 'hq').length;
+    for (const s of ['balanced', 'raider', 'warden'] as const) {
+      expect(exp).toBeLessThanOrEqual(first(match(s).ai, 'Expanding'));
+      expect(keeps('expander')).toBeGreaterThanOrEqual(keeps(s));
+    }
+    expect(keeps('expander')).toBe(3);
   }, 120_000);
 
   it('the Warden builds the most towers; the Warlord raises its hero before its Barracks', () => {

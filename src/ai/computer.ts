@@ -415,7 +415,14 @@ export class ComputerPlayer {
     if (keeps.length >= 2 && (keeps.some((k) => k.progress < 1) || seconds < this.profile.expandSeconds + 240)) return false;
     const starved = me.wood > CONFIG.ai.woodSurplus && seconds > 180;
     const greedy = this.posture === 'greedy' && seconds > 240;
-    return seconds >= this.profile.expandSeconds || starved || greedy;
+    // The better economic call: take the next mine as soon as it is safe.
+    const safe =
+      this.profile.expandWhenSafe &&
+      keeps.length === 1 &&
+      seconds >= CONFIG.ai.safeExpandSeconds &&
+      this.threatSince < 0 &&
+      game.units().filter((u) => u.owner === P && u.type !== 'worker' && u.type !== 'outrider').length >= CONFIG.ai.safeExpandArmy;
+    return seconds >= this.profile.expandSeconds || starved || greedy || safe;
   }
 
   private planBuilding(game: Game, workers: Unit[], buildings: Building[]): BuildingType | null {

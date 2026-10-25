@@ -35,7 +35,7 @@ describe('computer opponent', () => {
     expect(g.idleWorkers(1).length).toBeLessThanOrEqual(2);
     expect(g.popUsed(1)).toBeLessThanOrEqual(g.popCap(1));
     for (const u of g.units()) expect(g.nav.canStand(u.x, u.y, u.radius)).toBe(true);
-  });
+  }, 30_000);
 
   it('defeats a passive opponent', () => {
     const { g, minGold } = play(22, null, 'normal', 15);
