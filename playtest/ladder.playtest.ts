@@ -16,7 +16,7 @@ const PAIRS: Array<[Difficulty, Difficulty]> = [
   ['hard', 'normal'],
   ['normal', 'easy'],
 ];
-const SEEDS = [3, 4];
+const SEEDS = [3, 4, 5];
 const MAX_MINUTES = 30;
 const styles = (process.env.STYLES?.split(',') ?? STYLES) as StyleId[];
 const maps = process.env.MAPS?.split(',') ?? MAPS.map((m) => m.id);

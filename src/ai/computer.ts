@@ -508,6 +508,14 @@ export class ComputerPlayer {
       const tree = this.nearestTree(game, home);
       return tree ? findSite(game, P, type, tree.x + Math.sign(home.x - tree.x) * 2, tree.y + Math.sign(home.y - tree.y) * 2) : null;
     }
+    if (type === 'tower') {
+      // The first tower covers the approach; later ones the mines, where
+      // raids hit Laborers.
+      const built = buildings.filter((b) => b.type === 'tower').length;
+      const mines = keeps.flatMap((k) => this.minesNear(game, k).slice(0, 1).map((m) => ({ k, m })));
+      const spot = built > 0 ? mines[(built - 1) % Math.max(1, mines.length)] : undefined;
+      if (spot) return findSite(game, P, type, (spot.k.x + spot.m.x * 2) / 3, (spot.k.y + spot.m.y * 2) / 3);
+    }
     if (type === 'tower' || type === 'barracks' || type === 'altar' || type === 'smithy' || type === 'workshop') {
       const s = this.staging(game, home);
       return findSite(game, P, type, (s.x + home.x) / 2, (s.y + home.y) / 2);

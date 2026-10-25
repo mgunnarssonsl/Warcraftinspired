@@ -1098,17 +1098,17 @@ export const CONFIG = {
       expander: {
         name: 'Expander',
         blurb: 'Takes mines early, up to three Keeps, and attacks late with a large army.',
-        adjust: { attackTiming: 1.5, expandTiming: 0.45, waveSize: 4, workerTarget: 3, maxKeeps: 1, towers: -1 } as StyleAdjust,
+        adjust: { attackTiming: 1.5, expandTiming: 0.6, waveSize: 2, workerTarget: 2, maxKeeps: 1, towers: -1 } as StyleAdjust,
       },
       warden: {
         name: 'Warden',
-        blurb: 'Walls up with towers, fortifies early and pushes late with siege.',
+        blurb: 'Guards its approach and its mines with towers, fortifies early and pushes late with siege.',
         adjust: {
-          attackTiming: 1.5,
+          attackTiming: 1.3,
           castleTiming: 0.7,
-          waveSize: 4,
-          towers: 3,
-          mix: { guard: 3, archer: 2, lancer: 0.5, cleric: 1, mangonel: 2 },
+          waveSize: 3,
+          towers: 2,
+          mix: { guard: 3, archer: 2, lancer: 1, cleric: 1, mangonel: 1 },
         } as StyleAdjust,
       },
       warlord: {
