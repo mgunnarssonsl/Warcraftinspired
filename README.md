@@ -28,6 +28,11 @@ computer opponents. No campaign or story.
 - Phase D: map control and exploration. It adds three hand-designed maps,
   mines with different risks and rewards, fog that remembers what you saw,
   scouting tools (the Outrider and the Signal Flare) and sighting cues.
+- Phase E: a smarter computer opponent. Difficulty now means decision
+  quality: reaction, judgement, attention and micro. Five strategic styles
+  (Balanced, Raider, Expander, Warden, Warlord, or Random) sit on top of
+  it. It also gains economic recovery and an end-screen journal of its
+  decisions. An optional income advantage is labelled as a cheat.
 
 See [Roadmap](#roadmap).
 
@@ -1199,6 +1204,95 @@ which are never shipped to players.
     Rivercross.
   - Seats went 56–69 toward player 2, close to the Phase C lean (153–123)
     and still within noise. Worth watching.
+- **Phase E tests** (`tests/strategy.test.ts`, 21 tests):
+  - **Profiles:**
+    - A style changes only the plan; every decision-quality setting comes
+      from the difficulty.
+    - A Random style is fixed by the seed, and every style comes up.
+  - **Advantage:** it is off by default and every option is labelled a
+    cheat. +25% adds exactly a quarter to deliveries while the same gold
+    leaves the mine.
+  - **Recovery:**
+    - After a massacre (2 Laborers left), it is back to 90% within 2.5
+      minutes.
+    - A lost Keep is rebuilt even when broke, by clearing camps for the
+      bounty.
+    - It saves enough gold while its last Keep is below half health.
+  - **Laborers:**
+    - Hard puts an idle Laborer back to work within a second; Easy within
+      its 10 s.
+    - A hauler from a Keep-less mine is rehomed.
+    - A Laborer scouts the enemy base and goes back to work.
+  - **Intel:**
+    - Enemy soldiers on its side early make it threatened: no expansion,
+      an extra tower.
+    - Three enemy towers make it greedy: it expands early.
+  - **Fights:**
+    - A one-Guard raid draws only some defenders, and Easy waits out its
+      reaction time.
+    - A wave backs off from a much stronger force before contact, with
+      most of it alive.
+    - Hard focuses a badly hurt enemy.
+    - A hurt hero with nothing to drink leaves to heal.
+  - **Styles over a 10-minute match:**
+    - The Raider strikes first.
+    - The Expander expands no later than anyone and runs three Keeps.
+    - The Warden builds the most towers.
+    - The Warlord raises a hero first.
+  - **Fair information:** an enemy hidden in unexplored fog leaves every
+    command the computer issues identical.
+- **Phase E in the browser (scripted):**
+  - The start screen offers style and advantage choices. Picking Raider and
+    +25% reloads with `style=raider&adv=income25`.
+  - The top bar reads "skirmish vs Hard · Raider computer · +25% income
+    (cheat)", and the computer's player has `incomeBonus` 0.25.
+  - The end screen names the opponent and its plan, states the advantage,
+    and lists "What the computer did" with times. No console errors.
+- **Phase E tuning, from computer games (most runs of 36 or 72 games):**
+  - **Hard attacking earlier lost to Normal.** Hard Balanced lost 23–48 to
+    Normal Balanced over 72 games. Ablation found the causes:
+    - its earlier first attack (attacking a defended base early loses);
+    - retreating mid-fight, which got waves cut down (18 units lost in a
+      minute);
+    - recalling waves over a few enemy units at home;
+    - chasing scouting Laborers.
+
+    All four were fixed in the decision logic, not by slowing Hard down.
+  - **The difficulty ladder** (`playtest/ladder.playtest.ts`, both seats,
+    3 maps × 3 seeds, the same style on both sides):
+
+    | Style | Hard vs Normal | Normal vs Easy |
+    | --- | --- | --- |
+    | Balanced | 9–8 (1 draw) | 16–2 |
+    | Raider | 10–8 | 11–7 |
+    | Expander | 12–6 | 17–1 |
+    | Warden | 6–12 | 10–3 (5 draws) |
+    | Warlord | 14–4 | 16–2 |
+    | **Total** | **51–38** | **70–15** |
+
+    Normal clearly beats Easy. Hard beats Normal overall, but only by a
+    small margin, and not for the Warden. In computer-vs-computer mirrors
+    defence dominates (a Normal-vs-Normal Balanced run left a third of
+    games drawn at 30 minutes), so better decisions on both sides largely
+    cancel out. Hard's sharper reactions, focus fire and reinforcements
+    should matter more against a person. That still needs human
+    playtesting.
+  - **Styles** (round robin, all Hard, 3 maps × 4 seeds, both seats, 240
+    games):
+
+    | Style | Won | Lost |
+    | --- | --- | --- |
+    | Expander | 65 | 30 |
+    | Warlord | 55 | 40 |
+    | Raider | 45 | 51 |
+    | Balanced | 44 | 50 |
+    | Warden | 29 | 67 |
+
+    The first version was more lopsided (Expander 77–19, Warden 20–75).
+    Retuning helped: towers now guard mines, the Expander has smaller
+    waves, the Warden fewer towers. Economy still decides most computer
+    games, so the Expander leads and the Warden trails. Seats split
+    118–120.
 - **Not yet done:** human playtesting of feel and pacing, and frame-rate
   measurement on real GPUs. Software WebGL only manages ~2–3 fps, which says
   nothing about real hardware.
@@ -1248,6 +1342,24 @@ Phase D (done): map control and exploration.
 - The Outrider, the Signal Flare and sighting cues.
 - A computer that scouts, weighs expansions by reward and attacks what it
   remembers.
+
+Phase E (done): smarter computer and difficulty settings.
+
+- Difficulty × style, with Random fixed by the seed.
+- Economic recovery and stray-Laborer handling.
+- Scouting with a posture taken from intel.
+- Proportional defence, judged retreats, regrouping and reinforcement.
+- Raids and focus fire.
+- An optional, labelled income advantage.
+- A decision journal on the end screen.
+
+Still open from Phase E:
+
+- **Hard vs Normal** is a small edge in computer games, and Hard loses with
+  the Warden. Human playtests should decide whether Hard feels harder.
+- **Style balance:** the Expander is ahead and the Warden behind.
+  Expansions decide too much, and a raid that punishes greed better is the
+  likely fix.
 
 Still open from Phase D: human playtests of each map's routes and timings,
 and long stalemates when both sides turtle on Rivercross.
