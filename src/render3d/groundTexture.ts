@@ -54,7 +54,6 @@ export function paintGround(map: MapData, seed: number): HTMLCanvasElement {
   ctx.fillStyle = ctx.createPattern(tex, 'repeat')!;
   ctx.fillRect(0, 0, W * TILE, H * TILE);
 
-  const at = (x: number, y: number) => (x < 0 || y < 0 || x >= W || y >= H ? -1 : terrain[y * W + x]);
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) {
       const t = terrain[y * W + x];
@@ -95,20 +94,26 @@ export function paintGround(map: MapData, seed: number): HTMLCanvasElement {
         ctx.moveTo(px + 6, wy);
         ctx.quadraticCurveTo(px + 12, wy - 3, px + 18, wy);
         ctx.stroke();
-        // Soft shoreline: a faint wash where water meets land.
-        const shore = (nx: number, ny: number) => at(nx, ny) !== TERRAIN.water && at(nx, ny) !== -1;
-        const g = (x0: number, y0: number, x1: number, y1: number) => {
-          const gr = ctx.createLinearGradient(x0, y0, x1, y1);
-          gr.addColorStop(0, 'rgba(200,225,215,0.28)');
-          gr.addColorStop(1, 'rgba(200,225,215,0)');
-          return gr;
-        };
-        if (shore(x, y - 1)) (ctx.fillStyle = g(px, py, px, py + 10)), ctx.fillRect(px, py, TILE, 10);
-        if (shore(x, y + 1)) (ctx.fillStyle = g(px, py + TILE, px, py + TILE - 10)), ctx.fillRect(px, py + TILE - 10, TILE, 10);
-        if (shore(x - 1, y)) (ctx.fillStyle = g(px, py, px + 10, py)), ctx.fillRect(px, py, 10, TILE);
-        if (shore(x + 1, y)) (ctx.fillStyle = g(px + TILE, py, px + TILE - 10, py)), ctx.fillRect(px + TILE - 10, py, 10, TILE);
       }
     }
+
+  // Shores: a pale bank of wet sand, then a dark lake bed, both drawn from
+  // rounded blurred shapes so the edge never follows the tile grid.
+  const [shore, shctx] = canvas(W * TILE, H * TILE);
+  shctx.filter = `blur(${TILE * 0.22}px)`;
+  const disc = (r: number, fill: string) => {
+    shctx.fillStyle = fill;
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        if (terrain[y * W + x] !== TERRAIN.water) continue;
+        shctx.beginPath();
+        shctx.arc((x + 0.5) * TILE, (y + 0.5) * TILE, TILE * r, 0, Math.PI * 2);
+        shctx.fill();
+      }
+  };
+  disc(1.0, 'rgba(176,160,118,0.75)');
+  disc(0.7, 'rgb(40,62,78)');
+  ctx.drawImage(shore, 0, 0);
 
   return big;
 }

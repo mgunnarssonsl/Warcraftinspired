@@ -2,7 +2,8 @@
 // button, notifications and the controls overlay. Reads state; issues actions
 // through the InputController.
 
-import { teamColor } from './view';
+import { hpColor, teamColor } from './view';
+import { UNIT_ICONS } from './icons';
 import { keyLabel } from '../input/keymap';
 import type { ClientState } from '../input/client';
 import { ITEM_KEYS, type Action, type InputController } from '../input/input';
@@ -595,8 +596,13 @@ export class Hud {
       pt.style.setProperty('--team', teamColor(this.game, e.owner));
       const hp = el('div', 'hp');
       hp.style.width = `${(e.hp / e.maxHp) * 100}%`;
-      const icon = e.type !== 'worker' ? CONFIG.units[e.type].name[0] : e.carry.amount ? (e.carry.res === 'gold' ? '●' : '≡') : '';
-      pt.appendChild(el('span', 'portrait-icon', icon));
+      hp.style.background = hpColor(e.hp / e.maxHp);
+      // A role glyph on the team colour; a corner mark for what a Laborer carries.
+      const glyph = el('span', 'portrait-glyph');
+      glyph.innerHTML = UNIT_ICONS[e.type] ?? '';
+      pt.appendChild(glyph);
+      const carry = e.type === 'worker' && e.carry.amount ? (e.carry.res === 'gold' ? '●' : '≡') : '';
+      if (carry) pt.appendChild(el('span', 'portrait-icon', carry));
       pt.appendChild(hp);
       pt.addEventListener('mousedown', (ev) => {
         if (ev.shiftKey) this.input.setSelection(this.client.selected.filter((id) => id !== e.id));

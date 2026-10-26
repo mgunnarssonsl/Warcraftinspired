@@ -19,6 +19,8 @@ export interface Settings {
     /** Rendering resolution as a share of the screen's (lower is faster). */
     resolution: number;
     healthBars: HealthBars;
+    /** Effects detail: reduced halves sparks and drops ambient smoke. */
+    effects: 'full' | 'reduced';
   };
   camera: { panSpeed: number; zoomSpeed: number; edgePan: boolean };
   interface: {
@@ -35,7 +37,7 @@ export interface Settings {
 export function defaultSettings(): Settings {
   return {
     audio: { master: 0.7, interface: 0.6, combat: 0.7, economy: 0.7, alerts: 1, ambience: 0.4, muted: false },
-    graphics: { shadows: true, resolution: 1, healthBars: 'damaged' },
+    graphics: { shadows: true, resolution: 1, healthBars: 'damaged', effects: 'full' },
     camera: { panSpeed: 1, zoomSpeed: 1, edgePan: true },
     interface: { uiScale: 1, colorblind: false, pauseOnBlur: true },
     keys: defaultKeyMap(),
@@ -79,6 +81,7 @@ export function cleanSettings(raw: unknown): Settings {
       shadows: bool(g.shadows, d.graphics.shadows),
       resolution: clamp(g.resolution, RANGES.resolution, d.graphics.resolution),
       healthBars: g.healthBars === 'always' || g.healthBars === 'selected' || g.healthBars === 'damaged' ? g.healthBars : d.graphics.healthBars,
+      effects: g.effects === 'reduced' ? 'reduced' : 'full',
     },
     camera: {
       panSpeed: clamp(c.panSpeed, RANGES.panSpeed, d.camera.panSpeed),

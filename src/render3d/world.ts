@@ -4,7 +4,6 @@
 
 import { teamColor } from '../ui/view';
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { ClientState } from '../input/client';
 import { CONFIG, secondsToTicks, type BuildingType } from '../sim/config';
 import type { PlacementCheck } from '../sim/construction';
@@ -54,6 +53,18 @@ const RING_COLORS = {
   hover: '#ffffff',
 };
 const MAX_PARTICLES = 160;
+/** Soft smoke puffs (damaged and working buildings), kept few so they never hide the fight. */
+const MAX_SMOKE = 90;
+
+interface Puff {
+  x: number;
+  y: number;
+  z: number;
+  t0: number;
+  life: number;
+  size: number;
+  color: THREE.Color;
+}
 
 export class World3D {
   readonly renderer: THREE.WebGLRenderer;
@@ -78,6 +89,17 @@ export class World3D {
   private flashes = new Map<number, number>();
   private particles: Particle[] = [];
   private particleMesh: THREE.InstancedMesh;
+  private smokeMesh: THREE.InstancedMesh;
+  private puffs: Puff[] = [];
+  /** When each unit was last hit (a short flinch). */
+  private flinches = new Map<number, number>();
+  /** Next time a burning or working building may puff, by building id. */
+  private nextPuff = new Map<number, number>();
+  private nextDust = 0;
+  /** Rubble left where buildings fell, fading away. */
+  private rubble: Array<{ root: THREE.Group; t0: number }> = [];
+  /** Effects detail (Settings > Graphics): reduced halves particles and drops ambient smoke. */
+  effects: 'full' | 'reduced' = 'full';
   private arrows: THREE.InstancedMesh;
   private hammers: THREE.InstancedMesh;
   private bolts: THREE.InstancedMesh;
@@ -104,6 +126,7 @@ export class World3D {
     new THREE.LineBasicMaterial({ color: '#ffffff', depthTest: false }),
   );
   private m4 = new THREE.Matrix4();
+  private c = new THREE.Color();
   private q = new THREE.Quaternion();
   private s = new THREE.Vector3();
   private p = new THREE.Vector3();
@@ -151,6 +174,17 @@ export class World3D {
     this.particleMesh.frustumCulled = false;
     this.particleMesh.count = 0;
     this.scene.add(this.particleMesh);
+    // Smoke draws translucent and without depth writes, under the selection
+    // rings and the 2D overlay, so it never covers health bars or orders.
+    this.smokeMesh = new THREE.InstancedMesh(
+      new THREE.IcosahedronGeometry(0.22, 0),
+      new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.32, depthWrite: false }),
+      MAX_SMOKE,
+    );
+    this.smokeMesh.frustumCulled = false;
+    this.smokeMesh.count = 0;
+    this.smokeMesh.renderOrder = -1;
+    this.scene.add(this.smokeMesh);
 
     this.arrows = new THREE.InstancedMesh(makeArrowGeometry(), new THREE.MeshStandardMaterial({ color: '#5b4126' }), 200);
     this.arrows.frustumCulled = false;
@@ -246,20 +280,39 @@ export class World3D {
     outer.receiveShadow = true;
     this.scene.add(outer);
 
-    // Water surface over lake tiles.
-    const quads: THREE.BufferGeometry[] = [];
+    // Water: one sheet over the whole map, cut out by a blurred mask of the
+    // water tiles, so shores are rounded instead of stepped tile squares.
     const rockSpots: Array<[number, number]> = [];
+    const PX = 8;
+    const mask = document.createElement('canvas');
+    mask.width = W * PX;
+    mask.height = H * PX;
+    const mctx = mask.getContext('2d')!;
+    mctx.fillStyle = '#000';
+    mctx.fillRect(0, 0, mask.width, mask.height);
+    mctx.fillStyle = '#fff';
+    let anyWater = false;
     for (let y = 0; y < H; y++)
       for (let x = 0; x < W; x++) {
         const t = terrain[y * W + x];
-        if (t === TERRAIN.water) quads.push(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2).translate(x + 0.5, 0.05, y + 0.5));
-        else if (t === TERRAIN.rock) rockSpots.push([x, y]);
+        if (t === TERRAIN.water) {
+          anyWater = true;
+          mctx.beginPath();
+          mctx.arc((x + 0.5) * PX, (y + 0.5) * PX, PX * 0.78, 0, Math.PI * 2);
+          mctx.fill();
+        } else if (t === TERRAIN.rock) rockSpots.push([x, y]);
       }
-    if (quads.length) {
-      const geo = mergeGeometries(quads)!;
+    if (anyWater) {
+      const soft = document.createElement('canvas');
+      soft.width = mask.width;
+      soft.height = mask.height;
+      const sctx = soft.getContext('2d')!;
+      sctx.filter = `blur(${PX * 0.22}px)`;
+      sctx.drawImage(mask, 0, 0);
+      const alpha = new THREE.CanvasTexture(soft);
       const water = new THREE.Mesh(
-        geo,
-        withFog(new THREE.MeshStandardMaterial({ color: '#3d78a8', transparent: true, opacity: 0.72, roughness: 0.12, metalness: 0.1 })),
+        new THREE.PlaneGeometry(W, H).rotateX(-Math.PI / 2).translate(W / 2, 0.05, H / 2),
+        withFog(new THREE.MeshStandardMaterial({ color: '#3d78a8', alphaMap: alpha, transparent: true, opacity: 0.78, roughness: 0.12, metalness: 0.1, depthWrite: false })),
       );
       water.receiveShadow = true;
       this.scene.add(water);
@@ -369,12 +422,14 @@ export class World3D {
       } else if (e.type === 'hit') {
         const t = this.game.get(e.id);
         const unit = !t || t.kind === 'unit';
+        if (t?.kind === 'unit') this.flinches.set(t.id, now);
         this.burst(e.x, unit ? 0.6 : 1.0, e.y, unit ? 4 : 3, unit ? '#d8423a' : '#9a8e7a', 1.4, now);
       } else if (e.type === 'death') {
         this.burst(e.x, 0.5, e.y, 10, '#8a2a22', 1.8, now);
       } else if (e.type === 'buildingDestroyed') {
         this.burst(e.x, 1.0, e.y, 40, '#8d8272', 3.5, now);
         this.burst(e.x, 1.4, e.y, 16, '#3a3028', 2.5, now);
+        this.addRubble(e.x, e.y, CONFIG.buildings[e.building].size, now);
       } else if (e.type === 'levelUp') {
         this.burst(e.x, 1.2, e.y, 30, '#ffd84a', 2.4, now);
       } else if (e.type === 'cast' && e.ability === 'cry') {
@@ -418,6 +473,7 @@ export class World3D {
 
   private burst(x: number, h: number, y: number, n: number, color: string, speed: number, now: number): void {
     if (!this.tileVisible(x, y)) return; // no tell-tale sparks inside the fog
+    if (this.effects === 'reduced') n = Math.ceil(n / 2);
     const c = new THREE.Color(color);
     for (let i = 0; i < n && this.particles.length < MAX_PARTICLES; i++) {
       const a = Math.random() * Math.PI * 2;
@@ -550,12 +606,14 @@ export class World3D {
       if (v.root.visible) this.dying.push({ root: v.root, t0: now, building: false });
       else this.scene.remove(v.root);
       this.units.delete(id);
+      this.flinches.delete(id);
     }
     for (const [id, v] of this.buildings) {
       if (seen.has(id)) continue;
       this.pickables = this.pickables.filter((p) => p !== v.root);
       this.dying.push({ root: v.root, t0: now, building: true });
       this.buildings.delete(id);
+      this.nextPuff.delete(id);
     }
     this.syncItems(now);
     this.syncGhosts();
@@ -565,7 +623,10 @@ export class World3D {
     this.updateTrees(now);
     this.updateRings(client, alpha, now);
     this.updateMarkers(now);
+    this.buildingStates(now);
     this.updateParticles(now);
+    this.updateSmoke(now);
+    this.updateRubble(now);
     this.updateDebug(client);
     this.updateRally(client, now);
 
@@ -765,7 +826,22 @@ export class World3D {
     const working = (o?.type === 'gather' && o.phase === 'working') || (o?.type === 'build' && o.phase === 'building');
     const windup = secondsToTicks(CONFIG.units[u.type].attack.windup);
     const ph = now * 11 + u.id;
-    v.body.position.y = moving ? Math.abs(Math.sin(ph)) * 0.04 : 0;
+    const mounted = u.type === 'lancer' || u.type === 'outrider' || u.type === 'wolf';
+    v.body.position.y = moving ? Math.abs(Math.sin(ph)) * (mounted ? 0.07 : 0.04) : 0;
+    // Lean into the stride; riders rock with the gallop.
+    v.body.rotation.x = moving ? (mounted ? 0.05 + Math.sin(ph) * 0.06 : 0.08) : 0;
+    // Flinch: a quick jolt back when struck.
+    const hitAt = this.flinches.get(u.id);
+    if (hitAt !== undefined) {
+      const k = (now - hitAt) / 0.18;
+      if (k >= 1) this.flinches.delete(u.id);
+      else {
+        v.body.rotation.x -= 0.22 * (1 - k);
+        v.body.position.z = -0.06 * (1 - k);
+      }
+    } else v.body.position.z = 0;
+    // Banners and pennants flutter, faster on the move.
+    if (v.flag) v.flag.rotation.y = Math.sin(now * (moving ? 9 : 3) + u.id) * 0.35;
     if (u.type === 'mangonel') {
       // Wheels roll rather than stride.
       if (moving) v.legL.rotation.x = v.legR.rotation.x = v.legL.rotation.x - 0.12;
@@ -780,12 +856,25 @@ export class World3D {
     v.pickHead.visible = mode === 'pick';
     v.axeHead.visible = mode === 'axe';
     v.hammerHead.visible = mode === 'hammer';
+    v.tool.position.z = v.tool.userData.z0 ??= v.tool.position.z;
     if (u.swing > 0) {
-      // Attack: raise the weapon through the wind-up, strike as it lands.
-      const p = 1 - (u.swing - alpha) / windup;
-      v.tool.rotation.x = p < 0.75 ? 0.35 - (p / 0.75) * 2.1 : -1.75 + ((p - 0.75) / 0.25) * 2.3;
+      const p = Math.max(0, Math.min(1, 1 - (u.swing - alpha) / windup));
+      if (v.style === 'bow') {
+        // Draw: raise the bow level and pull back, loosing at the end.
+        v.tool.rotation.x = -1.2 * Math.min(1, p * 2);
+        v.tool.position.z = (v.tool.userData.z0 as number) - 0.08 * p;
+      } else if (v.style === 'staff') {
+        // Raise the staff overhead, then thrust it toward the target.
+        v.tool.rotation.x = p < 0.8 ? -(p / 0.8) * 2.4 : -2.4 + ((p - 0.8) / 0.2) * 1.6;
+      } else if (v.style === 'siege') {
+        // The throwing arm cranks back, then whips over.
+        v.tool.rotation.x = p < 0.85 ? (p / 0.85) * 0.5 : 0.5 - ((p - 0.85) / 0.15) * 1.6;
+      } else {
+        // Melee: raise the weapon through the wind-up, strike as it lands.
+        v.tool.rotation.x = p < 0.75 ? 0.35 - (p / 0.75) * 2.1 : -1.75 + ((p - 0.75) / 0.25) * 2.3;
+      }
     } else if (u.cooldown > 0 && attacking(u)) {
-      v.tool.rotation.x = 0.55; // follow-through
+      v.tool.rotation.x = v.style === 'siege' ? -1.1 : v.style === 'bow' ? -0.6 : 0.55; // follow-through
     } else {
       v.tool.rotation.x = working ? -1.7 + (0.5 + 0.5 * Math.sin(now * 10 + u.id)) * 2.0 : 0.35;
     }
@@ -810,6 +899,94 @@ export class World3D {
     const done = b.progress >= 1;
     v.scaffold.visible = !done;
     v.model.scale.y = done ? 1 : 0.08 + 0.92 * b.progress;
+  }
+
+  /**
+   * Building states you can read at a glance: smoke when damaged, flames when
+   * badly damaged, a chimney plume while it trains or researches. Only for
+   * buildings in sight; a few puffs at most.
+   */
+  private buildingStates(now: number): void {
+    for (const b of this.game.buildings()) {
+      if (b.progress < 1 || this.game.state.players[b.owner]?.neutral || !this.tileVisible(b.x, b.y)) continue;
+      const hp = b.hp / b.maxHp;
+      const working = b.queue.length > 0 && b.queue[0].started;
+      if (hp >= 0.6 && (!working || this.effects === 'reduced')) continue;
+      const due = this.nextPuff.get(b.id) ?? 0;
+      if (now < due) continue;
+      const top = b.w * 0.75 + 0.4;
+      if (hp < 0.6) {
+        const dark = hp < 0.3;
+        this.puff(b.x + (Math.random() - 0.5) * b.w * 0.5, top, b.y + (Math.random() - 0.5) * b.h * 0.4, dark ? '#2e2a26' : '#5a544c', 2.2, now);
+        if (dark) this.burst(b.x + (Math.random() - 0.5) * b.w * 0.4, top * 0.7, b.y, 2, '#ff8a3a', 0.6, now);
+        this.nextPuff.set(b.id, now + (dark ? 0.25 : 0.45));
+      } else {
+        this.puff(b.x + b.w * 0.25, top + 0.3, b.y - b.h * 0.25, '#d8d2c4', 1.6, now);
+        this.nextPuff.set(b.id, now + 0.9);
+      }
+    }
+    // Dust where Laborers hammer at a site, and at mines being worked.
+    if (now >= this.nextDust) {
+      this.nextDust = now + (this.effects === 'reduced' ? 0.9 : 0.45);
+      for (const u of this.game.units()) {
+        const o = u.order;
+        if (o?.type === 'build' && o.phase === 'building' && this.tileVisible(u.x, u.y)) {
+          const dx = Math.cos(u.facing) * 0.45;
+          const dy = Math.sin(u.facing) * 0.45;
+          this.burst(u.x + dx, 0.2, u.y + dy, 2, '#b8a07a', 0.6, now);
+        }
+      }
+    }
+  }
+
+  private puff(x: number, h: number, y: number, color: string, life: number, now: number): void {
+    if (this.puffs.length >= MAX_SMOKE) return;
+    this.puffs.push({ x, y: h, z: y, t0: now, life, size: 0.7 + Math.random() * 0.5, color: new THREE.Color(color) });
+  }
+
+  private updateSmoke(now: number): void {
+    this.puffs = this.puffs.filter((p) => now - p.t0 < p.life);
+    let i = 0;
+    for (const p of this.puffs) {
+      const t = (now - p.t0) / p.life;
+      const sc = p.size * (0.6 + t * 1.4) * (1 - t * 0.5);
+      this.m4.makeScale(sc, sc, sc).setPosition(p.x + t * 0.4, p.y + t * 1.6, p.z - t * 0.2);
+      this.smokeMesh.setMatrixAt(i, this.m4);
+      // Fade out by darkening toward the ground colour (instances share one opacity).
+      this.smokeMesh.setColorAt(i, this.c.copy(p.color).multiplyScalar(1 - t * 0.6));
+      i++;
+    }
+    this.smokeMesh.count = i;
+    this.smokeMesh.instanceMatrix.needsUpdate = true;
+    if (this.smokeMesh.instanceColor) this.smokeMesh.instanceColor.needsUpdate = true;
+  }
+
+  /** A low heap of stones where a building fell; it fades over half a minute. */
+  private addRubble(x: number, y: number, size: number, now: number): void {
+    if (!this.tileVisible(x, y)) return;
+    const g = new THREE.Group();
+    const stone = new THREE.MeshStandardMaterial({ color: '#7a7064', flatShading: true, roughness: 1, transparent: true, opacity: 1 });
+    const n = Math.round(size * 4);
+    for (let i = 0; i < n; i++) {
+      const r = 0.12 + Math.random() * 0.22;
+      const m = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 0), stone);
+      m.position.set(x + (Math.random() - 0.5) * size * 0.8, r * 0.5, y + (Math.random() - 0.5) * size * 0.8);
+      m.rotation.set(Math.random() * 3, Math.random() * 3, 0);
+      m.receiveShadow = true;
+      g.add(m);
+    }
+    this.scene.add(g);
+    this.rubble.push({ root: g, t0: now });
+  }
+
+  private updateRubble(now: number): void {
+    this.rubble = this.rubble.filter((r) => {
+      const t = now - r.t0;
+      const mat = (r.root.children[0] as THREE.Mesh | undefined)?.material as THREE.MeshStandardMaterial | undefined;
+      if (mat && t > 24) mat.opacity = Math.max(0, 1 - (t - 24) / 6);
+      if (t > 30) this.scene.remove(r.root);
+      return t <= 30;
+    });
   }
 
   private syncMine(m: ResourceNode, now: number): void {

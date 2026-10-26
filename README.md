@@ -41,6 +41,14 @@ computer opponents. No campaign or story.
   - interface scaling, readable tooltips and colour-blind friendly
     teams;
   - an interactive tutorial, and an end-of-match summary with charts.
+- Phase G: a consistent original look and sound:
+  - distinct unit silhouettes carrying the team colour;
+  - animation by attack style, flinches and gallops;
+  - building states you can read: damage smoke and fire, working smoke,
+    rubble;
+  - smooth water;
+  - role icons in the interface;
+  - categorized, positional, fog-respecting sound with clear alerts.
 
 See [Roadmap](#roadmap).
 
@@ -862,6 +870,91 @@ What the layouts are for:
     units trained and lost (by type), enemies destroyed, buildings, camps
     cleared, upgrades and heroes.
 
+## Look and sound
+
+Everything is original and procedural: low-poly models from primitives,
+painted ground, and synthesized sound. There are no asset files.
+
+### Visual identity
+
+- **Silhouette first:**
+  - Every unit type has its own outline: Laborers in straw hats, Guards
+    with tall kite shields and crests, Archers with pointed hoods and
+    bows.
+  - Lancers and Outriders are long because they are mounted, and the
+    Mangonel is the widest unit.
+  - Heroes stand about 1.4 times taller than anyone on foot, with a banner
+    on their back and a faint ring at their feet.
+  - The Brigand Chief is a bigger, horned Brigand.
+
+  `tests/visuals.test.ts` measures every model: any two of your unit types
+  differ by at least 8% in width, height or length, and the role
+  proportions hold.
+- **Team colour where it reads:** torsos, shields, crests, hoods, barding,
+  banners, pennants and building roofs (tested for every unit and
+  building). With colour-blind teams on, all of it switches to the blue and
+  orange pair.
+- **Animation:**
+  - Units face where they move, what they hit, what they build and the
+    mine they work.
+  - Walkers lean into their stride and riders rock with the gallop.
+  - Each way of attacking has its own motion: a melee wind-up and strike,
+    a bow drawn level and loosed, a staff raised overhead then thrust, a
+    throwing arm cranked back then whipped over.
+  - Struck units flinch, the dead topple and sink, and banners flutter.
+- **Work you can see:** pick, axe and hammer swing at the work. Wood chips
+  fly, felled trees burst, dust rises where Laborers hammer, carried gold
+  and logs show on their backs, and buildings rise out of their
+  scaffolding.
+- **Building states:**
+  - under 60% health a building smokes;
+  - under 30% it burns;
+  - while it trains or researches, a pale plume rises from it;
+  - when it falls it collapses into a heap of rubble that fades after half
+    a minute.
+- **Terrain:** water is one surface cut out by a softened mask, with a
+  sandy bank and a dark bed, so lakes and rivers have rounded shores
+  instead of tile steps. Fords and ramps are bare dirt, and cliffs are
+  boulder ridges.
+- **Restraint:**
+  - Sparks are small and brief, at most 160 at a time.
+  - Smoke is translucent, drawn beneath selection rings, and never writes
+    depth, at most 90 puffs.
+  - Health bars, orders and selection are drawn on a 2D overlay above
+    everything.
+  - Settings › Graphics › Effects "Reduced" halves the sparks and drops
+    the purely ambient smoke, keeping only what tells you something.
+- **Interface:**
+  - The selection panel shows a role glyph for each unit (shield, bow,
+    lance, cross, catapult, eye, crown, flame…) on its team colour, so a
+    mixed group reads without colour.
+  - The health strip follows the colour-blind setting.
+
+### Sound
+
+- **Five categories, each with its own volume** (Settings › Audio, with
+  a master volume and mute):
+
+  | Category | What it covers |
+  | --- | --- |
+  | Alerts | Attacks (a horn for the base, drums for an army in the field), hero fallen, mine collapsed, population blocked, sightings, victory and defeat |
+  | Combat | Swings, clashes, bow shots and arrow hits, spells and heals, siege launches and impacts, deaths, buildings collapsing |
+  | Economy and construction | Chopping, falling trees, picks at a worked mine, hammering at a site, gold and wood deliveries, buildings finished, units trained, research done, level-ups, items |
+  | Interface | Clicks, errors, and acknowledgements when you select (Laborers, soldiers, heroes) or give an order (move, attack, work) |
+  | Ambience | A quiet bed of wind and the odd bird |
+
+- **Placed in the world:** a sound on the map comes from where it
+  happens. It is louder near the centre of the view, quieter further out,
+  silent far away, and panned left or right. Alerts and interface sounds
+  are never placed.
+- **No leaks:** you only hear what you could see. Fights and siege fire
+  in the fog are silent, and so is the enemy's economy. Your own units are
+  heard being hit anywhere. A test plays a whole match and checks every
+  placed sound against the viewer's sight.
+- **Readable in a battle:** each sound has a minimum gap before it can
+  repeat, and at most 14 play at once (alerts and interface excepted).
+  A big fight becomes a texture, and an alert still cuts through.
+
 ## Architecture
 
 TypeScript and Vite, with three.js for 3D rendering. three.js is the only
@@ -1417,6 +1510,20 @@ which are never shipped to players.
   - The tutorial advanced on camera movement and selection.
   - The end screen drew all five charts.
   - No console errors.
+- **Phase G tests:**
+  - `tests/audio.test.ts` (9): every cue has a category; fights and siege
+    fire in the fog are silent while the same fight in sight is heard; the
+    enemy's economy is silent; alerts; distance fade and pan;
+    acknowledgements; and a real match checked tick by tick for placed
+    sounds outside the viewer's sight.
+  - `tests/visuals.test.ts` (4): silhouette differences, role
+    proportions, team colour on every unit and building, banners, and an
+    animation per attack style.
+- **Phase G in the browser:** a staged battle beside a damaged Barracks,
+  a lineup of every unit and both teams, and the lakes and river of Twin
+  Vales and Rivercross. No console errors. Smoke and animation timing need
+  a real GPU to judge: software rendering here runs at 2–3 frames a
+  second.
 - **Not yet done:** human playtesting of feel and pacing, and frame-rate
   measurement on real GPUs. Software WebGL only manages ~2–3 fps, which says
   nothing about real hardware.
@@ -1486,6 +1593,25 @@ Phase F (done): saving, settings and usability.
 - Interface scaling, structured tooltips and colour-blind friendly teams.
 - An eleven-step interactive tutorial and an end-of-match summary with
   charts.
+
+Phase G (done): original art, animation and sound.
+
+- Distinct, team-coloured silhouettes, with banners and halos for heroes.
+- Animation by attack style, flinches, gallops and work dust.
+- Damage, fire and working smoke, and rubble.
+- Rounded water.
+- Role icons in the interface.
+- Five sound categories, placed and fog-respecting, with distinct alerts
+  and a reduced-effects option.
+
+Still open from Phase G:
+
+- **Sound is synthesized:** recorded or composed sound, and music, would
+  give the game more character.
+- **Animation is posed from parts, not rigged:** good at this zoom level,
+  stiff up close.
+- **Judging the visuals needs a real GPU:** smoke density and animation
+  timing should be checked on real hardware.
 
 Still open from Phase F:
 

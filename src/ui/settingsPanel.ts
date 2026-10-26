@@ -44,6 +44,14 @@ export function settingsHtml(s: Settings, tab: Tab, listening: KeyAction | null)
         ] as const
       )
         .map(([v, l]) => `<option value="${v}" ${s.graphics.healthBars === v ? 'selected' : ''}>${l}</option>`)
+        .join('')}</select></label>` +
+      `<label class="set-row"><span>Effects<small>Sparks, smoke and dust. Reduced keeps only what tells you something.</small></span><select data-set="graphics.effects">${(
+        [
+          ['full', 'Full'],
+          ['reduced', 'Reduced'],
+        ] as const
+      )
+        .map(([v, l]) => `<option value="${v}" ${s.graphics.effects === v ? 'selected' : ''}>${l}</option>`)
         .join('')}</select></label>`;
   } else if (tab === 'camera') {
     body =

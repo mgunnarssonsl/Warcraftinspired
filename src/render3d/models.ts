@@ -59,6 +59,10 @@ export interface WorkerParts {
   hammerHead: THREE.Object3D;
   goldSack: THREE.Object3D;
   logs: THREE.Object3D[];
+  /** A banner or pennant that waves (heroes, riders), if any. */
+  flag?: THREE.Object3D;
+  /** How it attacks, for its animation: a melee blow, a drawn bow, a raised staff, a throwing arm. */
+  style?: 'melee' | 'bow' | 'staff' | 'siege';
 }
 
 export function makeWorker(team: string): WorkerParts {
@@ -129,8 +133,10 @@ function makeGuard(team: string): WorkerParts {
   const steel = mat('#a3a9b2', { rough: 0.45 });
   body.add(mesh(new THREE.SphereGeometry(0.125, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), steel, 0, 0.66, 0));
   body.add(mesh(box(0.36, 0.07, 0.2), steel, 0, 0.53, 0)); // pauldrons
-  const shield = mesh(box(0.05, 0.3, 0.24), mat(team), -0.2, 0.4, 0.05);
-  shield.add(mesh(box(0.02, 0.1, 0.1), mat('#e6d9a8'), -0.03, 0, 0));
+  body.add(mesh(box(0.03, 0.09, 0.2), mat(team), 0, 0.77, -0.01)); // crest: the team colour on top
+  // A tall kite shield: the Guard's silhouette, in the team colour with a pale boss.
+  const shield = mesh(box(0.05, 0.38, 0.26), mat(team), -0.21, 0.4, 0.05);
+  shield.add(mesh(box(0.02, 0.12, 0.12), mat('#e6d9a8'), -0.03, 0.02, 0));
   body.add(shield);
   const tool = new THREE.Group();
   tool.position.set(0.2, 0.42, 0.04);
@@ -145,7 +151,8 @@ function makeGuard(team: string): WorkerParts {
 function makeArcher(team: string): WorkerParts {
   const base = soldierBase(team, 1.4, '#4a3826');
   const { body } = base;
-  body.add(mesh(new THREE.ConeGeometry(0.15, 0.24, 8), mat('#3e5a32'), 0, 0.76, -0.01));
+  // Pointed hood in a darker shade of the team colour: archers read as a team at a glance.
+  body.add(mesh(new THREE.ConeGeometry(0.15, 0.24, 8), mat(tint(team, -0.35)), 0, 0.76, -0.01));
   body.add(mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.3, 6), mat('#6b4a2b'), 0.06, 0.48, -0.17));
   for (let i = 0; i < 3; i++) body.add(mesh(box(0.012, 0.08, 0.012), mat('#e8e2d0'), 0.03 + i * 0.025, 0.67, -0.17));
   const tool = new THREE.Group();
@@ -155,7 +162,30 @@ function makeArcher(team: string): WorkerParts {
   tool.add(bow);
   tool.add(mesh(box(0.004, 0.44, 0.004), mat('#e8e2d0'), 0, 0, -0.0));
   body.add(tool);
-  return { ...base, tool, ...noTools() };
+  return { ...base, tool, ...noTools(), style: 'bow' };
+}
+
+/** A hero's banner on a pole at the back: team colour, high above the crowd. */
+function heroBanner(body: THREE.Group, team: string, height: number): THREE.Object3D {
+  const pole = mesh(box(0.025, height, 0.025), mat('#5b4126'), -0.12, 0.3 + height / 2, -0.16);
+  body.add(pole);
+  const flag = new THREE.Group();
+  flag.position.set(-0.12, 0.3 + height - 0.08, -0.16);
+  flag.add(mesh(box(0.012, 0.16, 0.2), mat(team), 0, 0, -0.1));
+  flag.add(mesh(box(0.014, 0.04, 0.2), mat('#d9b44a', { emissive: 0x2a1e00 }), 0, 0.07, -0.1));
+  body.add(flag);
+  return flag;
+}
+
+/** A faint team-coloured ring at a hero's feet. */
+function heroHalo(root: THREE.Group, team: string): void {
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.42, 0.5, 28).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: team, transparent: true, opacity: 0.35, depthWrite: false }),
+  );
+  ring.position.y = 0.02;
+  ring.name = 'halo';
+  root.add(ring);
 }
 
 /** The Marshal: a larger armoured champion with cape, plume and a war hammer. */
@@ -166,7 +196,10 @@ function makeHero(team: string): WorkerParts {
   const steel = mat('#b8bec8', { rough: 0.35 });
   body.add(mesh(new THREE.SphereGeometry(0.13, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), steel, 0, 0.67, 0));
   body.add(mesh(new THREE.ConeGeometry(0.04, 0.22, 5), mat(team), 0, 0.86, -0.02)); // plume
-  body.add(mesh(box(0.4, 0.08, 0.22), gold, 0, 0.54, 0)); // pauldrons
+  body.add(mesh(box(0.48, 0.08, 0.22), gold, 0, 0.54, 0)); // broad pauldrons: the frontline hero
+  const shield = mesh(box(0.05, 0.32, 0.26), mat(team), -0.27, 0.4, 0.04); // round-topped tower shield
+  shield.add(mesh(box(0.02, 0.14, 0.14), gold, -0.03, 0.02, 0));
+  body.add(shield);
   const cape = mesh(box(0.3, 0.42, 0.03), mat(tint(team, -0.3)), 0, 0.36, -0.17);
   cape.rotation.x = 0.15;
   body.add(cape);
@@ -176,7 +209,9 @@ function makeHero(team: string): WorkerParts {
   tool.add(mesh(box(0.16, 0.1, 0.1), steel, 0, 0.38, 0));
   tool.add(mesh(box(0.17, 0.02, 0.11), gold, 0, 0.38, 0));
   body.add(tool);
-  return { ...base, tool, ...noTools() };
+  const flag = heroBanner(body, team, 0.62);
+  heroHalo(base.root, team);
+  return { ...base, tool, ...noTools(), flag };
 }
 
 /** Pathfinder: a tall hooded ranger with a long cloak and a longbow. */
@@ -196,7 +231,9 @@ function makeRanger(team: string): WorkerParts {
   tool.add(bow);
   tool.add(mesh(box(0.004, 0.6, 0.004), mat('#e8e2d0'), 0, 0, 0));
   body.add(tool);
-  return { ...base, tool, ...noTools() };
+  const flag = heroBanner(body, team, 0.6);
+  heroHalo(base.root, team);
+  return { ...base, tool, ...noTools(), flag, style: 'bow' };
 }
 
 /** Sage: a robed caster with a tall pointed hat and a staff of fire. */
@@ -212,7 +249,9 @@ function makeSage(team: string): WorkerParts {
   tool.add(mesh(box(0.03, 0.68, 0.03), mat('#5b4126'), 0, 0.2, 0));
   tool.add(mesh(new THREE.OctahedronGeometry(0.08, 0), mat('#ffb060', { emissive: 0xc04a00, rough: 0.3 }), 0, 0.58, 0));
   body.add(tool);
-  return { ...base, tool, ...noTools() };
+  const flag = heroBanner(body, team, 0.5);
+  heroHalo(base.root, team);
+  return { ...base, tool, ...noTools(), flag, style: 'staff' };
 }
 
 /** Timber Wolf: a low grey quadruped. */
@@ -288,9 +327,10 @@ function makeLancer(team: string): WorkerParts {
   tool.position.set(0.15, 0.66, 0);
   const lance = mesh(new THREE.ConeGeometry(0.03, 0.95, 6).rotateX(Math.PI / 2), mat('#d6c49a'), 0, 0, 0.35);
   tool.add(lance);
-  tool.add(mesh(box(0.012, 0.1, 0.1), mat(team), 0, 0.06, 0.62)); // pennant
+  const pennant = mesh(box(0.012, 0.1, 0.1), mat(team), 0, 0.06, 0.62);
+  tool.add(pennant);
   body.add(tool);
-  return { root, body, legL, legR, tool, ...noTools() };
+  return { root, body, legL, legR, tool, ...noTools(), flag: pennant };
 }
 
 /** Outrider: a lighter rider on a smaller horse, carrying a pennant pole. */
@@ -299,7 +339,9 @@ function makeOutrider(team: string): WorkerParts {
   p.body.scale.setScalar(1.25);
   p.tool.clear();
   p.tool.add(mesh(box(0.025, 0.6, 0.025), mat('#7a5733'), 0, 0.2, 0));
-  p.tool.add(mesh(box(0.012, 0.12, 0.18), mat(team), 0, 0.44, 0.09));
+  const pennant = mesh(box(0.012, 0.12, 0.18), mat(team), 0, 0.44, 0.09);
+  p.tool.add(pennant);
+  p.flag = pennant;
   return p;
 }
 
@@ -315,7 +357,7 @@ function makeCleric(team: string): WorkerParts {
   tool.add(mesh(box(0.03, 0.55, 0.03), mat('#7a5733'), 0, 0.17, 0));
   tool.add(mesh(new THREE.IcosahedronGeometry(0.06, 0), mat('#b8ffd0', { emissive: 0x3aa05a, rough: 0.3 }), 0, 0.47, 0));
   body.add(tool);
-  return { ...base, tool, ...noTools() };
+  return { ...base, tool, ...noTools(), style: 'staff' };
 }
 
 /** Mangonel: a wheeled timber frame with a throwing arm (the "tool"). */
@@ -339,7 +381,19 @@ function makeMangonel(team: string): WorkerParts {
   tool.add(mesh(box(0.06, 0.06, 0.75), wood, 0, 0, 0.1));
   tool.add(mesh(new THREE.SphereGeometry(0.1, 6, 4), mat('#7a7468'), 0, 0.06, -0.26)); // stone in the cup
   body.add(tool);
-  return { root, body, legL, legR, tool, ...noTools() };
+  return { root, body, legL, legR, tool, ...noTools(), style: 'siege' };
+}
+
+/** Brigand Chief: a bigger brigand with a horned helm, so the camp's leader stands out. */
+function makeChief(team: string): WorkerParts {
+  const p = makeGuard(team);
+  p.body.scale.setScalar(1.75);
+  for (const x of [-1, 1]) {
+    const horn = mesh(new THREE.ConeGeometry(0.035, 0.16, 5), mat('#e6dcc0'), x * 0.12, 0.72, 0);
+    horn.rotation.z = -x * 0.7;
+    p.body.add(horn);
+  }
+  return p;
 }
 
 /** Hammer projectile for Stormhammer, pointing along +Z. */
@@ -358,7 +412,8 @@ export function makeUnit(type: UnitType, team: string): WorkerParts {
   if (type === 'cleric') return makeCleric(team);
   if (type === 'mangonel') return makeMangonel(team);
   // Camp creeps reuse the soldier silhouettes in their own drab colours.
-  if (type === 'guard' || type === 'brigand' || type === 'chief') return makeGuard(team);
+  if (type === 'chief') return makeChief(team);
+  if (type === 'guard' || type === 'brigand') return makeGuard(team);
   if (type === 'archer' || type === 'poacher') return makeArcher(team);
   return makeWorker(team);
 }

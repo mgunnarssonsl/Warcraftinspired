@@ -302,7 +302,8 @@ body {
   position: relative;
   width: 40px;
   height: 40px;
-  background: radial-gradient(circle at 50% 38%, #e2b88c 22%, var(--team) 24% 52%, #3b3022 54%);
+  background: radial-gradient(circle at 50% 45%, var(--team) 0 58%, #3b3022 60%);
+  color: #f6efe0;
   border: 1px solid var(--edge);
   border-radius: 4px;
   cursor: pointer;
@@ -1059,4 +1060,13 @@ table.stats td:first-child {
   50% {
     box-shadow: 0 0 0 2px #ffd84a, 0 0 4px 1px rgba(255, 216, 74, 0.3);
   }
+}
+
+.portrait-glyph {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.7));
 }

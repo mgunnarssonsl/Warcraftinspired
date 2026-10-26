@@ -136,6 +136,7 @@ function applySettings(s: Settings, first = false): void {
   settings = s;
   sound.volumes = { ...s.audio };
   world.applyGraphics(s.graphics);
+  world.effects = s.graphics.effects;
   view.healthBars = s.graphics.healthBars;
   if (view.colorblind !== s.interface.colorblind) {
     view.colorblind = s.interface.colorblind;
