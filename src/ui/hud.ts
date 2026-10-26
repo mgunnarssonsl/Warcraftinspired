@@ -83,7 +83,7 @@ interface ActionDef {
 
 const BUILD_TIPS: Record<BuildingType, string> = {
   hq: 'Keep: accepts gold and wood, +10 population. Build one near a distant mine to expand.',
-  farm: 'Farm: +6 population.',
+  farm: `Farm: +6 population (up to the maximum of ${CONFIG.match.maxPop}).`,
   lumbermill: 'Lumber Mill: accepts wood. Build it beside a forest to shorten wood trips. Enables Archers.',
   barracks: 'Barracks: trains Guards and Archers, and Lancers from tier II.',
   tower: 'Watch Tower: shoots enemies within 7 tiles.',
@@ -300,6 +300,7 @@ export class Hud {
   /** Called when scouting spots something worth knowing (a softer ping). */
   onSighting: (x: number, y: number) => void = () => {};
   private sightedBuildings = new Set<number>();
+  private popAtMax: boolean | null = null;
   private armyInView = false;
   private lastArmySighting = -1e9;
   private lastSightingCheck = 0;
@@ -375,7 +376,14 @@ export class Hud {
       } else if (e.type === 'constructionCancelled' && e.player === this.client.player) {
         this.notify('Construction cancelled; resources partly refunded.');
       } else if (e.type === 'popBlocked' && e.player === this.client.player) {
-        this.notify('Not enough population: build more Farms.', 'alert');
+        // At the maximum, more Farms add nothing: say so instead of sending the player to build them.
+        const max = this.game.popCap(e.player) >= CONFIG.match.maxPop;
+        this.notify(
+          max
+            ? `Population maximum reached (${CONFIG.match.maxPop}). More Farms won't add more; lose or replace units to make room.`
+            : 'Not enough population: build more Farms.',
+          'alert',
+        );
       } else if (e.type === 'cantTrain' && e.player === this.client.player) {
         this.notify(`Cannot train: ${e.reason}`, 'alert');
       } else if (e.type === 'cantItem' && e.player === this.client.player) {
@@ -408,8 +416,20 @@ export class Hud {
     setText(this.wood, String(p.wood));
     const used = this.game.popUsed(p.id);
     const cap = this.game.popCap(p.id);
-    setText(this.pop, `${used}/${cap}`);
+    const atMax = cap >= CONFIG.match.maxPop;
+    setText(this.pop, atMax ? `${used}/${cap} max` : `${used}/${cap}`);
     this.pop.classList.toggle('full', used >= cap);
+    if (atMax !== this.popAtMax) {
+      this.popAtMax = atMax;
+      setTip(
+        this.pop.parentElement!,
+        atMax
+          ? `You have the maximum population of ${CONFIG.match.maxPop}. More Farms won't raise it further.`
+          : `Population used / available. Keeps and Farms raise it, up to ${CONFIG.match.maxPop}.`,
+        null,
+        'Population',
+      );
+    }
     const secs = Math.floor(this.game.state.tick / TICK_RATE);
     setText(this.clock, `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`);
     this.pausedBanner.classList.toggle('hidden', !this.client.paused);
@@ -684,7 +704,8 @@ export class Hud {
     if (head) {
       const name = nameOf(head);
       const verb = head.research ? 'Researching' : head.revive ? 'Reviving' : 'Training';
-      status = head.started ? `${verb} ${name} ${Math.floor(head.progress * 100)}%` : `${name} waiting for population (build Farms)`;
+      const maxed = this.game.popCap(this.client.player) >= CONFIG.match.maxPop;
+      status = head.started ? `${verb} ${name} ${Math.floor(head.progress * 100)}%` : `${name} waiting for population (${maxed ? `at the maximum of ${CONFIG.match.maxPop}` : 'build Farms'})`;
     }
     row('Production', status);
     if (trainableAt(b.type).length) row('Rally point', b.rally ? 'set (right-click to move it)' : 'none (right-click to set)');

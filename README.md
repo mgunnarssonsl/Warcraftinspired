@@ -130,6 +130,9 @@ These are the rules as implemented. All numbers live in `src/sim/config.ts`.
   goes idle, and you get a notice.
 - **Population:** Laborers use 1 population, and Guards and Archers use 2. A
   completed Keep provides 10 and a completed Farm 6, up to a cap of 100.
+  The cap is a deliberate maximum: past it, more Farms add nothing. The top
+  bar then reads "100/100 max", and a blocked queue says the maximum is
+  reached rather than asking for Farms.
 
 ## Match rules
 
