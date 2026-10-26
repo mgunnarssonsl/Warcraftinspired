@@ -6,6 +6,7 @@
 // from a saved game (a load request left in session storage, then a reload),
 // or as the tutorial (?tutorial=1).
 
+import { orderCue, selectCue } from './audio/cues';
 import { Sound } from './audio/sound';
 import { ComputerPlayer, type Difficulty } from './ai/computer';
 import { randomStyle, STYLES, type AdvantageId, type StyleId } from './ai/profile';
@@ -94,9 +95,10 @@ const now = () => performance.now() / 1000;
 const input = new InputController(canvas, game, world, client, minimap, now);
 const hud = new Hud(game, client, input);
 const sound = new Sound();
-hud.onAlert = (x, y) => {
+hud.onAlert = (x, y, where) => {
   minimap.ping(x, y, '#ff4a3a', now());
-  sound.play('alert');
+  // Two distinct calls: a horn for the base, drums for an army in the field.
+  sound.play(where === 'base' ? 'alertBase' : 'alertArmy');
 };
 hud.onSighting = (x, y) => {
   minimap.ping(x, y, '#ffd84a', now());
@@ -105,6 +107,27 @@ hud.onSighting = (x, y) => {
 document.addEventListener('click', (e) => {
   if ((e.target as HTMLElement).closest('button')) sound.play('click');
 });
+// Acknowledge the player's own orders and selections.
+const issue = game.issue.bind(game);
+game.issue = (c) => {
+  if (c.player === client.player) {
+    const cue = orderCue(c.type);
+    if (cue) sound.play(cue);
+  }
+  issue(c);
+};
+const onSelection = input.onSelectionChanged;
+let lastSelection = '';
+input.onSelectionChanged = () => {
+  onSelection();
+  const own = client.selected.map((id) => game.unit(id)).filter((u) => u && u.owner === client.player).map((u) => u!.type);
+  const key = client.selected.join(',');
+  if (key !== lastSelection) {
+    lastSelection = key;
+    const cue = selectCue(own);
+    if (cue) sound.play(cue);
+  }
+};
 
 // ---- settings ----------------------------------------------------------------------
 
@@ -279,6 +302,21 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('pagehide', autosave);
 
+/** Where work can be heard: sites being built and mines being worked, in sight. */
+function workSounds(see: (x: number, y: number) => boolean) {
+  const building: Array<{ x: number; y: number }> = [];
+  const mining: Array<{ x: number; y: number }> = [];
+  for (const u of game.units()) {
+    const o = u.order;
+    if (o?.type === 'build' && o.phase === 'building' && see(u.x, u.y)) building.push(u);
+    else if (u.hidden && o?.type === 'gather') {
+      const m = game.resource(o.nodeId);
+      if (m && see(m.x, m.y)) mining.push(m);
+    }
+  }
+  return { building, mining };
+}
+
 let acc = 0;
 let last = performance.now();
 const MAX_STEPS_PER_FRAME = 8;
@@ -306,7 +344,18 @@ function frame(t: number): void {
   overlay.handleEvents(events, secs, client.player);
   minimap.handleEvents(events, secs, client.player);
   hud.handleEvents(events);
-  sound.handleEvents(events, client.player);
+  // Sound: heard from the camera, and only what this viewer can see.
+  sound.listener = { x: world.rig.tx, y: world.rig.ty, reach: world.rig.distance * 1.1 + 8 };
+  const seeTile = (x: number, y: number) => client.revealAll || game.vision.isVisible(client.player, Math.floor(x), Math.floor(y));
+  sound.handleEvents(events, {
+    viewer: client.player,
+    visible: seeTile,
+    unit: (id) => {
+      const u = game.unit(id);
+      return u ? { type: u.type, owner: u.owner, x: u.x, y: u.y } : undefined;
+    },
+  });
+  sound.tick(workSounds(seeTile));
   for (const e of events) {
     if (e.type === 'playerDefeated' && e.player === client.player) screens.defeatReason = e.reason;
     if (e.type === 'matchOver') {

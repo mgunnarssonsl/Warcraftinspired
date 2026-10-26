@@ -11,7 +11,8 @@ const STORAGE_KEY = 'ironvale.settings';
 export type HealthBars = 'always' | 'damaged' | 'selected';
 
 export interface Settings {
-  audio: { master: number; effects: number; alerts: number; muted: boolean };
+  /** Volumes 0-1: master, then one per sound category (see audio/cues.ts). */
+  audio: { master: number; interface: number; combat: number; economy: number; alerts: number; ambience: number; muted: boolean };
   graphics: {
     /** Real-time shadows (the most expensive effect). */
     shadows: boolean;
@@ -33,7 +34,7 @@ export interface Settings {
 
 export function defaultSettings(): Settings {
   return {
-    audio: { master: 0.7, effects: 0.8, alerts: 1, muted: false },
+    audio: { master: 0.7, interface: 0.6, combat: 0.7, economy: 0.7, alerts: 1, ambience: 0.4, muted: false },
     graphics: { shadows: true, resolution: 1, healthBars: 'damaged' },
     camera: { panSpeed: 1, zoomSpeed: 1, edgePan: true },
     interface: { uiScale: 1, colorblind: false, pauseOnBlur: true },
@@ -66,8 +67,12 @@ export function cleanSettings(raw: unknown): Settings {
   return {
     audio: {
       master: clamp(a.master, RANGES.volume, d.audio.master),
-      effects: clamp(a.effects, RANGES.volume, d.audio.effects),
+      interface: clamp(a.interface, RANGES.volume, d.audio.interface),
+      // Older settings had one "effects" volume: it carries over to both.
+      combat: clamp(a.combat ?? a.effects, RANGES.volume, d.audio.combat),
+      economy: clamp(a.economy ?? a.effects, RANGES.volume, d.audio.economy),
       alerts: clamp(a.alerts, RANGES.volume, d.audio.alerts),
+      ambience: clamp(a.ambience, RANGES.volume, d.audio.ambience),
       muted: bool(a.muted, d.audio.muted),
     },
     graphics: {

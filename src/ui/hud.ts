@@ -296,7 +296,7 @@ export class Hud {
   }
 
   /** Called when an attack alert fires (e.g. to ping the minimap). */
-  onAlert: (x: number, y: number) => void = () => {};
+  onAlert: (x: number, y: number, where: 'base' | 'army') => void = () => {};
   /** Called when scouting spots something worth knowing (a softer ping). */
   onSighting: (x: number, y: number) => void = () => {};
   private sightedBuildings = new Set<number>();
@@ -360,7 +360,7 @@ export class Hud {
                 ? 'A Laborer is'
                 : 'Your forces are';
           this.notify(`${what} under attack! (Space: jump there)`, 'alert');
-          this.onAlert(e.x, e.y);
+          this.onAlert(e.x, e.y, atBase ? 'base' : 'army');
         }
         continue;
       }

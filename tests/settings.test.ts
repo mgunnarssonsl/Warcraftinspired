@@ -60,6 +60,8 @@ describe('settings', () => {
     expect(loadSettings(store)).toEqual(defaultSettings());
     const s = cleanSettings({ audio: { master: 7, muted: 'yes' }, interface: { uiScale: 0.1 }, graphics: { healthBars: 'sometimes' } });
     expect(s.audio.master).toBe(1);
+    // An older "effects" volume carries over to combat and economy.
+    expect(cleanSettings({ audio: { effects: 0.2 } }).audio).toMatchObject({ combat: 0.2, economy: 0.2 });
     expect(s.audio.muted).toBe(false);
     expect(s.interface.uiScale).toBe(0.8);
     expect(s.graphics.healthBars).toBe('damaged');

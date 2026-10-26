@@ -26,9 +26,12 @@ export function settingsHtml(s: Settings, tab: Tab, listening: KeyAction | null)
     body =
       check('audio.muted', 'Mute all sound', s.audio.muted) +
       slider('audio.master', 'Master volume', s.audio.master, RANGES.volume, 0.05) +
-      slider('audio.effects', 'Effects (construction, training, combat)', s.audio.effects, RANGES.volume, 0.05) +
-      slider('audio.alerts', 'Alerts (under attack, sightings, result)', s.audio.alerts, RANGES.volume, 0.05) +
-      `<p class="fine">Sounds are simple synthesized cues for now; original sound comes later.</p>`;
+      slider('audio.alerts', 'Alerts (under attack, sightings, hero fallen, result)', s.audio.alerts, RANGES.volume, 0.05) +
+      slider('audio.combat', 'Combat (blows, shots, spells, deaths)', s.audio.combat, RANGES.volume, 0.05) +
+      slider('audio.economy', 'Economy and construction (chopping, mining, deliveries, building, training)', s.audio.economy, RANGES.volume, 0.05) +
+      slider('audio.interface', 'Interface (clicks, selections, orders)', s.audio.interface, RANGES.volume, 0.05) +
+      slider('audio.ambience', 'Ambience (wind, birds)', s.audio.ambience, RANGES.volume, 0.05) +
+      `<p class="fine">Sounds on the map come from where they happen: louder near the centre of the view, to the left or right of it. You only hear what you can see.</p>`;
   } else if (tab === 'graphics') {
     body =
       check('graphics.shadows', 'Shadows', s.graphics.shadows, 'The most expensive effect: turn off on slow machines.') +
