@@ -81,9 +81,10 @@ npm run build      # typecheck + production bundle in dist/
 | Left-click / drag | Select / box-select your units |
 | Shift + click / drag | Add or remove from the selection |
 | Double-click a unit | Select every unit of that type on screen |
-| Right-click | Context command: ground = move, enemy = attack, mine or tree = gather, Keep = return cargo, unfinished building = resume construction |
+| Right-click | Context command: ground = move, enemy = attack, mine or tree = gather, Keep = return cargo, unfinished building = resume construction, damaged building = repair. A move onto water, cliffs or ground your units cannot reach says so; they go as close as they can. |
 | Shift + any order | Queue it after the current one: waypoints, attack-move legs, several buildings for one Laborer. Selected units show their queued route as dashed lines (green move, red attack, yellow gather or build). A plain order or Stop clears the queue. |
 | M, S, G, R | Move, Stop, Gather, Return cargo (also on the command card) |
+| E, then click (worker selected) | Repair a damaged building of yours |
 | A, then click | Click an enemy to attack it, or the ground to attack-move: walk there and fight anything on the way |
 | H | Hold position: never move, and fight whatever comes within weapon range |
 | F, L, B, T, V, N, K (Laborer selected) | Place a Farm, Lumber Mill, Barracks, Watch Tower, Hall of Valor, Blacksmith or Keep. From tier II, C places a Chapel and W a Siege Works. Click to place, Shift+click to keep placing, right-click or Esc to cancel. |
@@ -255,6 +256,10 @@ Hard also expands as soon as it is safe, whatever the style.
     army.
   - When its last Keep is below half health, Normal and Hard keep enough
     gold to rebuild it.
+  - Once no enemy is near, Normal and Hard send one worker (a woodcutter
+    if they can) to repair each building below 75% health. They never use
+    money set aside for a planned building, except the Keep reserve, since
+    mending the old Keep is cheaper than raising a new one.
   - When the Keep is gone, a new one comes first, at the nearest mine with
     no enemy known nearby. If it can't afford one, the army clears camps
     for the bounty until it can.
@@ -360,6 +365,18 @@ One construction model applies throughout:
 7. **Several buildings.** Shift+click places more buildings for the same
    Laborer, who builds them one after another and only then goes back to its
    previous job.
+8. **Repair.** Workers (Laborers or Tenders) repair a damaged, finished
+   building of their own side: right-click it, or press E and click it.
+   - One worker restores a building's whole health in its build time; each
+     extra worker adds the same rate.
+   - A full repair costs 35% of the building's price, paid bit by bit as
+     the health comes back.
+   - When the next bit can't be paid, repair stops and you're told why.
+     The health already restored stays.
+   - A worker that was gathering goes back to it afterwards.
+   - Enemy buildings and unfinished ones can't be repaired: the latter are
+     built.
+   - The values are in `CONFIG.construction` (`repairTime`, `repairCost`).
 
 Unfinished buildings provide no population and accept no deliveries. A
 Lumber Mill built next to a forest shortens wood trips; in the tests it

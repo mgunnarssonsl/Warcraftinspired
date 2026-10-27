@@ -169,7 +169,7 @@ export class Minimap {
     }
     this.pings = this.pings.filter((p) => now - p.t0 < 3);
     for (const p of this.pings) {
-      const t = (now - p.t0) % 1;
+      const t = Math.max(0, now - p.t0) % 1; // a ping made during this frame is a little ahead of its clock
       ctx.strokeStyle = p.color;
       ctx.globalAlpha = 1 - t;
       ctx.lineWidth = 2;
