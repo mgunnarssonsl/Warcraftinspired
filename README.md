@@ -1709,6 +1709,38 @@ which are never shipped to players.
   lake shores took **20 seconds** before the first frame, because the
   blur filter was applied once per water tile. Each shore layer is now
   one shape blurred once, which takes 34 ms.
+- **Audit of every phase against the original brief (after Phase H):**
+  - **Missing, now added:**
+    - Worker repair, required in section 3 of the brief.
+    - A message when a move or attack-move can't reach the spot it was
+      given ("make blocked routes understandable").
+  - **Found in the interface:**
+    - A minimap ping made during a frame was ahead of that frame's clock;
+      its ring had a negative radius and the minimap failed to draw that
+      frame.
+    - Thornwild players saw Crown words in places, the worst being "paused,
+      right-click with a Laborer to resume" on a building that grows on
+      its own.
+  - **Found in Phase G work, for the Thornwild:** Stag Riders and Fox
+    Scouts didn't gallop, Slingers and casters sounded like swordsmen, and
+    Thornwild spells had no visual effects (effects and sounds now follow
+    what an ability does).
+  - **Unchanged by Phase H:** three Crown computer-vs-computer matches play
+    out identically on the Phase G build and on Phase H before repair, so
+    the Crown's earlier balance results held.
+  - **Repair changes how Normal and Hard play**, so the balance playtests
+    were run again:
+
+    | Run | Before repair | With repair |
+    | --- | --- | --- |
+    | Hard vs Normal (all styles) | 51–38 | 50–36 (3 draws) |
+    | Normal vs Easy (all styles) | 70–15 | 73–15 (2 draws) |
+    | Styles, won–lost | Expander 65–30, Warlord 55–40, Raider 45–51, Balanced 44–50, Warden 29–67 | Expander 75–21, Warlord 56–39, Balanced 42–53, Raider 36–59, Warden 29–66 |
+    | Crown vs Thornwild | 27–27 (6 draws) | 30–26 (4 draws) |
+
+    The difficulty ladder holds. The Expander gains most from repair (its
+    outlying Keeps survive raids), which widens the gap in style balance
+    already listed as open.
 - **Not yet done:** human playtesting of feel and pacing, and frame-rate
   measurement on real GPUs. Software WebGL only manages ~2–3 fps, which says
   nothing about real hardware.
@@ -1834,7 +1866,7 @@ Still open from Phase E:
 
 - **Hard vs Normal** is a small edge in computer games, and Hard loses with
   the Warden. Human playtests should decide whether Hard feels harder.
-- **Style balance:** the Expander is ahead and the Warden behind.
+- **Style balance:** the Expander is ahead (75–21 since repair) and the Warden behind.
   Expansions decide too much, and a raid that punishes greed better is the
   likely fix.
 
