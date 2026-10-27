@@ -252,7 +252,7 @@ export const CONFIG = {
       radius: 0.35,
       sight: 8,
       pop: 2,
-      cost: { gold: 115, wood: 0 },
+      cost: { gold: 100, wood: 35 },
       trainSeconds: 18,
       trainedAt: 'den',
       requires: null,
@@ -271,7 +271,7 @@ export const CONFIG = {
       radius: 0.3,
       sight: 9,
       pop: 2,
-      cost: { gold: 115, wood: 15 },
+      cost: { gold: 90, wood: 45 },
       trainSeconds: 17,
       trainedAt: 'den',
       requires: 'saplodge',
@@ -309,7 +309,7 @@ export const CONFIG = {
       radius: 0.45,
       sight: 9,
       pop: 3,
-      cost: { gold: 180, wood: 40 },
+      cost: { gold: 150, wood: 85 },
       trainSeconds: 26,
       trainedAt: 'den',
       requires: 'barkweaver',
@@ -328,7 +328,7 @@ export const CONFIG = {
       radius: 0.3,
       sight: 9,
       pop: 2,
-      cost: { gold: 130, wood: 30 },
+      cost: { gold: 110, wood: 55 },
       trainSeconds: 22,
       trainedAt: 'moonwell',
       requires: null,
@@ -348,7 +348,7 @@ export const CONFIG = {
       radius: 0.45,
       sight: 8,
       pop: 3,
-      cost: { gold: 170, wood: 120 },
+      cost: { gold: 150, wood: 150 },
       trainSeconds: 34,
       trainedAt: 'rootpit',
       requires: null,
@@ -820,7 +820,7 @@ export const CONFIG = {
   /** Thornwild faction mechanics (see sim/factions.ts). */
   wild: {
     /** Health per second a unit regrows once it has not been hurt for regenDelay seconds. */
-    unitRegen: 1.2,
+    unitRegen: 1.0,
     /** The same for buildings (also while growing). */
     buildingRegen: 2,
     regenDelay: 5,

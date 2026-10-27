@@ -492,7 +492,9 @@ export class ComputerPlayer {
     const P = this.player;
     const F = this.fac(game);
     const count = (r: BuildingRole) => buildings.filter((b) => isRole(b.type, r)).length;
-    const unfinished = buildings.filter((b) => b.progress < 1).length + workers.filter((w) => w.order?.type === 'build' && w.order.siteId < 0).length;
+    // A planted building needs no builder, but it still paces the plan: it
+    // holds a slot until it is half grown (a Crown builder is tied up longer).
+    const unfinished = buildings.filter((b) => b.progress < (b.grows ? 0.5 : 1)).length + workers.filter((w) => w.order?.type === 'build' && w.order.siteId < 0).length;
     if (count('hq') === 0) {
       // Lost the base: rebuild before anything else.
       if (!workers.some((w) => w.order?.type === 'build' && isRole(w.order.buildingType, 'hq'))) this.note(game, 'Lost its last Keep: rebuilding one before anything else.');
@@ -626,7 +628,7 @@ export class ComputerPlayer {
   /** Foundations whose builder died or was pulled away get a new builder. */
   private resumeAbandoned(game: Game, workers: Unit[], buildings: Building[]): void {
     for (const b of buildings) {
-      if (b.progress >= 1) continue;
+      if (b.progress >= 1 || b.grows) continue;
       if (workers.some((w) => w.order?.type === 'build' && w.order.siteId === b.id)) continue;
       // Don't send Laborers back into a fight at the site.
       if (this.dangerAt(b, 8)) continue;
