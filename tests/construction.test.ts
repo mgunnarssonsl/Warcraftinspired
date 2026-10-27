@@ -144,3 +144,92 @@ describe('construction', () => {
     expect(woodPerMinute(1)).toBeGreaterThan(none * 1.5);
   });
 });
+
+describe('repair', () => {
+  const R = CONFIG.construction;
+  const KEEP = CONFIG.buildings.hq;
+
+  function damaged(share = 0.5) {
+    const { g, hq, u } = setup();
+    hq.hp = hq.maxHp * share;
+    return { g, hq, u };
+  }
+
+  it('restores health at the build-time rate and costs its share of the price, paid as it goes', () => {
+    const { g, hq, u } = damaged(0.5);
+    const [gold0, wood0] = [g.player(0).gold, g.player(0).wood];
+    g.issue({ type: 'repair', player: 0, units: [u.id], buildingId: hq.id });
+    const ticks = runUntil(g, () => hq.hp >= hq.maxHp, 20 * KEEP.buildSeconds * R.repairTime);
+    // Half the health back in about half the build time (plus the walk).
+    expect(ticks / 20).toBeGreaterThan(KEEP.buildSeconds * R.repairTime * 0.5 - 1);
+    expect(ticks / 20).toBeLessThan(KEEP.buildSeconds * R.repairTime * 0.5 + 6);
+    const spentGold = gold0 - g.player(0).gold;
+    const spentWood = wood0 - g.player(0).wood;
+    expect(spentGold).toBeGreaterThanOrEqual(Math.floor(KEEP.cost.gold * R.repairCost * 0.5) - 1);
+    expect(spentGold).toBeLessThanOrEqual(Math.ceil(KEEP.cost.gold * R.repairCost * 0.5));
+    expect(spentWood).toBeLessThanOrEqual(Math.ceil(KEEP.cost.wood * R.repairCost * 0.5));
+    run(g, 2);
+    expect(u.order).toBeNull();
+  });
+
+  it('two workers repair twice as fast', () => {
+    const time = (n: number) => {
+      const { g, hq, u } = damaged(0.4);
+      const ids = [u.id];
+      for (let i = 1; i < n; i++) ids.push(g.addUnit('worker', 0, 10.5, 12.5 + i).id);
+      g.issue({ type: 'repair', player: 0, units: ids, buildingId: hq.id });
+      return runUntil(g, () => hq.hp >= hq.maxHp, 20 * KEEP.buildSeconds * 2);
+    };
+    expect(time(2) / time(1)).toBeLessThan(0.62);
+  });
+
+  it('stops with a reason when the money runs out, keeping the health already restored', () => {
+    const { g, hq, u } = damaged(0.3);
+    g.player(0).gold = 10;
+    const hp0 = hq.hp;
+    g.issue({ type: 'repair', player: 0, units: [u.id], buildingId: hq.id });
+    const events: GameEvent[] = [];
+    runUntil(g, () => (events.push(...g.drainEvents()), u.order === null), 20 * 60);
+    expect(events.some((e) => e.type === 'cantBuild' && /Not enough gold/.test(e.reason))).toBe(true);
+    expect(hq.hp).toBeGreaterThan(hp0);
+    expect(hq.hp).toBeLessThan(hq.maxHp);
+    expect(g.player(0).gold).toBeGreaterThanOrEqual(0);
+  });
+
+  it('a woodcutter sent to repair goes back to its tree afterwards', () => {
+    const { g, hq, u } = damaged(0.9);
+    const tree = g.addResource('tree', 14, 10, 200);
+    g.issue({ type: 'gather', player: 0, units: [u.id], nodeId: tree.id });
+    run(g, 40);
+    g.issue({ type: 'repair', player: 0, units: [u.id], buildingId: hq.id });
+    runUntil(g, () => hq.hp >= hq.maxHp, 20 * 60);
+    run(g, 2);
+    expect(u.order?.type).toBe('gather');
+  });
+
+  it('only your own, finished, damaged buildings can be repaired', () => {
+    const { g, hq, u } = setup();
+    const enemy = g.addBuilding('farm', 1, 30, 4);
+    enemy.hp = 100;
+    const site = g.addBuilding('farm', 0, 20, 14, 0.3);
+    for (const id of [hq.id, enemy.id, site.id]) {
+      g.issue({ type: 'repair', player: 0, units: [u.id], buildingId: id });
+      g.step();
+      expect(u.order).toBeNull();
+    }
+    expect(g.drainEvents().filter((e) => e.type === 'cantBuild')).toHaveLength(3);
+  });
+
+  it('Thornwild Tenders repair too', () => {
+    const g = emptyGame(40, 24);
+    g.player(0).faction = 'wild';
+    g.player(0).gold = g.player(0).wood = 500;
+    const hall = g.addBuilding('heartwood', 0, 4, 8);
+    hall.hp = hall.maxHp / 2;
+    const t = g.addUnit('tender', 0, 10.5, 10.5);
+    g.issue({ type: 'repair', player: 0, units: [t.id], buildingId: hall.id });
+    run(g, 20 * 10);
+    expect(t.order?.type).toBe('repair');
+    expect(hall.hp).toBeGreaterThan(hall.maxHp / 2 + 20);
+  });
+});

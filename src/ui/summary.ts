@@ -11,7 +11,7 @@ const CHARTS: Metric[] = [
   { key: 'gold', title: 'Gold gathered' },
   { key: 'wood', title: 'Wood gathered' },
   { key: 'army', title: 'Army size' },
-  { key: 'workers', title: 'Laborers' },
+  { key: 'workers', title: 'Workers' },
   { key: 'value', title: 'Army value (gold + wood)' },
 ];
 
@@ -61,7 +61,7 @@ export function summaryHtml(game: Game, viewer: number, names: Record<number, st
     ['Gold gathered (per minute)', (id) => `${game.player(id).goldGathered} (${Math.round(game.player(id).goldGathered / minutes)})`],
     ['Wood gathered', (id) => String(game.player(id).woodGathered)],
     ['Bounty from kills', (id) => String(game.player(id).stats.bounty)],
-    ['Most Laborers / largest army', (id) => `${peak(id, 'workers')} / ${peak(id, 'army')}`],
+    ['Most workers / largest army', (id) => `${peak(id, 'workers')} / ${peak(id, 'army')}`],
     ['Units trained', (id) => `${game.player(id).stats.unitsTrained}`],
     ['Units lost', (id) => `${game.player(id).stats.unitsLost}: ${byType(game.player(id).stats.lost)}`],
     ['Enemies destroyed', (id) => String(game.player(id).stats.kills)],

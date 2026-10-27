@@ -8,7 +8,7 @@ import { itemBonus } from './items';
 import { CONFIG, TICK_SECONDS } from './config';
 import type { Game } from './game';
 import { findPath, smoothPath, type GoalRect } from './pathfinding';
-import type { Footprint, MoveGoal, Unit } from './types';
+import { TERRAIN, type Footprint, type MoveGoal, type Unit } from './types';
 
 export function distToRect(x: number, y: number, f: Footprint): number {
   const dx = x < f.tx ? f.tx - x : x > f.tx + f.w ? x - (f.tx + f.w) : 0;
@@ -48,6 +48,26 @@ export function closestAround(x: number, y: number, f: Footprint, pad: number): 
  * tiles. (Positions on exact edges are common: even-sized buildings have
  * whole-number centres.)
  */
+/**
+ * Why a move to (x, y) cannot get all the way there, for the player: the
+ * spot is water or cliff, or it lies on ground none of these units can walk
+ * to (an island, a walled-off pocket). Units still go as close as they can.
+ * Trees and buildings at the spot are not a problem: moving next to them is
+ * normal.
+ */
+export function reachProblem(game: Game, units: readonly Unit[], x: number, y: number): string | null {
+  const { width, height, terrain } = game.state.map;
+  const tx = Math.floor(x);
+  const ty = Math.floor(y);
+  if (tx < 0 || ty < 0 || tx >= width || ty >= height || !units.length) return null;
+  const t = terrain[ty * width + tx];
+  if (t === TERRAIN.water || t === TERRAIN.rock) return `Units can't walk on ${t === TERRAIN.water ? 'water' : 'cliffs'}: they go as close as they can.`;
+  const there = game.nav.component(tx, ty);
+  if (there === 0) return null; // a tree or building stands there
+  if (units.some((u) => game.nav.component(Math.floor(u.x), Math.floor(u.y)) === there)) return null;
+  return 'No path leads there: your units go as close as they can.';
+}
+
 export function symTile(v: number, size: number): number {
   const f = Math.floor(v);
   return f === v && v > size / 2 ? f - 1 : f;

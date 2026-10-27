@@ -16,6 +16,7 @@ export type KeyAction =
   | 'hold'
   | 'gather'
   | 'return'
+  | 'repair'
   | 'cancel'
   | 'idleWorker'
   | 'jumpAlert'
@@ -44,6 +45,7 @@ export const KEY_ACTIONS: KeyActionDef[] = [
   { id: 'hold', label: 'Hold position', group: 'Commands', key: 'h' },
   { id: 'gather', label: 'Gather', group: 'Commands', key: 'g' },
   { id: 'return', label: 'Return cargo', group: 'Commands', key: 'r' },
+  { id: 'repair', label: 'Repair', group: 'Commands', key: 'e' },
   { id: 'cancel', label: 'Cancel construction or last queued', group: 'Commands', key: 'x' },
   // One key per building role: the same key builds the Crown's Farm or the Thornwild Grove.
   ...(Object.entries(FACTION.crown.buildings) as Array<[BuildingRole, keyof typeof CONFIG.buildings]>).map(([role, t]) => ({

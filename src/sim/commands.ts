@@ -4,7 +4,7 @@
 import { buildableFor, isHall, isWorker } from './factions';
 import { CONFIG, secondsToTicks, type AbilityId, type BuildingType, type ItemId, type ResearchId, type UnitType } from './config';
 import { buyItem, dropItem, useItem } from './items';
-import { cancelConstruction, checkPlacement, resumeBuild, shortfall, startBuild } from './construction';
+import { cancelConstruction, checkPlacement, repairProblem, resumeBuild, shortfall, startBuild, startRepair } from './construction';
 import type { Game } from './game';
 import { cancelTraining, enqueue, enqueueResearch, setRally } from './production';
 import { castProblem } from './hero';
@@ -32,6 +32,7 @@ export type Command =
   | { type: 'flare'; player: number; buildingId: number; x: number; y: number }
   | { type: 'build'; player: number; units: number[]; buildingType: BuildingType; tx: number; ty: number; queued?: boolean }
   | { type: 'resumeBuild'; player: number; units: number[]; buildingId: number }
+  | { type: 'repair'; player: number; units: number[]; buildingId: number; queued?: boolean }
   | { type: 'cancelBuild'; player: number; buildingId: number }
   | { type: 'train'; player: number; buildingId: number; unit: UnitType }
   | { type: 'cancelTrain'; player: number; buildingId: number; index: number }
@@ -120,6 +121,16 @@ export function applyCommand(game: Game, cmd: Command): void {
       const pool = busy.length ? busy : workers;
       const builder = pool.reduce((a, b) => (Math.hypot(a.x - cx, a.y - cy) <= Math.hypot(b.x - cx, b.y - cy) ? a : b));
       give(game, builder, { type: 'build', buildingType: cmd.buildingType, tx: cmd.tx, ty: cmd.ty }, cmd.queued);
+      return;
+    }
+    case 'repair': {
+      const b = game.building(cmd.buildingId);
+      const problem = repairProblem(cmd.player, b);
+      if (problem) {
+        if (b) game.emit({ type: 'cantBuild', player: cmd.player, reason: problem, x: b.x, y: b.y });
+        return;
+      }
+      for (const u of units) if (isWorker(u.type)) give(game, u, { type: 'repair', targetId: b!.id }, cmd.queued);
       return;
     }
     case 'resumeBuild': {
@@ -239,6 +250,11 @@ export function applyQueued(game: Game, u: Unit, q: QueuedOrder): void {
     case 'build':
       startBuild(game, u, q.buildingType, q.tx, q.ty);
       return;
+    case 'repair': {
+      const b = game.building(q.targetId);
+      if (b) startRepair(game, u, b);
+      return;
+    }
     case 'hold':
       releaseFromNode(game, u);
       u.order = { type: 'hold', targetId: -1 };
@@ -339,7 +355,7 @@ export function formationSlots(game: Game, units: Unit[], x: number, y: number):
 export function flareProblem(game: Game, player: number, buildingId: number): string | null {
   const b = game.building(buildingId);
   if (!b || b.owner !== player || !isHall(b.type)) return 'Signal Flares are fired from your main hall (Keep or Heartwood).';
-  if (b.progress < 1) return 'The Keep is not finished.';
+  if (b.progress < 1) return 'Your main hall is not finished.';
   const p = game.player(player);
   if (p.flareReady > game.state.tick) return `Signal Flare ready in ${Math.ceil((p.flareReady - game.state.tick) / 20)}s.`;
   if (p.gold < CONFIG.flare.gold) return `Not enough gold (${CONFIG.flare.gold} needed).`;

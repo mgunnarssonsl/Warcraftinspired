@@ -2,7 +2,7 @@
 // button, notifications and the controls overlay. Reads state; issues actions
 // through the InputController.
 
-import { buildableFor, buildingRole, FACTION, isHall, isHealer, isWorker } from '../sim/factions';
+import { buildableFor, buildingFaction, buildingRole, FACTION, isHall, isHealer, isWorker } from '../sim/factions';
 import { hpColor, teamColor } from './view';
 import { UNIT_ICONS } from './icons';
 import { keyLabel } from '../input/keymap';
@@ -53,6 +53,11 @@ export function unitStatus(game: Game, u: Unit): string {
     if (o.phase === 'building') return `Building ${name}`;
     if (o.phase === 'standby') return `Standing by at ${name}`;
     return `Heading to build ${name}`;
+  }
+  if (o.type === 'repair') {
+    const b = game.building(o.targetId);
+    const name = b ? CONFIG.buildings[b.type].name : 'building';
+    return o.phase === 'repairing' ? `Repairing ${name}` : `Heading to repair ${name}`;
   }
   const node = game.resource(o.nodeId);
   switch (o.phase) {
@@ -141,6 +146,12 @@ const ACTIONS: ActionDef[] = [
   { id: 'hold', label: 'Hold', key: 'H', tip: 'Hold position: never move, attack enemies in weapon range.' },
   { id: 'gather', label: 'Gather', key: 'G', tip: 'Harvest gold from a mine or wood from trees. (Right-click a resource.)' },
   { id: 'return', label: 'Return', key: 'R', tip: 'Deliver carried resources to the nearest drop-off, then resume.' },
+  {
+    id: 'repair',
+    label: 'Repair',
+    key: 'E',
+    tip: `Restore a damaged building of yours. A full repair costs ${Math.round(CONFIG.construction.repairCost * 100)}% of its price, paid as the health comes back, and takes one worker its build time; more workers repair faster. (Right-click a damaged building.)`,
+  },
   ...BUILDABLE.map((t) => {
     const d = CONFIG.buildings[t];
     return {
@@ -148,7 +159,7 @@ const ACTIONS: ActionDef[] = [
       label: d.name,
       key: d.hotkey,
       build: t,
-      tip: `${BUILD_TIPS[t]} Cost: ${d.cost.gold} gold, ${d.cost.wood} wood. Build time ${d.buildSeconds}s. Requires a Laborer${d.requires ? ` and ${CONFIG.research[d.requires as ResearchId].name}` : ''}.`,
+      tip: `${BUILD_TIPS[t]} Cost: ${d.cost.gold} gold, ${d.cost.wood} wood. Build time ${d.buildSeconds}s. Requires a ${CONFIG.units[FACTION[buildingFaction(t) ?? 'crown'].units.worker].name}${d.requires ? ` and ${CONFIG.research[d.requires as ResearchId].name}` : ''}.`,
     };
   }),
   ...(Object.keys(CONFIG.units) as UnitType[]).filter((t) => CONFIG.units[t].trainedAt).map((t) => {
@@ -380,7 +391,7 @@ export class Hud {
             atBase && (!victim || victim.kind === 'building' || (victim.kind === 'unit' && isWorker(victim.type)))
               ? 'Your base is'
               : victim?.kind === 'unit' && isWorker(victim.type)
-                ? 'A Laborer is'
+                ? `A ${this.workerName()} is`
                 : 'Your forces are';
           this.notify(`${what} under attack! (Space: jump there)`, 'alert');
           this.onAlert(e.x, e.y, atBase ? 'base' : 'army');
@@ -447,8 +458,8 @@ export class Hud {
       setTip(
         this.pop.parentElement!,
         atMax
-          ? `You have the maximum population of ${CONFIG.match.maxPop}. More Farms won't raise it further.`
-          : `Population used / available. Keeps and Farms raise it, up to ${CONFIG.match.maxPop}.`,
+          ? `You have the maximum population of ${CONFIG.match.maxPop}. More ${this.myBuilding('farm')}s won't raise it further.`
+          : `Population used / available. ${this.myBuilding('hq')}s and ${this.myBuilding('farm')}s raise it, up to ${CONFIG.match.maxPop}.`,
         null,
         'Population',
       );
@@ -565,7 +576,7 @@ export class Hud {
         }
         continue;
       }
-      const workerOnly = !!a.build || a.id === 'gather' || a.id === 'return';
+      const workerOnly = !!a.build || a.id === 'gather' || a.id === 'return' || a.id === 'repair';
       // Only your own faction's buildings appear on the card.
       const foreign = !!a.build && !buildableFor(p.faction).includes(a.build);
       btn.classList.toggle('hidden', own.length === 0 || (workerOnly && !workers) || foreign);
@@ -602,9 +613,18 @@ export class Hud {
     if (panel.innerHTML !== this.panel.innerHTML) this.panel.replaceChildren(...panel.childNodes);
   }
 
+  /** Names in the viewer's own faction's words. */
+  private workerName(): string {
+    return CONFIG.units[FACTION[this.game.player(this.client.player).faction].units.worker].name;
+  }
+
+  private myBuilding(role: 'hq' | 'farm'): string {
+    return CONFIG.buildings[FACTION[this.game.player(this.client.player).faction].buildings[role]].name;
+  }
+
   private fillPanel(panel: HTMLElement, sel: Entity[]): void {
     if (!sel.length) {
-      panel.appendChild(el('div', 'hint', `Left-click or drag to select workers. Right-click a gold mine or tree to gather. Select a ${CONFIG.units[FACTION[this.game.player(this.client.player).faction].units.worker].name} to build.`));
+      panel.appendChild(el('div', 'hint', `Left-click or drag to select workers. Right-click a gold mine or tree to gather. Select a ${this.workerName()} to build.`));
       return;
     }
     if (sel.length === 1) {
@@ -683,7 +703,8 @@ export class Hud {
       row('Health', `${Math.round(e.hp)} / ${e.maxHp}`);
       if (e.progress < 1) {
         const builder = this.game.units().some((u) => u.order?.type === 'build' && u.order.siteId === e.id && u.order.phase === 'building');
-        row('Construction', `${Math.floor(e.progress * 100)}%${builder ? '' : ' (paused: right-click with a Laborer to resume)'}`);
+        if (e.grows) row('Growing', `${Math.floor(e.progress * 100)}% (on its own; no builder needed)`);
+        else row('Construction', `${Math.floor(e.progress * 100)}%${builder ? '' : ` (paused: right-click with a ${this.workerName()} to resume)`}`);
       }
       const acc = def.accepts as readonly string[];
       if (acc.length) row('Accepts', `${acc.join(' and ')} deliveries`);
@@ -702,7 +723,7 @@ export class Hud {
       const rich = e.miners > CONFIG.resources.goldmine.maxMiners;
       box.appendChild(el('div', 'sel-title', rich ? CONFIG.mineKinds.rich.name : CONFIG.resources.goldmine.name));
       row('Gold left', `${e.amount} / ${e.maxAmount}`);
-      if (rich) row('Rich', `${e.miners} Laborers mine at once: half again the income`);
+      if (rich) row('Rich', `${e.miners} workers mine at once: half again the income`);
       // The risk side, as far as you know: a camp you have found and not seen cleared.
       const me = this.client.player;
       const camp = this.game.state.camps.find(

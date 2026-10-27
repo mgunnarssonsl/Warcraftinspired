@@ -5,6 +5,8 @@
 //   3. One active builder raises it; others ordered to it stand by. If the
 //      builder leaves, construction pauses until a worker resumes it.
 //   4. Cancelling an unfinished building refunds CONFIG.construction.cancelRefund.
+//   5. Workers repair damaged finished buildings, paying a share of the
+//      price as the health comes back (see CONFIG.construction.repairCost).
 // Unfinished buildings provide no population and accept no deliveries.
 
 import { FACTION } from './factions';
@@ -79,7 +81,7 @@ export function isComplete(b: Building): boolean {
 function previousJob(u: Unit): number {
   const o = u.order;
   if (o?.type === 'gather') return o.nodeId;
-  if (o?.type === 'build') return o.resumeNodeId;
+  if (o?.type === 'build' || o?.type === 'repair') return o.resumeNodeId;
   return -1;
 }
 
@@ -225,8 +227,61 @@ export function updateGrowth(game: Game): void {
   }
 }
 
+// ---- repair ---------------------------------------------------------------------
+
+type RepairOrder = Extract<Order, { type: 'repair' }>;
+
+/** Why this player's workers cannot repair that building, or null. */
+export function repairProblem(player: number, b: Building | undefined): string | null {
+  if (!b || b.owner !== player) return 'Workers repair only your own buildings.';
+  if (!isComplete(b)) return 'Unfinished buildings are built, not repaired.';
+  if (b.hp >= b.maxHp) return 'That building is not damaged.';
+  return null;
+}
+
+export function startRepair(game: Game, u: Unit, b: Building): void {
+  if (repairProblem(u.owner, b)) return;
+  const resumeNodeId = previousJob(u);
+  releaseFromNode(game, u);
+  u.order = { type: 'repair', targetId: b.id, phase: 'toSite', resumeNodeId, owedGold: 0, owedWood: 0 };
+  u.move = null;
+}
+
+export function updateRepairer(game: Game, u: Unit, o: RepairOrder): void {
+  const b = game.building(o.targetId);
+  if (!b || b.owner !== u.owner || b.hp >= b.maxHp) return finish(game, u, o);
+  if (!atRect(u, b)) {
+    o.phase = 'toSite';
+    const goal = { kind: 'rect', tx: b.tx, ty: b.ty, w: b.w, h: b.h } as const;
+    if (!game.moveFailed(u, goal)) game.moveTo(u, goal);
+    if (u.move?.state === 'failed') fail(game, u, 'The building cannot be reached.', b.x, b.y);
+    return;
+  }
+  u.move = null;
+  o.phase = 'repairing';
+  u.facing = Math.atan2(b.y - u.y, b.x - u.x);
+  const def = CONFIG.buildings[b.type];
+  const gain = Math.min(b.maxHp - b.hp, b.maxHp / secondsToTicks(def.buildSeconds * CONFIG.construction.repairTime));
+  const share = (CONFIG.construction.repairCost * gain) / b.maxHp;
+  const gold = o.owedGold + def.cost.gold * share;
+  const wood = o.owedWood + def.cost.wood * share;
+  const p = game.player(u.owner);
+  if (Math.floor(gold) > p.gold || Math.floor(wood) > p.wood) {
+    return fail(game, u, `Not enough ${Math.floor(gold) > p.gold ? 'gold' : 'wood'} to keep repairing.`, b.x, b.y);
+  }
+  p.gold -= Math.floor(gold);
+  p.wood -= Math.floor(wood);
+  o.owedGold = gold - Math.floor(gold);
+  o.owedWood = wood - Math.floor(wood);
+  b.hp = Math.min(b.maxHp, b.hp + gain);
+  if (b.hp >= b.maxHp - 1e-6) {
+    b.hp = b.maxHp;
+    finish(game, u, o);
+  }
+}
+
 /** Done (or the site is gone): go back to the previous gathering job, if any. */
-function finish(game: Game, u: Unit, o: BuildOrder): void {
+function finish(game: Game, u: Unit, o: { resumeNodeId: number }): void {
   u.order = null;
   u.move = null;
   const node = o.resumeNodeId >= 0 ? game.resource(o.resumeNodeId) : undefined;

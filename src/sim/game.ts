@@ -12,7 +12,7 @@ import { checkOutcome } from './outcome';
 import { updateCast, updateStatus } from './hero';
 import { updatePrayers } from './support';
 import { updateFountains, updatePickup } from './items';
-import { updateBuilder } from './construction';
+import { updateBuilder, updateRepairer } from './construction';
 import { updateProduction } from './production';
 import { updateGatherer } from './gathering';
 import { generateMap } from './mapgen';
@@ -527,6 +527,8 @@ export class Game {
         updateGatherer(this, u, u.order);
       } else if (u.order?.type === 'build') {
         updateBuilder(this, u, u.order);
+      } else if (u.order?.type === 'repair') {
+        updateRepairer(this, u, u.order);
       } else {
         // Idle units (auto-acquire) and attack / attack-move / hold orders.
         updateCombatOrder(this, u);

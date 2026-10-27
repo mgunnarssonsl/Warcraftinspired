@@ -6,6 +6,7 @@ import { teamColor } from '../ui/view';
 import * as THREE from 'three';
 import type { ClientState } from '../input/client';
 import { CONFIG, secondsToTicks, type BuildingType } from '../sim/config';
+import { unitRole } from '../sim/factions';
 import type { PlacementCheck } from '../sim/construction';
 import type { Game } from '../sim/game';
 import { hash2 } from '../sim/rng';
@@ -432,17 +433,19 @@ export class World3D {
         this.addRubble(e.x, e.y, CONFIG.buildings[e.building].size, now);
       } else if (e.type === 'levelUp') {
         this.burst(e.x, 1.2, e.y, 30, '#ffd84a', 2.4, now);
-      } else if (e.type === 'cast' && e.ability === 'cry') {
-        this.burst(e.x, 0.6, e.y, 36, '#ff9a3a', 4.5, now);
-      } else if (e.type === 'cast' && (e.ability === 'volley' || e.ability === 'flame')) {
-        const r = CONFIG.hero.abilities[e.ability].radius;
-        const color = e.ability === 'flame' ? '#ff7a2a' : '#c8a070';
-        for (let i = 0; i < 6; i++) this.burst(e.x + Math.cos(i) * r * 0.6, 0.3, e.y + Math.sin(i) * r * 0.6, 6, color, 1.8, now);
-        this.addMarker(e.x, e.y, now, color);
-      } else if (e.type === 'cast' && e.ability === 'farsight') {
-        this.addMarker(e.x, e.y, now, '#ffe9a8');
-      } else if (e.type === 'cast' && (e.ability === 'slow' || e.ability === 'mark' || e.ability === 'ward')) {
-        this.burst(e.x, 0.8, e.y, 12, BUFF_COLORS[e.ability], 1.4, now);
+      } else if (e.type === 'cast') {
+        // By what the ability does, so every hero's spells show.
+        const def = CONFIG.hero.abilities[e.ability];
+        const fx = def.effect;
+        if (fx === 'rally') this.burst(e.x, 0.6, e.y, 36, '#ff9a3a', 4.5, now);
+        else if (fx === 'area' || fx === 'burn') {
+          const color = fx === 'burn' ? '#ff7a2a' : '#c8a070';
+          for (let i = 0; i < 6; i++) this.burst(e.x + Math.cos(i) * def.radius * 0.6, 0.3, e.y + Math.sin(i) * def.radius * 0.6, 6, color, 1.8, now);
+          this.addMarker(e.x, e.y, now, color);
+        } else if (fx === 'reveal') this.addMarker(e.x, e.y, now, '#ffe9a8');
+        else if (fx === 'slow' || fx === 'mark' || fx === 'ward') this.burst(e.x, 0.8, e.y, 12, BUFF_COLORS[fx], 1.4, now);
+        else if (fx === 'heal') this.burst(e.x, 0.8, e.y, 20, '#7dff8a', 1.6, now);
+        else if (fx === 'bolt' && !def.projectileSpeed) this.burst(e.x, 0.5, e.y, 16, '#6ab04a', 1.4, now); // roots burst up at once
       } else if (e.type === 'flare') {
         // A flare is seen by whoever lit it (and anyone already watching that spot).
         if (e.player === this.viewer || this.tileVisible(e.x, e.y)) {
@@ -461,8 +464,6 @@ export class World3D {
       } else if (e.type === 'impact') {
         this.burst(e.x, 0.3, e.y, 18, '#8a7c68', 2.6, now);
         this.burst(e.x, 0.3, e.y, 6, '#ffb060', 1.6, now);
-      } else if (e.type === 'cast' && e.ability === 'mend') {
-        this.burst(e.x, 0.8, e.y, 20, '#7dff8a', 1.6, now);
       } else if (e.type === 'buildingComplete') {
         this.burst(e.x, 1.2, e.y, 14, '#ffe9a8', 2.5, now);
       } else if (e.type === 'deliver') {
@@ -823,10 +824,11 @@ export class World3D {
 
     const o = u.order;
     const moving = u.move?.state === 'moving' && (u.x !== u.px || u.y !== u.py);
-    const working = (o?.type === 'gather' && o.phase === 'working') || (o?.type === 'build' && o.phase === 'building');
+    const working = (o?.type === 'gather' && o.phase === 'working') || (o?.type === 'build' && o.phase === 'building') || (o?.type === 'repair' && o.phase === 'repairing');
     const windup = secondsToTicks(CONFIG.units[u.type].attack.windup);
     const ph = now * 11 + u.id;
-    const mounted = u.type === 'lancer' || u.type === 'outrider' || u.type === 'wolf';
+    const role = unitRole(u.type);
+    const mounted = role === 'cavalry' || role === 'scout' || u.type === 'wolf';
     v.body.position.y = moving ? Math.abs(Math.sin(ph)) * (mounted ? 0.07 : 0.04) : 0;
     // Lean into the stride; riders rock with the gallop.
     v.body.rotation.x = moving ? (mounted ? 0.05 + Math.sin(ph) * 0.06 : 0.08) : 0;
@@ -852,7 +854,7 @@ export class World3D {
     // Four-legged mounts: hind legs move with the opposite front leg.
     (v.legL.userData.partner as THREE.Object3D | undefined)?.rotation.set(v.legR.rotation.x, 0, 0);
     (v.legR.userData.partner as THREE.Object3D | undefined)?.rotation.set(v.legL.rotation.x, 0, 0);
-    const mode = o?.type === 'build' ? 'hammer' : o?.type === 'gather' && o.res === 'gold' ? 'pick' : 'axe';
+    const mode = o?.type === 'build' || o?.type === 'repair' ? 'hammer' : o?.type === 'gather' && o.res === 'gold' ? 'pick' : 'axe';
     v.pickHead.visible = mode === 'pick';
     v.axeHead.visible = mode === 'axe';
     v.hammerHead.visible = mode === 'hammer';

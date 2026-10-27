@@ -260,6 +260,16 @@ export type Order =
       /** Group pace (tiles/s): a group ordered together moves at its slowest member's speed. */
       pace?: number;
     }
+  | {
+      type: 'repair';
+      targetId: number;
+      phase: 'toSite' | 'repairing';
+      /** Resource node to go back to afterwards (the previous job), or -1. */
+      resumeNodeId: number;
+      /** Repair cost accrued but not yet paid (paid in whole units). */
+      owedGold: number;
+      owedWood: number;
+    }
   | { type: 'hold'; targetId: number }
   | { type: 'cast'; ability: AbilityId; targetId: number; x: number; y: number }
   | { type: 'pickup'; itemId: number };
@@ -271,6 +281,7 @@ export type QueuedOrder =
   | { type: 'attack'; targetId: number }
   | { type: 'gather'; nodeId: number }
   | { type: 'build'; buildingType: BuildingType; tx: number; ty: number }
+  | { type: 'repair'; targetId: number }
   | { type: 'hold' };
 
 interface EntityBase {

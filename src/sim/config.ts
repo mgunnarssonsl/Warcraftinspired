@@ -1520,6 +1520,8 @@ export const CONFIG = {
         pullWorkers: false,
         /** A badly hurt hero leaves the fight to heal. */
         heroRetreat: false,
+        /** Sends a worker to repair damaged buildings once no enemy is near. */
+        repairs: false,
         /** Saves gold to rebuild when its last Keep is going down. */
         saveForKeep: false,
         /** When (seconds) a Laborer walks over to look at the enemy base; null = never. */
@@ -1566,6 +1568,7 @@ export const CONFIG = {
         focusFire: false,
         pullWorkers: true,
         heroRetreat: true,
+        repairs: true,
         saveForKeep: true,
         scoutWorkerSeconds: 120 as number | null,
         readsIntel: true,
@@ -1606,6 +1609,7 @@ export const CONFIG = {
         focusFire: true,
         pullWorkers: true,
         heroRetreat: true,
+        repairs: true,
         saveForKeep: true,
         scoutWorkerSeconds: 75 as number | null,
         readsIntel: true,
@@ -1685,6 +1689,9 @@ export const CONFIG = {
     reinforceGroup: 3,
     /** A hero leaves a fight below this share of health, and returns above backShare. */
     heroRetreatShare: 0.3,
+    /** Repair a building below this share of its health, with this much gold spare. */
+    repairBelow: 0.75,
+    repairGold: 60,
     heroBackShare: 0.75,
     /** A raid lasts at most this long (seconds), with this many soldiers. */
     raidSeconds: 45,
@@ -1742,6 +1749,15 @@ export const CONFIG = {
     startHpFraction: 0.1,
     /** Share of the cost returned when an unfinished building is cancelled. */
     cancelRefund: 0.75,
+    /**
+     * Repair: a worker restores a damaged, finished building of its own
+     * side. One worker restores the whole of a building's health in
+     * repairTime x its build time; more workers repair faster, each at that
+     * rate. The full repair costs repairCost x the building's price, paid
+     * bit by bit as health comes back; with nothing left to pay, repair stops.
+     */
+    repairTime: 1.0,
+    repairCost: 0.35,
   },
 
   resources: {

@@ -284,6 +284,8 @@ export class ComputerPlayer {
       reserve.gold += CONFIG.buildings[plan].cost.gold;
       reserve.wood += CONFIG.buildings[plan].cost.wood;
     }
+    // Repair may use the money kept for a new Keep: mending the old one is cheaper.
+    const repairReserve = { ...reserve };
     // Its last Keep is going down: keep enough to raise a new one.
     const allKeeps = buildings.filter((b) => isRole(b.type, 'hq'));
     if (this.profile.saveForKeep && role !== 'hq' && allKeeps.length === 1 && allKeeps[0].progress >= 1 && allKeeps[0].hp < allKeeps[0].maxHp * 0.5) {
@@ -297,6 +299,7 @@ export class ComputerPlayer {
     this.economy(game, workers, keeps, reserve);
     if (plan) this.build(game, plan, workers, buildings, keeps, committed);
     this.resumeAbandoned(game, workers, buildings);
+    this.repairDamage(game, workers, buildings, repairReserve);
     this.trainArmy(game, army, buildings, keeps, reserve);
     this.military(game, army, workers, buildings, keeps, game.player(P).gold - reserve.gold);
   }
@@ -637,6 +640,38 @@ export class ComputerPlayer {
       const w = free.reduce((a, c) => (dist(c, b) < dist(a, b) ? c : a));
       game.issue({ type: 'resumeBuild', player: this.player, units: [w.id], buildingId: b.id });
     }
+  }
+
+  /**
+   * Once the enemy has gone, one worker (a woodcutter if it can) mends each
+   * badly damaged building, while there is money to spare for it.
+   */
+  private repairDamage(game: Game, workers: Unit[], buildings: Building[], reserve: { gold: number; wood: number }): void {
+    if (!this.profile.repairs) return;
+    const me = game.player(this.player);
+    // Repair is paid as it goes: never out of money set aside (a new Keep, a planned building).
+    if (me.gold < reserve.gold || me.wood < reserve.wood) {
+      const repairing = workers.filter((w) => w.order?.type === 'repair').map((w) => w.id);
+      if (repairing.length) game.issue({ type: 'stop', player: this.player, units: repairing });
+      return;
+    }
+    if (me.gold - reserve.gold < CONFIG.ai.repairGold) return;
+    const damaged = buildings.filter(
+      (b) =>
+        b.progress >= 1 &&
+        b.hp < b.maxHp * CONFIG.ai.repairBelow &&
+        !this.dangerAt(b, 10) &&
+        !workers.some((w) => w.order?.type === 'repair' && w.order.targetId === b.id),
+    );
+    const b = damaged.sort((a, c) => a.hp / a.maxHp - c.hp / c.maxHp)[0];
+    if (!b) return;
+    const free = workers.filter((w) => w.order?.type === 'gather' && !w.hidden && w.carry.amount === 0 && w.id !== this.scoutWorker);
+    const pool = free.filter((w) => w.order?.type === 'gather' && w.order.res === 'wood');
+    const from = pool.length ? pool : free;
+    if (!from.length) return;
+    const w = from.reduce((a, c) => (dist(c, b) < dist(a, b) ? c : a));
+    game.issue({ type: 'repair', player: this.player, units: [w.id], buildingId: b.id });
+    this.note(game, `Repairing its ${CONFIG.buildings[b.type].name}.`);
   }
 
   // ---- army -------------------------------------------------------------------

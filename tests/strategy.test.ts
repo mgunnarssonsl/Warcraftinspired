@@ -107,14 +107,21 @@ describe('economic recovery', () => {
     expect(workersOf(g, 0).filter((w) => w.order === null).length).toBeLessThanOrEqual(1);
   }, 30_000);
 
-  it('saves enough to rebuild while its last Keep is going down', () => {
-    const { g, step } = grow(240, 'hard', 'balanced', { expandWhenSafe: false });
+  it('saves enough to rebuild while its last Keep is going down, or repairs it once the enemy is gone', () => {
+    // Without repair (or while still under attack) it keeps the price of a new Keep.
+    const { g, step } = grow(240, 'hard', 'balanced', { expandWhenSafe: false, repairs: false });
     const keep = keepsOf(g, 0)[0];
     keep.hp = keep.maxHp * 0.4;
     g.player(0).gold = 500;
     g.player(0).wood = 300;
     step(30);
     expect(g.player(0).gold).toBeGreaterThanOrEqual(CONFIG.buildings.hq.cost.gold);
+    // With repair, it mends the Keep instead.
+    const r = grow(240, 'hard', 'balanced', { expandWhenSafe: false });
+    const k2 = keepsOf(r.g, 0)[0];
+    k2.hp = k2.maxHp * 0.4;
+    r.step(30);
+    expect(k2.hp).toBeGreaterThan(k2.maxHp * 0.6);
   }, 30_000);
 });
 
@@ -126,6 +133,18 @@ describe('Laborers', () => {
       g.issue({ type: 'stop', player: 0, units: [w.id] });
       step(within);
       expect(g.unit(w.id)!.order?.type).toBe('gather');
+    }
+  }, 30_000);
+
+  it('repairs a damaged building once no enemy is near; Easy does not', () => {
+    for (const [d, repairs] of [['normal', true], ['easy', false]] as const) {
+      const { g, ai, step } = grow(240, d);
+      g.player(0).gold += 300;
+      const keep = keepsOf(g, 0)[0];
+      keep.hp = keep.maxHp * 0.4;
+      step(30);
+      expect(keep.hp > keep.maxHp * 0.45, d).toBe(repairs);
+      expect(said(ai, 'Repairing its Keep'), d).toBe(repairs);
     }
   }, 30_000);
 

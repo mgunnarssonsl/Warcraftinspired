@@ -13,6 +13,7 @@ import { acceptsResource } from '../sim/gathering';
 import { trainableAt } from '../sim/production';
 import { researchAt, researched } from '../sim/tech';
 import { canAttack, isEnemy, targetable } from '../sim/combat';
+import { reachProblem } from '../sim/movement';
 import type { Building, Entity, Unit } from '../sim/types';
 import type { Minimap } from '../ui/minimap';
 import type { ClientState, TargetMode } from './client';
@@ -30,6 +31,7 @@ export type Action =
   | 'hold'
   | 'gather'
   | 'return'
+  | 'repair'
   | 'cancel'
   | `build:${BuildingType}`
   | `train:${UnitType}`
@@ -349,10 +351,13 @@ export class InputController {
         return;
       }
       const carriers = workers.filter((u) => u.carry.res && acceptsResource(target, u.carry.res));
-      if (carriers.length) {
-        this.game.issue({ type: 'returnCargo', player, units: carriers.map((u) => u.id), dropoffId: target.id });
+      if (carriers.length) this.game.issue({ type: 'returnCargo', player, units: carriers.map((u) => u.id), dropoffId: target.id });
+      // The others repair it if it is damaged.
+      const repairers = target.hp < target.maxHp ? workers.filter((u) => !carriers.includes(u)) : [];
+      if (repairers.length) this.game.issue({ type: 'repair', player, units: repairers.map((u) => u.id), buildingId: target.id, queued: shift });
+      if (carriers.length || repairers.length) {
         this.world.flashEntity(target.id, now);
-        moveRest(units.filter((u) => !carriers.includes(u)));
+        moveRest(units.filter((u) => !carriers.includes(u) && !repairers.includes(u)));
         return;
       }
     }
@@ -369,6 +374,13 @@ export class InputController {
     }
     this.game.issue({ type: 'move', player, units: units.map((u) => u.id), x: g.x, y: g.y, queued: shift });
     this.world.addMarker(g.x, g.y, now);
+    this.explainReach(units, g.x, g.y);
+  }
+
+  /** Say so when a move cannot get all the way to where the player clicked. */
+  private explainReach(units: readonly Unit[], x: number, y: number): void {
+    const problem = reachProblem(this.game, units, x, y);
+    if (problem) this.onMessage(problem);
   }
 
   private selectedOwnBuilding() {
@@ -436,12 +448,23 @@ export class InputController {
         if (!g) return;
         this.game.issue({ type: 'attackMove', player, units: fighters, x: g.x, y: g.y, queued: shift });
         this.world.addMarker(g.x, g.y, now, '#ff5a4a');
+        this.explainReach(units.filter(canAttack), g.x, g.y);
       }
+    } else if (mode === 'repair') {
+      const target = this.world.pick(sx, sy);
+      const workers = units.filter((u) => isWorker(u.type));
+      if (target?.kind !== 'building') {
+        this.onMessage('Click a damaged building of yours to repair it.');
+        return; // stay in targeting mode
+      }
+      this.game.issue({ type: 'repair', player, units: workers.map((u) => u.id), buildingId: target.id, queued: shift });
+      this.world.flashEntity(target.id, now);
     } else if (mode === 'move') {
       const g = this.rig.screenToGround(sx, sy);
       if (!g) return;
       this.game.issue({ type: 'move', player, units: units.map((u) => u.id), x: g.x, y: g.y, queued: shift });
       this.world.addMarker(g.x, g.y, now);
+      this.explainReach(units, g.x, g.y);
     } else {
       const target = this.world.pick(sx, sy);
       if (target?.kind !== 'resource') {
@@ -549,6 +572,8 @@ export class InputController {
       if (carriers.length) this.game.issue({ type: 'returnCargo', player, units: carriers.map((u) => u.id) });
     } else if (name === 'gather') {
       if (units.some((u) => isWorker(u.type))) this.client.targetMode = 'gather';
+    } else if (name === 'repair') {
+      if (units.some((u) => isWorker(u.type))) this.client.targetMode = 'repair';
     } else if (name === 'move') this.client.targetMode = 'move';
   }
 
@@ -713,6 +738,7 @@ export class InputController {
       case 'hold':
       case 'gather':
       case 'return':
+      case 'repair':
       case 'cancel':
         this.action(action);
         break;

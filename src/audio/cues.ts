@@ -4,7 +4,7 @@
 // happen (a fight in the fog makes no sound: sound must not leak what the
 // fog hides). Playback is in sound.ts.
 
-import { isHeroType, type UnitType } from '../sim/config';
+import { CONFIG, isHeroType, type UnitType } from '../sim/config';
 import { isWorker } from '../sim/factions';
 import type { GameEvent } from '../sim/types';
 
@@ -77,8 +77,8 @@ export interface CueContext {
   unit: (id: number) => { type: string; owner: number; x: number; y: number } | undefined;
 }
 
-const RANGED = new Set(['archer', 'ranger', 'poacher', 'tower']);
-const MAGIC = new Set(['cleric', 'sage']);
+const RANGED = new Set(['archer', 'ranger', 'poacher', 'tower', 'slinger', 'huntress', 'spire']);
+const MAGIC = new Set(['cleric', 'sage', 'mender', 'speaker']);
 
 /** The cues a batch of simulation events makes for this viewer. */
 export function eventCues(events: GameEvent[], ctx: CueContext): CueHit[] {
@@ -113,10 +113,12 @@ export function eventCues(events: GameEvent[], ctx: CueContext): CueHit[] {
       case 'buildingDestroyed':
         if (mine(e.player) || seen(e.x, e.y)) at('collapse', e.x, e.y);
         break;
-      case 'cast':
+      case 'cast': {
         if (!mine(e.player) && !seen(e.x, e.y)) break;
-        at(e.ability === 'cry' ? 'horn' : e.ability === 'mend' ? 'heal' : e.ability === 'flame' ? 'boom' : 'spell', e.x, e.y);
+        const fx = CONFIG.hero.abilities[e.ability].effect;
+        at(fx === 'rally' ? 'horn' : fx === 'heal' ? 'heal' : fx === 'burn' ? 'boom' : 'spell', e.x, e.y);
         break;
+      }
       case 'heal':
         if (mine(e.player) && seen(e.x, e.y)) at('heal', e.x, e.y);
         break;

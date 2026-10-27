@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { reachProblem } from '../src/sim/movement';
 import { findPath } from '../src/sim/pathfinding';
 import { emptyGame, rebuild, run, runUntil, setRock } from './helpers';
 
@@ -67,5 +68,19 @@ describe('pathfinding', () => {
         expect(Math.hypot(us[a].x - us[b].x, us[a].y - us[b].y)).toBeGreaterThan(0.45);
       }
     for (const u of us) expect(Math.hypot(u.x - 22, u.y - 12)).toBeLessThan(3);
+  });
+});
+
+describe('unreachable destinations are explained', () => {
+  it('cliffs, and ground walled off from the units, get a reason; open ground and trees do not', () => {
+    let g = emptyGame(20, 12);
+    for (let y = 0; y < 12; y++) setRock(g, 10, y); // a full wall: the east half is cut off
+    g = rebuild(g);
+    const u = g.addUnit('guard', 0, 3.5, 5.5);
+    g.addResource('tree', 5, 2, 50);
+    expect(reachProblem(g, [u], 10.5, 5.5)).toMatch(/cliffs/);
+    expect(reachProblem(g, [u], 15.5, 5.5)).toMatch(/No path/);
+    expect(reachProblem(g, [u], 7.5, 8.5)).toBeNull();
+    expect(reachProblem(g, [u], 5.5, 2.5)).toBeNull(); // next to a tree is a normal move
   });
 });

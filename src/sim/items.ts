@@ -87,7 +87,7 @@ export function useItem(game: Game, u: Unit, slot: number): void {
   if (it === 'scroll') {
     const keeps = game.buildings().filter((b) => b.owner === u.owner && isHall(b.type) && b.progress >= 1);
     if (!keeps.length) {
-      game.emit({ type: 'cantItem', player: u.owner, reason: 'You have no Keep to return to.' });
+      game.emit({ type: 'cantItem', player: u.owner, reason: 'You have no main hall (Keep or Heartwood) to return to.' });
       return;
     }
     const k = keeps.reduce((a, b) => (Math.hypot(b.x - u.x, b.y - u.y) < Math.hypot(a.x - u.x, a.y - u.y) ? b : a));
