@@ -504,6 +504,20 @@ Farm builds a Grove, and rebinding one rebinds both.
 
 There is no gold-carry upgrade: the Thornwild is the wood faction.
 
+**Counters.** The Thornwild has the same triangle inside its roster:
+Thornguards beat Stag Riders, Stag Riders beat Slingers, Slingers beat
+Thornguards. Against the Crown, the answer depends on how you price wood.
+
+- **Gold plus wood, as for the Crown:** the Crown wins every same-role
+  duel, and nothing in the Thornwild roster beats Guards.
+- **Gold only:** the Thornwild wins every same-role duel, and Slingers
+  beat Guards.
+
+A Thornwild player's wood never runs out, so its real price lies between
+the two. Whole matches come out even (see the faction balance under
+Verification). Regrowth, which these short duels don't show, is the
+Thornwild's edge over several fights.
+
 **How the code takes it.** `src/sim/factions.ts` maps roles (hall, farm,
 barracks…, worker, melee, ranged…) to each faction's types. The rules ask
 it questions such as "is this a worker?", "may this player build that?"
