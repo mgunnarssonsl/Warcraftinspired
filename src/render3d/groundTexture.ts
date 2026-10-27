@@ -99,21 +99,28 @@ export function paintGround(map: MapData, seed: number): HTMLCanvasElement {
 
   // Shores: a pale bank of wet sand, then a dark lake bed, both drawn from
   // rounded blurred shapes so the edge never follows the tile grid.
+  // Each layer is one path (the union of a disc per water tile), and the
+  // blur is applied once, when the layers are laid onto the ground: a
+  // filter on every disc made this take seconds.
   const [shore, shctx] = canvas(W * TILE, H * TILE);
-  shctx.filter = `blur(${TILE * 0.22}px)`;
   const disc = (r: number, fill: string) => {
     shctx.fillStyle = fill;
+    shctx.beginPath();
     for (let y = 0; y < H; y++)
       for (let x = 0; x < W; x++) {
         if (terrain[y * W + x] !== TERRAIN.water) continue;
-        shctx.beginPath();
-        shctx.arc((x + 0.5) * TILE, (y + 0.5) * TILE, TILE * r, 0, Math.PI * 2);
-        shctx.fill();
+        const cx = (x + 0.5) * TILE;
+        const cy = (y + 0.5) * TILE;
+        shctx.moveTo(cx + TILE * r, cy);
+        shctx.arc(cx, cy, TILE * r, 0, Math.PI * 2);
       }
+    shctx.fill('nonzero');
   };
-  disc(1.0, 'rgba(176,160,118,0.75)');
+  disc(1.0, 'rgba(176,160,118,0.85)');
   disc(0.7, 'rgb(40,62,78)');
+  ctx.filter = `blur(${TILE * 0.22}px)`;
   ctx.drawImage(shore, 0, 0);
+  ctx.filter = 'none';
 
   return big;
 }

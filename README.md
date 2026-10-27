@@ -49,6 +49,12 @@ computer opponents. No campaign or story.
   - smooth water;
   - role icons in the interface;
   - categorized, positional, fog-respecting sound with clear alerts.
+- Phase H: a second faction, the Thornwild. Its buildings are planted and
+  grow on their own, its Tenders harvest wood without felling trees, and
+  its units and buildings regrow damage when left alone. It has its own
+  roster, three heroes and a tech tree. Pick either faction for yourself
+  and for the computer (or a random one). See
+  [The Thornwild](#the-second-faction-thornwild).
 
 See [Roadmap](#roadmap).
 
@@ -62,6 +68,7 @@ npm run dev        # http://localhost:5173
                    # optional: ?difficulty=easy|normal|hard&style=random|balanced|raider|
                    #   expander|warden|warlord&adv=none|income25|income50
                    #   &map=vales|river|highland&seed=N
+                   #   &faction=crown|wild (yours) &vs=crown|wild|random
                    #   &start=1 (skip the start screen) · ?tutorial=1 (the tutorial)
 npm test           # simulation tests (vitest)
 npm run build      # typecheck + production bundle in dist/
@@ -393,7 +400,7 @@ All numbers are in `CONFIG.units` and `CONFIG.production`.
   If the building is completely boxed in, the finished unit waits at 100%
   until a tile frees up.
 
-## The faction: roster and roles
+## The Ironvale Crown: roster and roles
 
 The roster is small on purpose. Each unit is there because it creates a
 choice:
@@ -411,6 +418,89 @@ On an open field at equal cost, the triangle is Guards beat Lancers,
 Lancers beat Archers and Archers beat Guards. Clerics lose alone but make a
 mixed army last. Mangonels lose to any melee unit that reaches them.
 `tests/roster.test.ts` checks all of these with real battles.
+
+## The second faction: Thornwild
+
+Phase H adds one major thing: a second faction with a different economy
+and a different way of fighting. Free-for-all, team games and a
+wave-defence mode are left for later phases, one at a time.
+
+**Its identity, in three rules:**
+
+- **Planted buildings grow on their own.** A Tender walks to the spot,
+  pays, plants, and goes straight back to work: the building needs no
+  builder. While growing it has only the health it has grown, so an early
+  raid can uproot it. Growing takes the building's listed time; Swift
+  Growth (Heartwood) cuts that by 35%.
+- **Tenders never fell a tree.** They harvest a little slower than
+  Laborers, but the trees they work stay as they are, so a Thornwild base
+  never runs out of wood or has to move its wood line.
+- **Everything regrows.** A Thornwild unit or building that has gone 5
+  seconds without being hurt regrows 1.0 (units) or 2 (buildings) health a
+  second; Deep Roots (Barkweaver) doubles that.
+
+**The counterplay** is built into those rules. Keep the pressure on, since
+regrowth stops for 5 seconds after every hit. Finish what you start, since
+a half-dead army that gets away comes back whole. Raid planted buildings
+while they are still growing.
+
+**Economy.** Thornwild soldiers cost less gold and more wood than their
+Crown counterparts. The faction turns its endless wood into an army, while
+the Crown is richer in gold.
+
+| Role | Crown | Thornwild | Thornwild cost | How it differs |
+| --- | --- | --- | --- | --- |
+| Worker | Laborer | Tender | 70 gold | Plants; harvests without felling |
+| Melee | Guard | Thornguard | 100 gold, 35 wood | Lighter (340 hp, armor 1), regrows |
+| Ranged | Archer | Slinger | 90 gold, 45 wood | Longer reach (6) |
+| Scout | Outrider | Fox Scout | 60 gold | Faster, cheaper |
+| Cavalry | Lancer | Stag Rider | 150 gold, 85 wood | Faster, lighter |
+| Support | Cleric | Mender | 110 gold, 55 wood | Heals like the Cleric |
+| Siege | Mangonel | Rootcrusher | 150 gold, 150 wood | Melee siege: tough (700 hp), slow, no minimum range |
+
+Buildings, by the same roles: Heartwood (hall), Grove (population 7),
+Sap Lodge (wood drop-off and wood research), Thicket Den (soldiers), Thorn
+Spire (tower), Elder Circle (heroes), Barkweaver (weapons and armor),
+Moonwell (Menders) and Root Pit (Rootcrushers). The last two need
+Deepwood, the second tier. Hotkeys follow the role: the key that builds a
+Farm builds a Grove, and rebinding one rebinds both.
+
+**Heroes (Elder Circle):**
+
+- **Thorn Warden** (frontline): Entangle (instant damage and a root),
+  Barkskin (armor on an ally), Wild Howl (rallies nearby allies).
+- **Huntress** (ranged): Thorn Rain (area damage), Snare (slows),
+  Owl Eyes (reveals a spot anywhere).
+- **Grove Speaker** (caster): Swarm (damage over time to a group or
+  buildings), Wither (marks an enemy to take more damage), Regrowth
+  (heals an ally).
+
+**Technology:**
+
+- Sharpened Thorns and Thick Bark I–III (weapons and armor), Deep Roots
+  (Barkweaver).
+- Sap Flow (carry more wood) and Long Thorns (Slinger range) at the Sap
+  Lodge.
+- Swift Growth and the tiers Grow to Deepwood and Grow to Ancient at the
+  Heartwood.
+- Full Bloom (stronger Mender healing) at the Moonwell.
+
+There is no gold-carry upgrade: the Thornwild is the wood faction.
+
+**How the code takes it.** `src/sim/factions.ts` maps roles (hall, farm,
+barracks…, worker, melee, ranged…) to each faction's types. The rules ask
+it questions such as "is this a worker?", "may this player build that?"
+or "which research is this player's weapons upgrade?" rather than naming
+Crown types. Three named mechanics carry the identity:
+
+- growing construction, in `construction.ts`;
+- tree-sparing harvest, in `gathering.ts`;
+- regrowth, in `regrowth.ts`.
+
+Hero abilities are described by effect (bolt, rally, heal, area, burn,
+mark, slow, ward, reveal), so the new heroes reuse the existing ability
+code. The computer opponent thinks in roles, so the same plans, styles and
+difficulties play either faction and read either enemy.
 
 ### Damage and armor types
 
@@ -1524,6 +1614,70 @@ which are never shipped to players.
   Vales and Rivercross. No console errors. Smoke and animation timing need
   a real GPU to judge: software rendering here runs at 2–3 frames a
   second.
+- **Phase H tests:**
+  - `tests/thornwild.test.ts` (13):
+    - a Tender plants, pays and is free at once, and the Grove grows over
+      its build time;
+    - a growing building has only the health it has grown;
+    - Swift Growth shortens growing by its share;
+    - each faction builds only its own buildings;
+    - Tenders leave their tree as it was, while a Laborer uses its tree
+      up;
+    - regrowth waits 5 quiet seconds, restarts on a new hit, is doubled
+      by Deep Roots and mends buildings, and the Crown does not regrow;
+    - Thorn and Bark upgrades apply to Thornwild units only, Long Thorns
+      to Slingers, and Deepwood raises the hall;
+    - Entangle hits and roots at once;
+    - the faction tables are complete and distinct;
+    - a Normal Thornwild computer builds its tree and beats an Easy Crown.
+  - `tests/save.test.ts` (+2): a Thornwild match with buildings still
+    growing continues byte-identical after a load, and a version 1 save
+    (from before factions) loads as a Crown match.
+  - `tests/visuals.test.ts` (+2): Thornwild silhouettes differ pairwise;
+    heroes stand tallest and the Stag Rider is longest; every model
+    carries the team colour; Slingers and the Huntress animate as bows,
+    Menders and the Speaker as staffs.
+- **Faction balance** (`playtest/factions.playtest.ts`, Balanced style,
+  3 maps × 5 seeds × both seats, 60 games):
+
+  | Level | Crown | Thornwild | Draws |
+  | --- | --- | --- | --- |
+  | Normal | 16 | 9 | 5 |
+  | Hard | 11 | 18 | 1 |
+  | **Total** | **27** | **27** | **6** |
+
+  The first version lost 22–11, because the computer did not know how to
+  play the Thornwild:
+  - A growing building held a builder slot for its whole growth (130
+    seconds for a Heartwood), so production stalled.
+  - Thornwild players banked thousands of wood while short of gold.
+
+  The computer now lets a planted building pace its plan only until it is
+  half grown. Thornwild soldiers moved part of their cost from gold to
+  wood, and regrowth went from 1.2 to 1.0 health a second.
+
+  The split by level follows from the design.
+  Regrowth rewards pulling back from a losing fight, which Hard does and
+  Normal mostly does not, so the Thornwild gains more from a stronger
+  player than the Crown does.
+- **Thornwild difficulty ladder** (Thornwild mirrors, seed 4, both seats):
+  Normal beats Easy on all three maps. Hard beats Normal on Twin Vales
+  and Rivercross. On Highland Crown, Hard won 5 of 8 across four seeds.
+- **Phase H in the browser:**
+  - The start screen shows both faction pickers.
+  - A Thornwild match opens on a Heartwood with Tenders. The command card
+    lists the nine Thornwild buildings with costs and hotkeys, and the
+    Deepwood ones are greyed out.
+  - The objectives and hints use Thornwild names.
+  - A lineup of every Thornwild building (one still growing, with its
+    percentage) and unit.
+  - A Thornwild-vs-Crown fight.
+  - No console errors.
+
+  This check found a startup stall from Phase G. Painting the
+  lake shores took **20 seconds** before the first frame, because the
+  blur filter was applied once per water tile. Each shore layer is now
+  one shape blurred once, which takes 34 ms.
 - **Not yet done:** human playtesting of feel and pacing, and frame-rate
   measurement on real GPUs. Software WebGL only manages ~2–3 fps, which says
   nothing about real hardware.
@@ -1603,6 +1757,29 @@ Phase G (done): original art, animation and sound.
 - Role icons in the interface.
 - Five sound categories, placed and fog-respecting, with distinct alerts
   and a reduced-effects option.
+
+Phase H (done): a second faction, the Thornwild.
+
+- Buildings planted and left to grow, harvest that spares trees, and
+  regrowth with clear counterplay.
+- Seven units, three heroes with nine abilities, nine buildings and a
+  full tech tree.
+- Faction choice for both sides (or random), with saves moving to
+  version 2.
+- A computer that plays either faction.
+- A faction balance harness.
+
+Still open from Phase H:
+
+- **Free-for-all, team skirmishes and a wave-defence mode** are the other
+  Phase H options. Add them one at a time.
+- **Balance by skill level:** the Thornwild is stronger in better hands
+  (Hard) and weaker in weaker ones (Normal). Human playtests should
+  decide whether that is the right shape.
+- **The tutorial teaches the Crown only.** The objectives checklist
+  follows your faction.
+- **Thornwild sounds reuse the Crown's** (same categories and cues). A
+  faction-specific voice for acknowledgements would help tell them apart.
 
 Still open from Phase G:
 

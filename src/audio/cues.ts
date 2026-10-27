@@ -4,6 +4,8 @@
 // happen (a fight in the fog makes no sound: sound must not leak what the
 // fog hides). Playback is in sound.ts.
 
+import { isHeroType, type UnitType } from '../sim/config';
+import { isWorker } from '../sim/factions';
 import type { GameEvent } from '../sim/types';
 
 export type Category = 'interface' | 'combat' | 'economy' | 'alerts' | 'ambience';
@@ -182,8 +184,8 @@ export function orderCue(type: string): Cue | null {
 /** The acknowledgement for a new selection: by what was picked. */
 export function selectCue(types: string[]): Cue | null {
   if (!types.length) return null;
-  if (types.some((t) => ['hero', 'ranger', 'sage'].includes(t))) return 'selectHero';
-  if (types.some((t) => t !== 'worker')) return 'selectSoldier';
+  if (types.some((t) => isHeroType(t))) return 'selectHero';
+  if (types.some((t) => !isWorker(t as UnitType))) return 'selectSoldier';
   return 'select';
 }
 

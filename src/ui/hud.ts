@@ -2,7 +2,7 @@
 // button, notifications and the controls overlay. Reads state; issues actions
 // through the InputController.
 
-import { buildableFor, buildingRole, isHall, isHealer, isWorker } from '../sim/factions';
+import { buildableFor, buildingRole, FACTION, isHall, isHealer, isWorker } from '../sim/factions';
 import { hpColor, teamColor } from './view';
 import { UNIT_ICONS } from './icons';
 import { keyLabel } from '../input/keymap';
@@ -604,7 +604,7 @@ export class Hud {
 
   private fillPanel(panel: HTMLElement, sel: Entity[]): void {
     if (!sel.length) {
-      panel.appendChild(el('div', 'hint', 'Left-click or drag to select workers. Right-click a gold mine or tree to gather. Select a Laborer to build.'));
+      panel.appendChild(el('div', 'hint', `Left-click or drag to select workers. Right-click a gold mine or tree to gather. Select a ${CONFIG.units[FACTION[this.game.player(this.client.player).faction].units.worker].name} to build.`));
       return;
     }
     if (sel.length === 1) {

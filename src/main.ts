@@ -221,7 +221,7 @@ screens.onSurrender = () => game.issue({ type: 'surrender', player: client.playe
 const subtitle = document.getElementById('subtitle')!;
 subtitle.textContent = tutorial
   ? 'tutorial'
-  : `${FACTION[game.player(client.player).faction].name} vs ${opponentLabel(match, playedStyle, false)} ${FACTION[game.player(1 - client.player).faction].name}`;
+  : `${FACTION[game.player(client.player).faction].name} vs ${FACTION[game.player(1 - client.player).faction].name} (${opponentLabel(match, playedStyle, false)} computer)`;
 if (match.advantage !== 'none') {
   const cheat = document.createElement('span');
   cheat.className = 'cheat';
