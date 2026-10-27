@@ -7,6 +7,7 @@
 //   4. Cancelling an unfinished building refunds CONFIG.construction.cancelRefund.
 // Unfinished buildings provide no population and accept no deliveries.
 
+import { FACTION } from './factions';
 import { CONFIG, secondsToTicks, type BuildingType, type ResearchId } from './config';
 import { researched } from './tech';
 import type { Game } from './game';
@@ -90,7 +91,7 @@ export function startBuild(game: Game, u: Unit, type: BuildingType, tx: number, 
 }
 
 export function resumeBuild(game: Game, u: Unit, site: Building): void {
-  if (isComplete(site) || site.owner !== u.owner) return;
+  if (isComplete(site) || site.owner !== u.owner || site.grows) return;
   const resumeNodeId = previousJob(u);
   releaseFromNode(game, u);
   u.order = { type: 'build', buildingType: site.type, tx: site.tx, ty: site.ty, siteId: site.id, phase: 'toSite', resumeNodeId };
@@ -177,6 +178,12 @@ export function updateBuilder(game: Game, u: Unit, o: BuildOrder): void {
       site = game.addBuilding(o.buildingType, u.owner, o.tx, o.ty, 0);
       ejectUnits(game, site);
       o.siteId = site.id;
+      // Thornwild: the building is planted and grows on its own; the Tender walks back to work.
+      if (FACTION[game.player(u.owner).faction].construction === 'grow') {
+        site.grows = true;
+        finish(game, u, o);
+        return;
+      }
     }
     o.phase = activeBuilder(game, site.id, u) ? 'standby' : 'building';
     return;
@@ -192,17 +199,29 @@ export function updateBuilder(game: Game, u: Unit, o: BuildOrder): void {
     if (!activeBuilder(game, site.id, u)) o.phase = 'building';
     return;
   }
-  const ticks = secondsToTicks(def.buildSeconds);
+  if (advance(game, site, secondsToTicks(def.buildSeconds))) finish(game, u, o);
+}
+
+/** One tick of construction; true when it completes. */
+function advance(game: Game, site: Building, ticks: number): boolean {
   site.progress = Math.min(1, site.progress + 1 / ticks);
   site.hp = Math.min(site.maxHp, site.hp + (site.maxHp * (1 - CONFIG.construction.startHpFraction)) / ticks);
-  if (site.progress >= 1 - 1e-9) {
-    site.progress = 1;
-    site.hp = Math.min(site.maxHp, Math.round(site.hp));
-    game.emit({ type: 'buildingComplete', player: site.owner, id: site.id, x: site.x, y: site.y });
-    const stats = game.player(site.owner).stats;
-    stats.buildingsBuilt++;
-    stats.built[site.type] = (stats.built[site.type] ?? 0) + 1;
-    finish(game, u, o);
+  if (site.progress < 1 - 1e-9) return false;
+  site.progress = 1;
+  site.hp = Math.min(site.maxHp, Math.round(site.hp));
+  game.emit({ type: 'buildingComplete', player: site.owner, id: site.id, x: site.x, y: site.y });
+  const stats = game.player(site.owner).stats;
+  stats.buildingsBuilt++;
+  stats.built[site.type] = (stats.built[site.type] ?? 0) + 1;
+  return true;
+}
+
+/** Planted buildings grow by themselves, a little slower than a builder raises one. */
+export function updateGrowth(game: Game): void {
+  for (const b of game.buildings()) {
+    if (!b.grows || b.progress >= 1) continue;
+    const swift = researched(game, b.owner, 'swiftgrowth') ? 1 - CONFIG.wild.swiftGrowth : 1;
+    advance(game, b, Math.max(1, secondsToTicks(CONFIG.buildings[b.type].buildSeconds * CONFIG.wild.growFactor * swift)));
   }
 }
 

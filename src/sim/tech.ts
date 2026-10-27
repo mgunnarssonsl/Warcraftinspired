@@ -2,15 +2,13 @@
 // number used by the rules goes through here, so upgrades, hero levels and
 // buffs apply consistently to every player.
 
+import { FACTION, upgradesArmor, upgradesWeapons } from './factions';
 import { CONFIG, isHeroType, type ArmorType, type AttackType, type BuildingType, type ResearchId } from './config';
 import { buffAmount } from './hero';
 import { itemBonus } from './items';
 import type { Game } from './game';
 import type { Building, Unit } from './types';
 
-/** Unit types that benefit from Blacksmith weapon and armor upgrades. */
-const WEAPONS = new Set(['guard', 'archer', 'lancer', 'hero', 'ranger', 'sage']);
-const ARMORED = new Set(['guard', 'archer', 'lancer', 'cleric', 'hero', 'ranger', 'sage']);
 
 export function researched(game: Game, player: number, id: ResearchId): boolean {
   return !!game.state.players[player]?.research[id];
@@ -44,8 +42,9 @@ export function researchProblem(game: Game, player: number, b: Building, id: Res
 /** Effect of finishing research. */
 export function completeResearch(game: Game, b: Building, id: ResearchId): void {
   game.player(b.owner).research[id] = true;
-  if (id === 'castle' || id === 'citadel') {
-    b.tier = id === 'castle' ? 2 : 3;
+  const tiers = FACTION[game.player(b.owner).faction].tiers;
+  if (tiers.includes(id)) {
+    b.tier = id === tiers[0] ? 2 : 3;
     b.maxHp += CONFIG.tech.castleHp;
     b.hp += CONFIG.tech.castleHp;
   }
@@ -59,7 +58,7 @@ function levels(game: Game, owner: number, ids: ResearchId[]): number {
 /** Damage of one attack, after upgrades, hero level and Battle Cry. */
 export function attackDamage(game: Game, u: Unit): number {
   let dmg = CONFIG.units[u.type].attack.damage;
-  if (WEAPONS.has(u.type)) dmg += CONFIG.tech.weaponBonus * levels(game, u.owner, ['weapons1', 'weapons2', 'weapons3']);
+  if (upgradesWeapons(u.type)) dmg += CONFIG.tech.weaponBonus * levels(game, u.owner, upgrades(game, u.owner).weapons);
   if (u.hero && isHeroType(u.type)) dmg += CONFIG.heroTypes[u.type].damagePerLevel * (u.hero.level - 1) + itemBonus(u, 'damage');
   return Math.round(dmg * (1 + buffAmount(u, 'cry')));
 }
@@ -67,17 +66,23 @@ export function attackDamage(game: Game, u: Unit): number {
 export function armorValue(game: Game, t: Unit | Building): number {
   if (t.kind === 'building') return CONFIG.combat.buildingArmor;
   let a: number = CONFIG.units[t.type].armor;
-  if (ARMORED.has(t.type)) a += CONFIG.tech.armorBonus * levels(game, t.owner, ['armor1', 'armor2', 'armor3']);
+  if (upgradesArmor(t.type)) a += CONFIG.tech.armorBonus * levels(game, t.owner, upgrades(game, t.owner).armor);
   if (t.hero && isHeroType(t.type)) a += CONFIG.heroTypes[t.type].armorPerLevel * (t.hero.level - 1) + itemBonus(t, 'armor');
   return a + buffAmount(t, 'ward');
 }
 
+/** A player's research, by what it does (their faction's names). */
+function upgrades(game: Game, owner: number) {
+  return FACTION[game.state.players[owner]?.faction ?? 'crown'].upgrades;
+}
+
 export function woodCarry(game: Game, owner: number): number {
-  return CONFIG.units.worker.carryWood + (researched(game, owner, 'saws') ? CONFIG.tech.sawsCarry : 0);
+  return CONFIG.units.worker.carryWood + (researched(game, owner, upgrades(game, owner).carryWood) ? CONFIG.tech.sawsCarry : 0);
 }
 
 export function goldCarry(game: Game, owner: number): number {
-  return CONFIG.units.worker.carryGold + (researched(game, owner, 'carts') ? CONFIG.tech.cartsCarry : 0);
+  const carts = upgrades(game, owner).carryGold;
+  return CONFIG.units.worker.carryGold + (carts && researched(game, owner, carts) ? CONFIG.tech.cartsCarry : 0);
 }
 
 export function armorTypeOf(t: Unit | Building): ArmorType {
@@ -92,10 +97,11 @@ export function typeMultiplier(attack: AttackType, armor: ArmorType): number {
 /** Weapon range after upgrades (Longbows for Archers). */
 export function attackRange(game: Game, u: Unit): number {
   const r = CONFIG.units[u.type].attack.range;
-  return u.type === 'archer' && researched(game, u.owner, 'longbows') ? r + CONFIG.tech.longbowRange : r;
+  const f = FACTION[game.state.players[u.owner]?.faction ?? 'crown'];
+  return u.type === f.rangeUnit && researched(game, u.owner, f.upgrades.range) ? r + CONFIG.tech.longbowRange : r;
 }
 
 /** Health a Cleric's prayer restores. */
 export function healAmount(game: Game, owner: number): number {
-  return CONFIG.cleric.heal[researched(game, owner, 'healing2') ? 1 : 0];
+  return CONFIG.cleric.heal[researched(game, owner, upgrades(game, owner).heal) ? 1 : 0];
 }

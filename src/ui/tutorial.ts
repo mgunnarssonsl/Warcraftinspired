@@ -4,6 +4,7 @@
 // selection, camera and control groups), highlights the button to press,
 // and shows live progress. The step logic is DOM-free so it can be tested.
 
+import { isWorker } from '../sim/factions';
 import type { ClientState } from '../input/client';
 import { CONFIG } from '../sim/config';
 import type { Game } from '../sim/game';
@@ -34,7 +35,7 @@ export interface TutorialStep {
 }
 
 const own = (v: TutorialView) => v.game.units().filter((u) => u.owner === v.client.player);
-const soldiers = (v: TutorialView) => own(v).filter((u) => u.type !== 'worker' && u.type !== 'outrider' && !u.hero);
+const soldiers = (v: TutorialView) => own(v).filter((u) => !isWorker(u.type) && u.type !== 'outrider' && !u.hero);
 const count = (n: number, of: number) => ({ done: n >= of, progress: `${Math.min(n, of)}/${of}` });
 const placed = (v: TutorialView, type: 'farm' | 'barracks') =>
   v.game.buildings().some((b) => b.owner === v.client.player && b.type === type) || (v.game.player(v.client.player).stats.built[type] ?? 0) > 0;
@@ -48,7 +49,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     title: 'Select your Laborers',
     text: 'Hold the left mouse button and drag a box around the Laborers beside your Keep.',
-    status: (v) => count(v.client.selected.filter((id) => v.game.unit(id)?.type === 'worker').length, 3),
+    status: (v) => count(v.client.selected.filter((id) => v.game.unit(id)?.type === 'worker' || v.game.unit(id)?.type === 'tender').length, 3),
   },
   {
     title: 'Mine gold',

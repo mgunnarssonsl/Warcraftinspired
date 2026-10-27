@@ -246,6 +246,7 @@ export function dealDamage(game: Game, attackerId: number, attackerOwner: number
   const marked = t.kind === 'unit' ? 1 + buffAmount(t, 'mark') : 1;
   const dmg = damageAfterArmor(raw * typeMultiplier(type, armorTypeOf(t)) * marked, armorValue(game, t));
   t.hp -= dmg;
+  t.hurt = game.state.tick;
   game.emit({ type: 'hit', id: t.id, attacker: attackerId, attackerOwner, owner: t.owner, damage: dmg, x: t.x, y: t.y });
   if (t.hp <= 0) {
     kill(game, t, attackerOwner);

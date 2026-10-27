@@ -1,6 +1,7 @@
 // Commands are the only way players (human or AI) affect the simulation.
 // They are validated here: a player can only command their own living units.
 
+import { buildableFor, isHall, isWorker } from './factions';
 import { CONFIG, secondsToTicks, type AbilityId, type BuildingType, type ItemId, type ResearchId, type UnitType } from './config';
 import { buyItem, dropItem, useItem } from './items';
 import { cancelConstruction, checkPlacement, resumeBuild, shortfall, startBuild } from './construction';
@@ -86,12 +87,12 @@ export function applyCommand(game: Game, cmd: Command): void {
     }
     case 'gather': {
       if (!game.resource(cmd.nodeId)) return;
-      for (const u of units) if (u.type === 'worker') give(game, u, { type: 'gather', nodeId: cmd.nodeId }, cmd.queued);
+      for (const u of units) if (isWorker(u.type)) give(game, u, { type: 'gather', nodeId: cmd.nodeId }, cmd.queued);
       return;
     }
     case 'returnCargo': {
       for (const u of units) {
-        if (u.type !== 'worker') continue;
+        if (!isWorker(u.type)) continue;
         u.orderQueue = [];
         startReturnCargo(game, u, cmd.dropoffId ?? -1);
       }
@@ -99,7 +100,9 @@ export function applyCommand(game: Game, cmd: Command): void {
     }
     case 'build': {
       if (!(cmd.buildingType in CONFIG.buildings) || !CONFIG.buildings[cmd.buildingType].buildable) return;
-      const workers = units.filter((u) => u.type === 'worker');
+      // Each faction builds its own buildings only.
+      if (!buildableFor(game.player(cmd.player).faction).includes(cmd.buildingType)) return;
+      const workers = units.filter((u) => isWorker(u.type));
       if (!workers.length) return;
       const size = CONFIG.buildings[cmd.buildingType].size;
       const cx = cmd.tx + size / 2;
@@ -123,7 +126,7 @@ export function applyCommand(game: Game, cmd: Command): void {
       const site = game.building(cmd.buildingId);
       if (!site) return;
       for (const u of units) {
-        if (u.type !== 'worker') continue;
+        if (!isWorker(u.type)) continue;
         u.orderQueue = [];
         resumeBuild(game, u, site);
       }
@@ -335,7 +338,7 @@ export function formationSlots(game: Game, units: Unit[], x: number, y: number):
 /** Why `player` cannot fire a Signal Flare from building `buildingId` now, or null. */
 export function flareProblem(game: Game, player: number, buildingId: number): string | null {
   const b = game.building(buildingId);
-  if (!b || b.owner !== player || b.type !== 'hq') return 'Signal Flares are fired from a Keep.';
+  if (!b || b.owner !== player || !isHall(b.type)) return 'Signal Flares are fired from your main hall (Keep or Heartwood).';
   if (b.progress < 1) return 'The Keep is not finished.';
   const p = game.player(player);
   if (p.flareReady > game.state.tick) return `Signal Flare ready in ${Math.ceil((p.flareReady - game.state.tick) / 20)}s.`;

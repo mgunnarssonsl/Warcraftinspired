@@ -3,8 +3,9 @@
 // simulation only ever receives explicit commands. Screen <-> world
 // conversion and picking are delegated to the 3D view.
 
+import { buildableFor, buildingRole, isHall, isWorker } from '../sim/factions';
 import type { World3D } from '../render3d/world';
-import { BUILDABLE, CONFIG, type AbilityId, type BuildingType, type HeroType, type ItemId, type ResearchId, type UnitType } from '../sim/config';
+import { CONFIG, type AbilityId, type BuildingType, type HeroType, type ItemId, type ResearchId, type UnitType } from '../sim/config';
 import { abilitiesOf } from '../sim/hero';
 import { canAfford, checkPlacement, shortfall, snapFootprint } from '../sim/construction';
 import type { Game } from '../sim/game';
@@ -135,7 +136,7 @@ export class InputController {
 
   private updatePreview(): void {
     const type = this.client.placing;
-    if (type && !this.ownSelectedUnits().some((u) => u.type === 'worker')) this.client.placing = null;
+    if (type && !this.ownSelectedUnits().some((u) => isWorker(u.type))) this.client.placing = null;
     const g = this.client.placing && this.mouse.inside ? this.rig.screenToGround(this.mouse.x, this.mouse.y) : null;
     if (!this.client.placing || !g) {
       this.world.setPreview(null, null, null, false);
@@ -164,7 +165,7 @@ export class InputController {
   }
 
   private selectedWorkers(): Unit[] {
-    return this.ownSelectedUnits().filter((u) => u.type === 'worker');
+    return this.ownSelectedUnits().filter((u) => isWorker(u.type));
   }
 
   setSelection(ids: number[]): void {
@@ -323,8 +324,8 @@ export class InputController {
     }
     const target = this.world.pick(sx, sy);
     const g = this.rig.screenToGround(sx, sy);
-    const workers = units.filter((u) => u.type === 'worker');
-    const others = units.filter((u) => u.type !== 'worker');
+    const workers = units.filter((u) => isWorker(u.type));
+    const others = units.filter((u) => !isWorker(u.type));
     const moveRest = (rest: Unit[]) => {
       if (rest.length && g) this.game.issue({ type: 'move', player, units: rest.map((u) => u.id), x: g.x, y: g.y, queued: shift });
     };
@@ -447,7 +448,7 @@ export class InputController {
         this.onMessage('Select a gold mine or tree to gather from.');
         return; // stay in targeting mode
       }
-      const workers = units.filter((u) => u.type === 'worker');
+      const workers = units.filter((u) => isWorker(u.type));
       this.game.issue({ type: 'gather', player, units: workers.map((u) => u.id), nodeId: target.id, queued: shift });
       this.world.flashEntity(target.id, now);
     }
@@ -506,7 +507,7 @@ export class InputController {
     }
     if (name === 'flare') {
       const b = this.selectedOwnBuilding();
-      if (b?.type !== 'hq') return;
+      if (!b || !isHall(b.type)) return;
       this.client.placing = null;
       this.client.targetMode = 'flare';
       return;
@@ -547,7 +548,7 @@ export class InputController {
       const carriers = units.filter((u) => u.carry.amount > 0);
       if (carriers.length) this.game.issue({ type: 'returnCargo', player, units: carriers.map((u) => u.id) });
     } else if (name === 'gather') {
-      if (units.some((u) => u.type === 'worker')) this.client.targetMode = 'gather';
+      if (units.some((u) => isWorker(u.type))) this.client.targetMode = 'gather';
     } else if (name === 'move') this.client.targetMode = 'move';
   }
 
@@ -656,7 +657,7 @@ export class InputController {
         return;
       }
     }
-    if (building?.type === 'hq' && building.progress >= 1 && k === 'f') {
+    if (building && isHall(building.type) && building.progress >= 1 && k === 'f') {
       this.action('flare');
       return;
     }
@@ -685,8 +686,8 @@ export class InputController {
       }
     }
     const hasWorkers = this.selectedWorkers().length > 0;
-    for (const type of BUILDABLE) {
-      if (hasWorkers && key === map[`build:${type}`]) {
+    for (const type of buildableFor(this.game.player(this.client.player).faction)) {
+      if (hasWorkers && key === map[`build:${buildingRole(type)!}`]) {
         this.action(`build:${type}`);
         return;
       }

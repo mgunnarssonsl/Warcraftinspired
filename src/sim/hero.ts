@@ -3,6 +3,7 @@
 // Shared rules are in CONFIG.hero, per-type numbers in CONFIG.heroTypes.
 // Inventory and items are in items.ts.
 
+import { tierResearch } from './factions';
 import { CONFIG, isHeroType, secondsToTicks, TICK_SECONDS, type AbilityId, type HeroType, type ItemId } from './config';
 import { dealDamage, isEnemy, targetable } from './combat';
 import type { Game } from './game';
@@ -43,7 +44,8 @@ export function heroRecord(game: Game, player: number, type: HeroType): HeroReco
 
 /** Heroes allowed now: one, two once fortified to a Castle. */
 export function heroLimit(game: Game, player: number): number {
-  return game.player(player).research.castle ? CONFIG.hero.maxHeroesCastle : CONFIG.hero.maxHeroes;
+  const p = game.player(player);
+  return p.research[tierResearch(p.faction, 2)] ? CONFIG.hero.maxHeroesCastle : CONFIG.hero.maxHeroes;
 }
 
 /** Health and mana maxima from type, level and carried items; keeps the current share. */
@@ -228,9 +230,13 @@ function cast(game: Game, u: Unit, ability: AbilityId, t: Unit | null, at: { x: 
   hs.ready[ability] = tick + secondsToTicks(def.cooldown);
   if (at !== u) u.facing = Math.atan2(at.y - u.y, at.x - u.x);
   const until = tick + secondsToTicks(def.duration[r]);
-  switch (ability) {
-    case 'hammer':
-      if (t)
+  switch (def.effect) {
+    case 'bolt':
+      // A hurled weapon (projectile) or, with no projectile speed, roots that strike at once.
+      if (t && !def.projectileSpeed) {
+        dealDamage(game, u.id, u.owner, t, def.damage[r], 'hero');
+        if (game.state.entities[t.id]) t.stun = Math.max(t.stun, secondsToTicks(def.stun[r]));
+      } else if (t)
         game.state.projectiles.push({
           id: game.state.nextId++,
           owner: u.owner,
@@ -250,16 +256,16 @@ function cast(game: Game, u: Unit, ability: AbilityId, t: Unit | null, at: { x: 
           ty: t.y,
         });
       break;
-    case 'cry':
+    case 'rally':
       for (const a of game.units()) if (a.owner === u.owner && !a.hidden && Math.hypot(a.x - u.x, a.y - u.y) <= def.radius) addBuff(a, 'cry', until, def.bonus[r]);
       break;
-    case 'mend':
+    case 'heal':
       if (t) t.hp = Math.min(t.maxHp, t.hp + def.heal[r]);
       break;
-    case 'volley':
-    case 'flame':
+    case 'area':
+    case 'burn':
       // Area damage at the spot: enemy units (Flame Burst also burns buildings).
-      for (const e of [...game.units(), ...(ability === 'flame' ? game.buildings() : [])]) {
+      for (const e of [...game.units(), ...(def.effect === 'burn' ? game.buildings() : [])]) {
         if (!isEnemy(game, u.owner, e.owner) || !targetable(e)) continue;
         const d = e.kind === 'unit' ? Math.hypot(e.x - at.x, e.y - at.y) - e.radius : distToRect(at.x, at.y, e);
         if (d <= def.radius && game.state.entities[e.id]) dealDamage(game, u.id, u.owner, e, def.damage[r], 'hero');
@@ -274,7 +280,7 @@ function cast(game: Game, u: Unit, ability: AbilityId, t: Unit | null, at: { x: 
     case 'ward':
       if (t) addBuff(t, 'ward', until, def.bonus[r]);
       break;
-    case 'farsight':
+    case 'reveal':
       game.state.reveals.push({ owner: u.owner, x: at.x, y: at.y, radius: def.radius, until });
       break;
   }

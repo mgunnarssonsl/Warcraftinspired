@@ -2,6 +2,7 @@
 // unit-unit separation and stuck recovery. Order logic decides *where* to go;
 // this module decides *how* to get there.
 
+import { isWorker } from './factions';
 import { buffAmount } from './hero';
 import { itemBonus } from './items';
 import { CONFIG, TICK_SECONDS } from './config';
@@ -95,7 +96,7 @@ function goalReached(u: Unit, goal: MoveGoal): boolean {
 
 function isGhost(u: Unit): boolean {
   // Harvesting workers pass through other units so mining traffic never jams.
-  return u.type === 'worker' && u.order?.type === 'gather';
+  return isWorker(u.type) && u.order?.type === 'gather';
 }
 
 function tryShift(game: Game, u: Unit, dx: number, dy: number): void {

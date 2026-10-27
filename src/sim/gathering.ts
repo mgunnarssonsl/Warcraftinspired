@@ -200,7 +200,7 @@ function tryStartWork(game: Game, u: Unit, o: GatherOrder, node: ResourceNode): 
   if (node.type === 'goldmine') {
     if (workingCount(game, node.id) < node.miners) {
       o.phase = 'working';
-      o.timer = secondsToTicks(CONFIG.units.worker.mineSeconds);
+      o.timer = secondsToTicks(workerDef(u).mineSeconds);
       u.hidden = true;
     } else {
       o.phase = 'waiting';
@@ -209,7 +209,7 @@ function tryStartWork(game: Game, u: Unit, o: GatherOrder, node: ResourceNode): 
   }
   if (workingCount(game, node.id) < CONFIG.resources.tree.maxChoppers) {
     o.phase = 'working';
-    o.timer = secondsToTicks(CONFIG.units.worker.chopSeconds);
+    o.timer = secondsToTicks(workerDef(u).chopSeconds);
     u.facing = Math.atan2(node.y - u.y, node.x - u.x);
     return;
   }
@@ -273,9 +273,10 @@ export function updateGatherer(game: Game, u: Unit, o: GatherOrder): void {
       if (--o.timer > 0) return;
       const cap = carryCapacity(game, u, 'wood');
       if (u.carry.res !== 'wood') u.carry = { res: 'wood', amount: 0 };
-      const take = Math.min(CONFIG.units.worker.woodPerChop, node.amount, cap - u.carry.amount);
+      const take = Math.min(workerDef(u).woodPerChop, node.amount, cap - u.carry.amount);
       u.carry.amount += take;
-      node.amount -= take;
+      // Thornwild Tenders coax wood from a living tree: it is never used up.
+      if (!sustainsTrees(u)) node.amount -= take;
       game.emit({ type: 'chop', x: node.x, y: node.y });
       if (node.amount <= 0) {
         game.emit({ type: 'treeFelled', x: node.x, y: node.y });
@@ -286,7 +287,7 @@ export function updateGatherer(game: Game, u: Unit, o: GatherOrder): void {
       } else if (node.amount <= 0) {
         retarget(game, u, o);
       } else {
-        o.timer = secondsToTicks(CONFIG.units.worker.chopSeconds);
+        o.timer = secondsToTicks(workerDef(u).chopSeconds);
       }
       return;
     }
@@ -346,4 +347,14 @@ function afterDelivery(game: Game, u: Unit, o: GatherOrder): void {
     return;
   }
   goIdle(u);
+}
+
+/** Gathering numbers of this unit's type (Laborer or Tender). */
+function workerDef(u: Unit): { mineSeconds: number; chopSeconds: number; woodPerChop: number } {
+  return u.type === 'tender' ? CONFIG.units.tender : CONFIG.units.worker;
+}
+
+/** Thornwild harvesting leaves the tree standing. */
+function sustainsTrees(u: Unit): boolean {
+  return u.type === 'tender';
 }

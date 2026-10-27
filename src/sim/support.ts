@@ -3,6 +3,7 @@
 // The rule is the same for every player, so there is nothing to micro-manage
 // and the computer gets no edge from faster clicking. Rules: CONFIG.cleric.
 
+import { isHealer } from './factions';
 import { CONFIG, secondsToTicks, TICK_SECONDS } from './config';
 import type { Game } from './game';
 import { healAmount } from './tech';
@@ -12,7 +13,7 @@ export function updatePrayers(game: Game, units: readonly Unit[]): void {
   const c = CONFIG.cleric;
   const tick = game.state.tick;
   for (const u of units) {
-    if (u.type !== 'cleric') continue;
+    if (!isHealer(u.type)) continue;
     u.mana = Math.min(c.mana, u.mana + c.manaRegen * TICK_SECONDS);
     if (u.stun > 0 || u.hidden || u.prayerReady > tick || u.mana < c.healMana) continue;
     const t = mostWounded(units, u);

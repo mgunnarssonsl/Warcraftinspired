@@ -6,7 +6,8 @@
 // Rebinding swaps: giving an action a key another action already uses
 // hands that action the old key, so two actions never share one.
 
-import { BUILDABLE, CONFIG, type BuildingType } from '../sim/config';
+import { CONFIG } from '../sim/config';
+import { FACTION, type BuildingRole } from '../sim/factions';
 
 export type KeyAction =
   | 'move'
@@ -25,14 +26,14 @@ export type KeyAction =
   | 'panRight'
   | 'panUp'
   | 'panDown'
-  | `build:${BuildingType}`;
+  | `build:${BuildingRole}`;
 
 export type KeyMap = Record<KeyAction, string>;
 
 export interface KeyActionDef {
   id: KeyAction;
   label: string;
-  group: 'Commands' | 'Build (Laborer selected)' | 'Camera' | 'Interface';
+  group: 'Commands' | 'Build (worker selected)' | 'Camera' | 'Interface';
   key: string;
 }
 
@@ -44,7 +45,13 @@ export const KEY_ACTIONS: KeyActionDef[] = [
   { id: 'gather', label: 'Gather', group: 'Commands', key: 'g' },
   { id: 'return', label: 'Return cargo', group: 'Commands', key: 'r' },
   { id: 'cancel', label: 'Cancel construction or last queued', group: 'Commands', key: 'x' },
-  ...BUILDABLE.map((t) => ({ id: `build:${t}` as KeyAction, label: CONFIG.buildings[t].name, group: 'Build (Laborer selected)' as const, key: CONFIG.buildings[t].hotkey.toLowerCase() })),
+  // One key per building role: the same key builds the Crown's Farm or the Thornwild Grove.
+  ...(Object.entries(FACTION.crown.buildings) as Array<[BuildingRole, keyof typeof CONFIG.buildings]>).map(([role, t]) => ({
+    id: `build:${role}` as KeyAction,
+    label: `${CONFIG.buildings[t].name} / ${CONFIG.buildings[FACTION.wild.buildings[role]].name}`,
+    group: 'Build (worker selected)' as const,
+    key: CONFIG.buildings[t].hotkey.toLowerCase(),
+  })),
   { id: 'panLeft', label: 'Pan left', group: 'Camera', key: 'arrowleft' },
   { id: 'panRight', label: 'Pan right', group: 'Camera', key: 'arrowright' },
   { id: 'panUp', label: 'Pan up', group: 'Camera', key: 'arrowup' },

@@ -2,6 +2,7 @@
 // 1 world unit = 1 tile. Models are centered on their footprint with the
 // ground at y = 0 and the front (entrance) facing +Z, toward the camera.
 
+import { WILD_BUILDINGS, WILD_UNITS } from './wildModels';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { BuildingType, UnitType } from '../sim/config';
@@ -28,7 +29,7 @@ export function mat(color: string | number, opts: { emissive?: number; rough?: n
   return m;
 }
 
-function mesh(geo: THREE.BufferGeometry, m: THREE.Material, x = 0, y = 0, z = 0): THREE.Mesh {
+export function mesh(geo: THREE.BufferGeometry, m: THREE.Material, x = 0, y = 0, z = 0): THREE.Mesh {
   const o = new THREE.Mesh(geo, m);
   o.position.set(x, y, z);
   o.castShadow = true;
@@ -36,7 +37,7 @@ function mesh(geo: THREE.BufferGeometry, m: THREE.Material, x = 0, y = 0, z = 0)
   return o;
 }
 
-const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
+export const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
 
 /** Darken or lighten a CSS hex color. */
 export function tint(hex: string, f: number): string {
@@ -108,7 +109,7 @@ export function makeWorker(team: string): WorkerParts {
 }
 
 /** Shared legs + torso + head skeleton for soldiers. */
-function soldierBase(team: string, scale: number, legColor: string): Pick<WorkerParts, 'root' | 'body' | 'legL' | 'legR'> {
+export function soldierBase(team: string, scale: number, legColor: string): Pick<WorkerParts, 'root' | 'body' | 'legL' | 'legR'> {
   const root = new THREE.Group();
   const body = new THREE.Group();
   body.scale.setScalar(scale);
@@ -122,7 +123,7 @@ function soldierBase(team: string, scale: number, legColor: string): Pick<Worker
   return { root, body, legL, legR };
 }
 
-function noTools(): Pick<WorkerParts, 'pickHead' | 'axeHead' | 'hammerHead' | 'goldSack' | 'logs'> {
+export function noTools(): Pick<WorkerParts, 'pickHead' | 'axeHead' | 'hammerHead' | 'goldSack' | 'logs'> {
   return { pickHead: new THREE.Object3D(), axeHead: new THREE.Object3D(), hammerHead: new THREE.Object3D(), goldSack: new THREE.Object3D(), logs: [] };
 }
 
@@ -166,7 +167,7 @@ function makeArcher(team: string): WorkerParts {
 }
 
 /** A hero's banner on a pole at the back: team colour, high above the crowd. */
-function heroBanner(body: THREE.Group, team: string, height: number): THREE.Object3D {
+export function heroBanner(body: THREE.Group, team: string, height: number): THREE.Object3D {
   const pole = mesh(box(0.025, height, 0.025), mat('#5b4126'), -0.12, 0.3 + height / 2, -0.16);
   body.add(pole);
   const flag = new THREE.Group();
@@ -178,7 +179,7 @@ function heroBanner(body: THREE.Group, team: string, height: number): THREE.Obje
 }
 
 /** A faint team-coloured ring at a hero's feet. */
-function heroHalo(root: THREE.Group, team: string): void {
+export function heroHalo(root: THREE.Group, team: string): void {
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(0.42, 0.5, 28).rotateX(-Math.PI / 2),
     new THREE.MeshBasicMaterial({ color: team, transparent: true, opacity: 0.35, depthWrite: false }),
@@ -402,6 +403,8 @@ export function makeHammerGeometry(): THREE.BufferGeometry {
 }
 
 export function makeUnit(type: UnitType, team: string): WorkerParts {
+  const wild = WILD_UNITS[type];
+  if (wild) return wild(team);
   if (type === 'hero') return makeHero(team);
   if (type === 'lancer') return makeLancer(team);
   if (type === 'outrider') return makeOutrider(team);
@@ -755,7 +758,8 @@ function fountain(): THREE.Group {
   return g;
 }
 
-const BUILDERS: Record<BuildingType, (team: string) => THREE.Group> = { hq: keep, farm, lumbermill, barracks, tower, altar, smithy, chapel, workshop, shop, fountain };
+type CrownBuilding = 'hq' | 'farm' | 'lumbermill' | 'barracks' | 'tower' | 'altar' | 'smithy' | 'chapel' | 'workshop' | 'shop' | 'fountain';
+const BUILDERS: Record<CrownBuilding, (team: string) => THREE.Group> = { hq: keep, farm, lumbermill, barracks, tower, altar, smithy, chapel, workshop, shop, fountain };
 
 /** An item on the ground: a small chest with a glowing gem, colored by tier. */
 export function makeGroundItem(tier: number): THREE.Group {
@@ -768,10 +772,12 @@ export function makeGroundItem(tier: number): THREE.Group {
 
 export function makeBuilding(type: BuildingType, team: string, size: number, tier = 1): BuildingParts {
   const root = new THREE.Group();
-  const model = type === 'hq' && tier > 2 ? citadel(team) : type === 'hq' && tier > 1 ? castle(team) : BUILDERS[type](team);
+  const wild = WILD_BUILDINGS[type];
+  const model = wild ? wild(team, tier) : type === 'hq' && tier > 2 ? citadel(team) : type === 'hq' && tier > 1 ? castle(team) : BUILDERS[type as CrownBuilding](team);
   root.add(model);
   const scaffold = new THREE.Group();
-  const pole = mat('#a07a4a');
+  // Crown sites get timber scaffolding; Thornwild sites a ring of young shoots.
+  const pole = mat(wild ? '#5a8a3a' : '#a07a4a');
   const h = Math.max(1, size * 0.45);
   const e = size / 2 - 0.12;
   for (const [x, z] of [[-e, -e], [e, -e], [-e, e], [e, e]]) scaffold.add(mesh(box(0.08, h, 0.08), pole, x, h / 2, z));
@@ -786,7 +792,7 @@ export function makeBuilding(type: BuildingType, team: string, size: number, tie
 
 /** A translucent copy of a building model for placement previews. */
 export function makeGhost(type: BuildingType, ghostMat: THREE.Material): THREE.Group {
-  const g = BUILDERS[type]('#ffffff');
+  const g = WILD_BUILDINGS[type]?.('#ffffff') ?? BUILDERS[type as CrownBuilding]('#ffffff');
   g.traverse((o) => {
     if (o instanceof THREE.Mesh) {
       o.material = ghostMat;

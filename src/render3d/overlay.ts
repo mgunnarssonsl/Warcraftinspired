@@ -2,6 +2,7 @@
 // progress bars, mine occupancy pips, floating delivery numbers and the
 // selection box. Positions come from projecting 3D points through the camera.
 
+import { isHealer } from '../sim/factions';
 import { hpColor, teamColor, view } from '../ui/view';
 import type { ClientState } from '../input/client';
 import { CONFIG } from '../sim/config';
@@ -197,7 +198,7 @@ export class Overlay {
         const show = view.healthBars === 'always' || selected.has(e.id) || (view.healthBars === 'damaged' && e.hp < e.maxHp);
         if (!show) continue;
         this.bar(x, y, 1.25, 30, e.hp / e.maxHp, hpColor(e.hp / e.maxHp), undefined, teamColor(game, e.owner));
-        if (e.type === 'cleric') this.bar(x, y, 1.13, 30, e.mana / CONFIG.cleric.mana, '#5a8cff');
+        if (isHealer(e.type)) this.bar(x, y, 1.13, 30, e.mana / CONFIG.cleric.mana, '#5a8cff');
       } else if (e.kind === 'building') {
         const top = e.w * 0.75 + 0.6;
         if (e.progress < 1 && e.owner === client.player) {

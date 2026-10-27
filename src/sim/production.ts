@@ -2,6 +2,7 @@
 // building. The rules are listed on CONFIG.production and apply identically
 // to every player, human or computer.
 
+import { isWorker } from './factions';
 import { CONFIG, isHeroType, secondsToTicks, type BuildingType, type ResearchId, type UnitType } from './config';
 import type { Game } from './game';
 import { startGather } from './gathering';
@@ -58,7 +59,7 @@ export function heroProblem(game: Game, player: number, unit: UnitType): string 
   if (rec) return null; // revival
   const limit = heroLimit(game, player);
   if (game.player(player).heroes.length + newHeroesQueued(game, player) >= limit)
-    return limit < CONFIG.hero.maxHeroesCastle ? `One hero until you Fortify to Castle.` : `At most ${limit} heroes.`;
+    return limit < CONFIG.hero.maxHeroesCastle ? `One hero until your main hall reaches tier II.` : `At most ${limit} heroes.`;
   return null;
 }
 
@@ -217,7 +218,7 @@ function spawn(game: Game, b: Building, item: QueueItem): boolean {
   game.emit({ type: 'unitTrained', player: b.owner, id: u.id, x: u.x, y: u.y });
   if (r) {
     const node = r.targetId >= 0 ? game.resource(r.targetId) : undefined;
-    if (node && type === 'worker') startGather(game, u, node);
+    if (node && isWorker(type)) startGather(game, u, node);
     else u.order = { type: 'move', x: r.x, y: r.y };
   }
   return true;

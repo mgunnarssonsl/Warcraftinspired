@@ -2,6 +2,7 @@
 // button, notifications and the controls overlay. Reads state; issues actions
 // through the InputController.
 
+import { buildableFor, buildingRole, isHall, isHealer, isWorker } from '../sim/factions';
 import { hpColor, teamColor } from './view';
 import { UNIT_ICONS } from './icons';
 import { keyLabel } from '../input/keymap';
@@ -94,9 +95,28 @@ const BUILD_TIPS: Record<BuildingType, string> = {
   workshop: 'Siege Works (tier II): builds Mangonels.',
   shop: 'Trading Post (neutral): a hero standing next to it can buy items.',
   fountain: 'Healing Fountain (neutral): heals every unit nearby, friend or foe.',
+  heartwood: 'Heartwood: accepts gold and wood, +10 population. Plant one near a distant mine to expand. Grows on its own.',
+  grove: `Grove: +7 population (up to the maximum of ${CONFIG.match.maxPop}). Grows on its own.`,
+  saplodge: 'Sap Lodge: accepts wood. Plant it beside a forest. Enables Briar Slingers.',
+  den: 'Thicket Den: trains Thornguards, Briar Slingers and Fox Scouts, and Stag Riders from tier II.',
+  spire: 'Thorn Spire: shoots enemies within 7 tiles.',
+  circle: 'Elder Circle: raises and revives your Thornwild heroes.',
+  barkweaver: 'Barkweaver: researches thorn and bark upgrades and Deep Roots. Needed for Stag Riders.',
+  moonwell: 'Moonwell (tier II): trains Menders; researches Full Bloom.',
+  rootpit: 'Root Pit (tier II): awakens Rootcrushers.',
 };
 
 const TRAIN_TIPS: Record<UnitType, string> = {
+  tender: 'Tender: gathers gold and wood and plants buildings, which then grow on their own while the Tender goes back to work. Wood is harvested without felling the tree, but more slowly.',
+  thornguard: 'Thornguard: cheap, armoured melee infantry. Regrows damage when out of combat. Beats Stag Riders and Lancers.',
+  slinger: 'Briar Slinger: ranged; flings thorns 6 tiles. Shreds lightly armoured units. Needs a Sap Lodge.',
+  fox: 'Fox Scout: fast and sharp-eyed, cheap. It does not pick fights.',
+  stagrider: 'Stag Rider: fast cavalry that runs down Slingers, Archers, healers and siege; loses to Thornguards and Guards.',
+  mender: 'Mender: support. Heals the most wounded nearby ally on its own while it has mana.',
+  rootcrusher: 'Rootcrusher: a walking treant that crushes buildings up close. Slow: ranged units can kite it.',
+  warden: 'Thorn Warden (hero): frontline. Entangle roots an enemy, Barkskin armours an ally, Wild Howl rallies.',
+  huntress: 'Huntress (hero): ranged. Thorn Rain hits an area, Snare slows, Owl Eyes scouts any spot.',
+  speaker: 'Grove Speaker (hero): caster. Swarm burns groups and buildings, Wither makes a target take more damage, Regrowth heals.',
   worker: 'Laborer: gathers, builds.',
   guard: 'Guard: sturdy melee soldier in heavy armor. Strong against Lancers and siege; slow to bring down buildings.',
   archer: 'Archer: fragile ranged soldier with pierce damage. Shreds lightly armored units (Archers, Clerics); weak against Lancers and buildings.',
@@ -273,7 +293,9 @@ export class Hud {
   refreshKeys(): void {
     const keys = this.input.settings.keys;
     for (const [id, b] of this.buttons) {
-      const bound = (keys as Record<string, string>)[id];
+      // Build keys are bound per role: the Farm and the Grove share one.
+      const key = id.startsWith('build:') ? `build:${buildingRole(id.slice(6) as BuildingType)}` : id;
+      const bound = (keys as Record<string, string>)[key];
       if (bound) setText(b.querySelector('.cmd-key')!, keyLabel(bound));
     }
     setText(this.cancelBtn.querySelector('.cmd-key')!, keyLabel(keys.cancel));
@@ -322,12 +344,12 @@ export class Hud {
       this.sightedBuildings.add(m.id);
       if (firstLook) continue;
       const name = CONFIG.buildings[m.type].name;
-      this.notify(m.type === 'hq' ? `Enemy ${name} spotted: a base or an expansion. (Space: jump there)` : `Enemy ${name} spotted.`, m.type === 'hq' ? 'alert' : '');
+      this.notify(isHall(m.type) ? `Enemy ${name} spotted: a base or an expansion. (Space: jump there)` : `Enemy ${name} spotted.`, isHall(m.type) ? 'alert' : '');
       this.onSighting(m.x, m.y);
     }
     const soldiers = this.game
       .units()
-      .filter((u) => u.owner !== me && !this.game.player(u.owner).neutral && u.type !== 'worker' && vision.canSee(me, u));
+      .filter((u) => u.owner !== me && !this.game.player(u.owner).neutral && !isWorker(u.type) && vision.canSee(me, u));
     const inView = soldiers.length >= 3;
     if (inView && !this.armyInView && nowMs - this.lastArmySighting > 25000) {
       this.lastArmySighting = nowMs;
@@ -355,9 +377,9 @@ export class Hud {
             .buildings()
             .some((b) => b.owner === this.client.player && Math.hypot(b.x - e.x, b.y - e.y) < 15);
           const what =
-            atBase && (!victim || victim.kind === 'building' || victim.type === 'worker')
+            atBase && (!victim || victim.kind === 'building' || (victim.kind === 'unit' && isWorker(victim.type)))
               ? 'Your base is'
-              : victim?.kind === 'unit' && victim.type === 'worker'
+              : victim?.kind === 'unit' && isWorker(victim.type)
                 ? 'A Laborer is'
                 : 'Your forces are';
           this.notify(`${what} under attack! (Space: jump there)`, 'alert');
@@ -456,7 +478,7 @@ export class Hud {
       this.panelDirty = false;
     }
     const own = this.client.selected.map((id) => this.game.unit(id)).filter((u): u is Unit => !!u && u.owner === p.id);
-    const workers = own.some((u) => u.type === 'worker');
+    const workers = own.some((u) => isWorker(u.type));
     const b = this.client.selected.length === 1 ? this.game.building(this.client.selected[0]) : undefined;
     const ownB = b && b.owner === p.id ? b : undefined;
     const showCancel = !!ownB && (ownB.progress < 1 || ownB.queue.length > 0);
@@ -500,7 +522,7 @@ export class Hud {
         continue;
       }
       if (a.flare) {
-        const keep = ownB?.type === 'hq' && ownB.progress >= 1 ? ownB : undefined;
+        const keep = ownB && isHall(ownB.type) && ownB.progress >= 1 ? ownB : undefined;
         btn.classList.toggle('hidden', !keep);
         if (keep) {
           const problem = flareProblem(this.game, p.id, keep.id);
@@ -544,7 +566,9 @@ export class Hud {
         continue;
       }
       const workerOnly = !!a.build || a.id === 'gather' || a.id === 'return';
-      btn.classList.toggle('hidden', own.length === 0 || (workerOnly && !workers));
+      // Only your own faction's buildings appear on the card.
+      const foreign = !!a.build && !buildableFor(p.faction).includes(a.build);
+      btn.classList.toggle('hidden', own.length === 0 || (workerOnly && !workers) || foreign);
       if (a.build) {
         btn.classList.toggle('poor', !canAfford(this.game, p.id, a.build));
         const req = CONFIG.buildings[a.build].requires as ResearchId | null;
@@ -601,7 +625,7 @@ export class Hud {
       const glyph = el('span', 'portrait-glyph');
       glyph.innerHTML = UNIT_ICONS[e.type] ?? '';
       pt.appendChild(glyph);
-      const carry = e.type === 'worker' && e.carry.amount ? (e.carry.res === 'gold' ? '●' : '≡') : '';
+      const carry = isWorker(e.type) && e.carry.amount ? (e.carry.res === 'gold' ? '●' : '≡') : '';
       if (carry) pt.appendChild(el('span', 'portrait-icon', carry));
       pt.appendChild(hp);
       pt.addEventListener('mousedown', (ev) => {
@@ -625,7 +649,7 @@ export class Hud {
       box.appendChild(el('div', 'sel-title', CONFIG.units[e.type].name));
       row('Health', `${e.hp} / ${e.maxHp}`);
       row('Status', unitStatus(this.game, e));
-      if (e.type === 'worker') row('Carrying', e.carry.amount ? `${e.carry.amount} ${e.carry.res}` : 'nothing');
+      if (isWorker(e.type)) row('Carrying', e.carry.amount ? `${e.carry.amount} ${e.carry.res}` : 'nothing');
       const def = CONFIG.units[e.type];
       const at = def.attack;
       const dmg = attackDamage(this.game, e);
@@ -634,7 +658,7 @@ export class Hud {
       const range = attackRange(this.game, e);
       row('Attack', `${plus(dmg, at.damage)} ${at.type}, ${at.projectileSpeed ? `range ${range}` : 'melee'}, every ${at.cooldown}s${at.splash ? ', splash' : ''}`);
       row('Armor', `${plus(arm, def.armor)} ${def.armorType}`);
-      if (e.type === 'cleric') row('Mana', `${Math.floor(e.mana)} / ${CONFIG.cleric.mana} (heals ${healAmount(this.game, e.owner)} each prayer)`);
+      if (isHealer(e.type)) row('Mana', `${Math.floor(e.mana)} / ${CONFIG.cleric.mana} (heals ${healAmount(this.game, e.owner)} each prayer)`);
       if (e.hero) {
         const h = e.hero;
         const next = CONFIG.hero.xpForLevel[h.level];

@@ -2,6 +2,7 @@
 // (numbers, strings, arrays, records) so JSON round-trips are lossless.
 // Derived caches (navigation grid etc.) live outside it, in Game.
 
+import type { FactionId } from './factions';
 import type { AbilityId, AttackType, BuildingType, HeroType, ItemId, ResearchId, UnitType } from './config';
 
 export type ResourceKind = 'gold' | 'wood';
@@ -57,6 +58,8 @@ export interface Player {
    * labelled as a cheat: extra share of every delivery (0 = none).
    */
   incomeBonus: number;
+  /** Which faction this player plays (see sim/factions.ts). */
+  faction: FactionId;
   /** Fraction of a resource owed by the bonus, carried to the next delivery. */
   incomeOwed: number;
 }
@@ -312,6 +315,8 @@ export interface Unit extends EntityBase {
   mana: number;
   /** Tick from which a Cleric's next prayer (heal) is ready. */
   prayerReady: number;
+  /** Tick it was last damaged (regrowth waits a while after). */
+  hurt: number;
 }
 
 export interface Projectile {
@@ -356,6 +361,10 @@ export interface Building extends EntityBase, Footprint {
   seenBy: number;
   /** 2 once a Keep has been fortified to a Castle. */
   tier: number;
+  /** Planted (Thornwild): grows on its own, no builder needed. */
+  grows: boolean;
+  /** Tick it was last damaged (regrowth waits a while after). */
+  hurt: number;
 }
 
 export interface QueueItem {

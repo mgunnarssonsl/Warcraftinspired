@@ -27,6 +27,7 @@ export function emptyGame(width = 32, height = 24): Game {
       flareReady: 0,
       incomeBonus: 0,
       incomeOwed: 0,
+      faction: 'crown' as const,
     })),
     entities: {},
     projectiles: [],

@@ -2,6 +2,9 @@
 // and advances the simulation one fixed tick at a time. Rendering, input and
 // AI never mutate state directly; they submit Commands.
 
+import { FACTION, isHealer, isWorker, type FactionId } from './factions';
+import { updateRegrowth } from './regrowth';
+import { updateGrowth } from './construction';
 import { CONFIG, secondsToTicks, type BuildingType, type ItemId, type UnitType } from './config';
 import { applyCommand, applyQueued, type Command } from './commands';
 import { updateCombat, updateCombatOrder } from './combat';
@@ -48,7 +51,7 @@ export class Game {
   }
 
   /** Build the skirmish starting state for a map and seed. */
-  static create(seed: number, mapId?: string): Game {
+  static create(seed: number, mapId?: string, factions: FactionId[] = []): Game {
     const layout = generateMap(seed, mapId);
     const state: GameState = {
       seed,
@@ -75,6 +78,7 @@ export class Game {
           flareReady: 0,
           incomeBonus: 0,
           incomeOwed: 0,
+          faction: factions[i] ?? 'crown',
         }),
       ),
       entities: {},
@@ -100,8 +104,9 @@ export class Game {
       game.addResource('goldmine', m.tx, m.ty, kind.gold, kind.miners);
     }
     layout.starts.forEach((s, p) => {
-      const hq = game.addBuilding('hq', p, s.hq.tx, s.hq.ty);
-      game.spawnUnitsNear('worker', p, hq, CONFIG.match.startWorkers);
+      const f = FACTION[game.player(p).faction];
+      const hq = game.addBuilding(f.buildings.hq, p, s.hq.tx, s.hq.ty);
+      game.spawnUnitsNear(f.units.worker, p, hq, CONFIG.match.startWorkers);
     });
     // Hostile camps guard the contested mines. Mines come in mirrored pairs;
     // the second camp of each pair is the exact mirror of the first.
@@ -122,6 +127,7 @@ export class Game {
       flareReady: 0,
       incomeBonus: 0,
       incomeOwed: 0,
+      faction: 'crown',
     });
     // Camps guard mines, and lairs guard treasure. Each camp of a mirrored
     // pair has the same guards and drops the same item.
@@ -312,7 +318,7 @@ export class Game {
   }
 
   idleWorkers(player: number): Unit[] {
-    return this.units().filter((u) => u.owner === player && u.type === 'worker' && u.order === null);
+    return this.units().filter((u) => u.owner === player && isWorker(u.type) && u.order === null);
   }
 
   // ---- entity creation / removal ------------------------------------------
@@ -368,6 +374,8 @@ export class Game {
       targetId: -1,
       seenBy: 1 << owner,
       tier: 1,
+      grows: false,
+      hurt: -1e9,
     };
     this.state.entities[b.id] = b;
     this.lists = null;
@@ -404,8 +412,9 @@ export class Game {
       stun: 0,
       buffs: [],
       camp: -1,
-      mana: type === 'cleric' ? CONFIG.cleric.mana : 0,
+      mana: isHealer(type) ? CONFIG.cleric.mana : 0,
       prayerReady: 0,
+      hurt: -1e9,
     };
     this.state.entities[u.id] = u;
     this.lists = null;
@@ -493,6 +502,8 @@ export class Game {
     updateStatus(this, units);
     updatePrayers(this, units);
     updateFountains(this);
+    updateRegrowth(this);
+    updateGrowth(this);
     for (const u of units) {
       if (!this.state.entities[u.id]) continue;
       if (u.stun > 0) {
@@ -537,7 +548,7 @@ export class Game {
       let value = 0;
       for (const u of this.units()) {
         if (u.owner !== p.id) continue;
-        if (u.type === 'worker') workers++;
+        if (isWorker(u.type)) workers++;
         else {
           army++;
           const c = CONFIG.units[u.type].cost;

@@ -2,6 +2,7 @@
 // Healing Fountains). Rules: CONFIG.items, CONFIG.camps, CONFIG.shop,
 // CONFIG.fountain. Everything here applies to every player alike.
 
+import { isHall, isHealer } from './factions';
 import { CONFIG, TICK_RATE, type ItemId } from './config';
 import type { Game } from './game';
 import { refreshHeroStats } from './hero';
@@ -84,7 +85,7 @@ export function useItem(game: Game, u: Unit, slot: number): void {
     return;
   }
   if (it === 'scroll') {
-    const keeps = game.buildings().filter((b) => b.owner === u.owner && b.type === 'hq' && b.progress >= 1);
+    const keeps = game.buildings().filter((b) => b.owner === u.owner && isHall(b.type) && b.progress >= 1);
     if (!keeps.length) {
       game.emit({ type: 'cantItem', player: u.owner, reason: 'You have no Keep to return to.' });
       return;
@@ -156,7 +157,7 @@ export function updateFountains(game: Game): void {
       if (u.hidden || game.player(u.owner).neutral || distToRect(u.x, u.y, b) > f.radius) continue;
       u.hp = Math.min(u.maxHp, u.hp + f.hpPerSecond);
       if (u.hero) u.hero.mana = Math.min(u.hero.maxMana, u.hero.mana + f.manaPerSecond);
-      if (u.type === 'cleric') u.mana = Math.min(CONFIG.cleric.mana, u.mana + f.manaPerSecond);
+      if (isHealer(u.type)) u.mana = Math.min(CONFIG.cleric.mana, u.mana + f.manaPerSecond);
     }
   }
 }
