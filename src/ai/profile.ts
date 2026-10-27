@@ -4,6 +4,7 @@
 // difficulty, and the two can be described separately to the player.
 
 import { CONFIG, type ArmyMix } from '../sim/config';
+import { FACTIONS, type FactionId } from '../sim/factions';
 import { hash2 } from '../sim/rng';
 
 export type Difficulty = keyof typeof CONFIG.ai.profiles;
@@ -26,6 +27,11 @@ export type ProfileOverrides = Partial<Profile>;
 /** The style a "random" opponent plays: fixed by the match seed, so a replay matches. */
 export function randomStyle(seed: number): StyleId {
   return STYLES[Math.floor(hash2(7919, 104729, seed) * STYLES.length)];
+}
+
+/** The computer's faction when the player asked for a random one: fixed by the seed. */
+export function randomFaction(seed: number): FactionId {
+  return FACTIONS[Math.floor(hash2(6151, 12289, seed) * FACTIONS.length)];
 }
 
 export function composeProfile(difficulty: Difficulty, style: StyleId = 'balanced', overrides: ProfileOverrides = {}): Profile {

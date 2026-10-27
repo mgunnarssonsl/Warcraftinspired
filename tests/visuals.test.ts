@@ -61,3 +61,26 @@ describe('unit silhouettes', () => {
     expect(makeUnit('guard', TEAM).style ?? 'melee').toBe('melee');
   });
 });
+
+describe('Thornwild silhouettes', () => {
+  const WILD: UnitType[] = ['tender', 'thornguard', 'slinger', 'fox', 'stagrider', 'mender', 'rootcrusher', 'warden', 'huntress', 'speaker'];
+  const s = Object.fromEntries(WILD.map((t) => [t, size(t)])) as Record<UnitType, THREE.Vector3>;
+
+  it('every pair of Thornwild unit types differs in outline by at least 8%', () => {
+    for (let i = 0; i < WILD.length; i++)
+      for (let j = i + 1; j < WILD.length; j++) {
+        const [a, b] = [s[WILD[i]], s[WILD[j]]];
+        const diff = Math.max(...(['x', 'y', 'z'] as const).map((k) => Math.abs(a[k] - b[k]) / Math.max(a[k], b[k])));
+        expect(diff, `${WILD[i]} vs ${WILD[j]}`).toBeGreaterThanOrEqual(0.08);
+      }
+  });
+
+  it('roles read the same as the Crown: heroes tallest, riders longest; everything carries the team colour', () => {
+    const foot = Math.max(...(['tender', 'thornguard', 'slinger', 'mender'] as const).map((t) => s[t].y));
+    for (const h of ['warden', 'huntress', 'speaker'] as const) expect(s[h].y, h).toBeGreaterThan(foot * 1.2);
+    for (const f of ['tender', 'thornguard', 'slinger', 'mender'] as const) expect(s.stagrider.z, f).toBeGreaterThan(s[f].z * 1.4);
+    for (const t of WILD) expect(colours(makeUnit(t, TEAM).root), t).toContain(TEAM);
+    expect(['slinger', 'huntress'].map((t) => makeUnit(t as UnitType, TEAM).style)).toEqual(['bow', 'bow']);
+    expect(['mender', 'speaker'].map((t) => makeUnit(t as UnitType, TEAM).style)).toEqual(['staff', 'staff']);
+  });
+});

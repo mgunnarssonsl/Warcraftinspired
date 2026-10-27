@@ -11,11 +11,12 @@
 import type { AiSnapshot } from '../ai/computer';
 import type { AdvantageId, Difficulty, StyleId } from '../ai/profile';
 import type { Command } from '../sim/commands';
+import type { FactionId } from '../sim/factions';
 import { mapById } from '../sim/maps';
 import type { GameState } from '../sim/types';
 
 export const SAVE_FORMAT = 'ironvale-save';
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
 /** The match settings a save was started with (same shape as the start screen's). */
 export interface SavedMatch {
@@ -24,6 +25,9 @@ export interface SavedMatch {
   mapId: string;
   style: StyleId | 'random';
   advantage: AdvantageId;
+  /** The viewer's faction, and the computer's (or 'random', fixed by the seed). */
+  faction: FactionId;
+  opponentFaction: FactionId | 'random';
 }
 
 export interface SaveFile {
@@ -44,7 +48,24 @@ export interface SaveFile {
 export type ParseResult = { ok: true; save: SaveFile } | { ok: false; reason: string };
 
 /** Steps that upgrade a save from version n to n + 1, keyed by n. */
-const MIGRATIONS: Record<number, (save: Record<string, unknown>) => Record<string, unknown>> = {};
+const MIGRATIONS: Record<number, (save: Record<string, unknown>) => Record<string, unknown>> = {
+  // 1 -> 2: factions. Everyone before then played the Crown; nothing had
+  // been hurt for regrowth, and nothing was growing.
+  1: (save) => {
+    const state = save.state as { players?: Array<Record<string, unknown>>; entities?: Record<string, Record<string, unknown>> } | undefined;
+    for (const p of state?.players ?? []) p.faction ??= 'crown';
+    for (const e of Object.values(state?.entities ?? {})) {
+      e.hurt ??= -1e9;
+      if (e.kind === 'building') e.grows ??= false;
+    }
+    const match = save.match as Record<string, unknown> | undefined;
+    if (match) {
+      match.faction ??= 'crown';
+      match.opponentFaction ??= 'crown';
+    }
+    return save;
+  },
+};
 
 export function makeSave(parts: Omit<SaveFile, 'format' | 'version' | 'savedAt'>, now = new Date()): SaveFile {
   return { format: SAVE_FORMAT, version: SAVE_VERSION, savedAt: now.toISOString(), ...parts };

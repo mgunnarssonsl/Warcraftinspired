@@ -9,7 +9,7 @@
 import { orderCue, selectCue } from './audio/cues';
 import { Sound } from './audio/sound';
 import { ComputerPlayer, type Difficulty } from './ai/computer';
-import { randomStyle, STYLES, type AdvantageId, type StyleId } from './ai/profile';
+import { randomFaction, randomStyle, STYLES, type AdvantageId, type StyleId } from './ai/profile';
 import { createClientState } from './input/client';
 import { InputController } from './input/input';
 import { Overlay } from './render3d/overlay';
@@ -17,6 +17,7 @@ import { World3D } from './render3d/world';
 import { makeSave, parseSave, SaveStore, type SaveFile, type SlotId } from './save/save';
 import { CONFIG, TICK_SECONDS } from './sim/config';
 import { Game } from './sim/game';
+import { FACTION, FACTIONS, type FactionId } from './sim/factions';
 import { mapById } from './sim/maps';
 import { Hud } from './ui/hud';
 import { Minimap } from './ui/minimap';
@@ -54,22 +55,28 @@ try {
 const difficultyParam = params.get('difficulty');
 const styleParam = params.get('style');
 const advParam = params.get('adv');
+const factionParam = params.get('faction') as FactionId | null;
+const vsParam = params.get('vs') as FactionId | 'random' | null;
 const fromUrl: MatchSettings = {
   seed: params.has('seed') ? Number(params.get('seed')) | 0 : newSeed(),
   difficulty: difficultyParam === 'easy' || difficultyParam === 'hard' ? difficultyParam : 'normal',
   mapId: mapById(params.get('map') ?? undefined).id,
   style: STYLES.includes(styleParam as StyleId) ? (styleParam as StyleId) : 'random',
   advantage: advParam && advParam in CONFIG.ai.advantages ? (advParam as AdvantageId) : 'none',
+  faction: factionParam && FACTIONS.includes(factionParam) ? factionParam : 'crown',
+  opponentFaction: vsParam && (vsParam === 'random' || FACTIONS.includes(vsParam)) ? vsParam : 'crown',
 };
 const match: MatchSettings = saved
   ? saved.match
   : tutorial
-    ? { seed: TUTORIAL.seed, difficulty: TUTORIAL.difficulty, mapId: TUTORIAL.mapId, style: 'balanced', advantage: 'none' }
+    ? { seed: TUTORIAL.seed, difficulty: TUTORIAL.difficulty, mapId: TUTORIAL.mapId, style: 'balanced', advantage: 'none', faction: 'crown', opponentFaction: 'crown' }
     : fromUrl;
 // A random style is fixed by the seed: the same match plays the same opponent.
 const playedStyle: StyleId = match.style === 'random' ? randomStyle(match.seed) : match.style;
 
-const game = saved ? Game.restore(saved.state, saved.pending, saved.visible) : Game.create(match.seed, match.mapId);
+// A random opponent faction is fixed by the seed too, but shown from the start.
+const opponentFaction: FactionId = match.opponentFaction === 'random' ? randomFaction(match.seed) : match.opponentFaction;
+const game = saved ? Game.restore(saved.state, saved.pending, saved.visible) : Game.create(match.seed, match.mapId, [match.faction, opponentFaction]);
 const client = createClientState(saved?.view.player ?? 0);
 const computer = saved?.ai.find((a) => a.player !== client.player)
   ? ComputerPlayer.restore(saved.ai.find((a) => a.player !== client.player)!)
@@ -212,7 +219,9 @@ screens.onClose = () => {
 };
 screens.onSurrender = () => game.issue({ type: 'surrender', player: client.player });
 const subtitle = document.getElementById('subtitle')!;
-subtitle.textContent = tutorial ? 'tutorial' : `skirmish vs ${opponentLabel(match, playedStyle, false)} computer`;
+subtitle.textContent = tutorial
+  ? 'tutorial'
+  : `${FACTION[game.player(client.player).faction].name} vs ${opponentLabel(match, playedStyle, false)} ${FACTION[game.player(1 - client.player).faction].name}`;
 if (match.advantage !== 'none') {
   const cheat = document.createElement('span');
   cheat.className = 'cheat';

@@ -33,6 +33,7 @@ import { researched, researchPending, researchProblem } from '../sim/tech';
 import type { Building, Entity, ResourceNode, Unit } from '../sim/types';
 import { findSite } from './placement';
 import { flareProblem } from '../sim/commands';
+import { buildingRole, FACTION, isWorker, unitFaction, unitRole, type BuildingRole, type Faction, type UnitRole } from '../sim/factions';
 import { composeProfile, type Difficulty, type Profile, type ProfileOverrides, type StyleId } from './profile';
 
 export type { Difficulty, ProfileOverrides, StyleId } from './profile';
@@ -40,9 +41,26 @@ export type { Difficulty, ProfileOverrides, StyleId } from './profile';
 const dist = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
 
 type ArmyUnit = keyof ArmyMix;
-const ARMY_UNITS: readonly UnitType[] = ['guard', 'archer', 'lancer', 'cleric', 'mangonel'];
+/**
+ * It thinks in roles, named after the Crown's units and buildings: its army
+ * mix says "guard" and means whatever melee soldier its faction trains, and
+ * it reads an enemy of either faction the same way.
+ */
+const ARMY_ROLE: Record<ArmyUnit, UnitRole> = { guard: 'melee', archer: 'ranged', lancer: 'cavalry', cleric: 'support', mangonel: 'siege' };
+/** The army-mix key for a unit type of either faction (null: not a soldier). */
+function armyKey(t: UnitType): ArmyUnit | null {
+  const r = unitRole(t);
+  return (Object.keys(ARMY_ROLE) as ArmyUnit[]).find((k) => ARMY_ROLE[k] === r) ?? null;
+}
+const isScout = (t: UnitType) => unitRole(t) === 'scout';
+const isRole = (t: BuildingType, r: BuildingRole) => buildingRole(t) === r;
 /** Buildings that train soldiers. */
-const PRODUCTION = new Set<BuildingType>(['barracks', 'chapel', 'workshop']);
+const PRODUCTION = new Set<BuildingRole>(['barracks', 'chapel', 'workshop']);
+/** A Crown hero's counterpart in the other faction (same slot: fighter, ranged, caster). */
+function heroSlot(t: UnitType): number {
+  const f = unitFaction(t);
+  return f ? FACTION[f].heroes.indexOf(t) : 0;
+}
 
 /** How it reads the enemy from what it has scouted. */
 export type Posture = 'steady' | 'threatened' | 'greedy';
@@ -124,7 +142,22 @@ export class ComputerPlayer {
     this.think(game);
   }
 
+  /** Its own faction's tables. */
+  private fac(game: Game): Faction {
+    return FACTION[game.player(this.player).faction];
+  }
+
   private note(game: Game, text: string): void {
+    // The journal names its own faction's things.
+    const F = this.fac(game);
+    if (F !== FACTION.crown) {
+      const name = (t: { name: string }) => t.name;
+      text = text
+        .replace(/Laborers/g, `${name(CONFIG.units[F.units.worker])}s`)
+        .replace(/Laborer/g, name(CONFIG.units[F.units.worker]))
+        .replace(/Keeps/g, `${name(CONFIG.buildings[F.buildings.hq])}s`)
+        .replace(/Keep/g, name(CONFIG.buildings[F.buildings.hq]));
+    }
     const last = this.journal[this.journal.length - 1];
     if (last?.text === text) return;
     this.journal.push({ tick: game.state.tick, text });
@@ -173,7 +206,7 @@ export class ComputerPlayer {
     // army; forget one when the memory expires, or when it died in plain view.
     const now = game.state.tick;
     for (const u of out) {
-      if (u.kind !== 'unit' || game.player(u.owner).neutral || u.type === 'worker' || u.type === 'outrider') continue;
+      if (u.kind !== 'unit' || game.player(u.owner).neutral || isWorker(u.type) || isScout(u.type)) continue;
       this.armySeen.set(u.id, { type: u.type, hp: u.hp, x: u.x, y: u.y, tick: now });
       // Soldiers on its side of the map early on mean an attack is coming.
       const mine = game.state.starts[this.player];
@@ -208,8 +241,8 @@ export class ComputerPlayer {
     if (!this.profile.readsIntel) return;
     const seconds = game.state.tick / 20;
     const known = this.knownEnemyBuildings(game);
-    const towers = known.filter((m) => m.type === 'tower').length;
-    const barracks = known.filter((m) => m.type === 'barracks').length;
+    const towers = known.filter((m) => isRole(m.type, 'tower')).length;
+    const barracks = known.filter((m) => isRole(m.type, 'barracks')).length;
     let next: Posture = this.posture;
     if ((this.earlySoldiers.size >= CONFIG.ai.earlyPressureSoldiers && seconds < 480) || (barracks >= 2 && seconds < 360)) next = 'threatened';
     else if (towers >= CONFIG.ai.turtleTowers) next = 'greedy';
@@ -226,14 +259,17 @@ export class ComputerPlayer {
     this.seen = this.visible(game);
     this.observe(game);
     const units = game.units().filter((u) => u.owner === P);
-    const workers = units.filter((u) => u.type === 'worker');
+    const workers = units.filter((u) => isWorker(u.type));
     // Scouts are not soldiers: they scout and stay out of waves.
-    const army = units.filter((u) => u.type !== 'worker' && u.type !== 'outrider');
-    this.scoutRoutes(game, units.filter((u) => u.type === 'outrider'));
+    const army = units.filter((u) => !isWorker(u.type) && !isScout(u.type));
+    this.scoutRoutes(game, units.filter((u) => isScout(u.type)));
     this.scoutWithWorker(game, workers);
     const buildings = game.buildings().filter((b) => b.owner === P);
-    const keeps = buildings.filter((b) => b.type === 'hq' && b.progress >= 1);
-    const plan = this.planBuilding(game, workers, buildings);
+    const keeps = buildings.filter((b) => isRole(b.type, 'hq') && b.progress >= 1);
+    const F = this.fac(game);
+    const hall = CONFIG.buildings[F.buildings.hq];
+    const role = this.planBuilding(game, workers, buildings);
+    const plan = role ? F.buildings[role] : null;
     // Money promised to builders still walking to their sites (paid on arrival)
     // must not be spent elsewhere meanwhile, or the builder arrives broke.
     const reserve = { gold: 0, wood: 0 };
@@ -249,13 +285,13 @@ export class ComputerPlayer {
       reserve.wood += CONFIG.buildings[plan].cost.wood;
     }
     // Its last Keep is going down: keep enough to raise a new one.
-    const allKeeps = buildings.filter((b) => b.type === 'hq');
-    if (this.profile.saveForKeep && plan !== 'hq' && allKeeps.length === 1 && allKeeps[0].progress >= 1 && allKeeps[0].hp < allKeeps[0].maxHp * 0.5) {
-      if (game.player(P).gold < CONFIG.buildings.hq.cost.gold) this.note(game, 'Its last Keep is falling: saving gold to rebuild.');
-      reserve.gold += CONFIG.buildings.hq.cost.gold;
-      reserve.wood += CONFIG.buildings.hq.cost.wood;
-      committed.gold += CONFIG.buildings.hq.cost.gold;
-      committed.wood += CONFIG.buildings.hq.cost.wood;
+    const allKeeps = buildings.filter((b) => isRole(b.type, 'hq'));
+    if (this.profile.saveForKeep && role !== 'hq' && allKeeps.length === 1 && allKeeps[0].progress >= 1 && allKeeps[0].hp < allKeeps[0].maxHp * 0.5) {
+      if (game.player(P).gold < hall.cost.gold) this.note(game, 'Its last Keep is falling: saving gold to rebuild.');
+      reserve.gold += hall.cost.gold;
+      reserve.wood += hall.cost.wood;
+      committed.gold += hall.cost.gold;
+      committed.wood += hall.cost.wood;
     }
 
     this.economy(game, workers, keeps, reserve);
@@ -306,7 +342,7 @@ export class ComputerPlayer {
     const P = this.player;
     const me = game.player(P);
     const now = game.state.tick;
-    const queued = keeps.reduce((n, k) => n + k.queue.filter((q) => q.unit === 'worker').length, 0);
+    const queued = keeps.reduce((n, k) => n + k.queue.filter((q) => !!q.unit && isWorker(q.unit)).length, 0);
     // Enough to fill every mine beside a Keep plus a modest wood crew (wood is
     // needed far less than gold), capped by the difficulty's target per Keep.
     const goldSlots = keeps.reduce((n, k) => {
@@ -328,7 +364,8 @@ export class ComputerPlayer {
       if (workers.length + queued >= wanted) break;
       if (k.queue.length > 0) continue;
       const spare = recovering ? me.gold : me.gold - reserve.gold;
-      if (spare >= CONFIG.units.worker.cost.gold) game.issue({ type: 'train', player: P, buildingId: k.id, unit: 'worker' });
+      const worker = this.fac(game).units.worker;
+      if (spare >= CONFIG.units[worker].cost.gold) game.issue({ type: 'train', player: P, buildingId: k.id, unit: worker });
       const mine = this.minesNear(game, k)[0];
       if (mine && k.rally?.targetId !== mine.id)
         game.issue({ type: 'setRally', player: P, buildingId: k.id, x: mine.x, y: mine.y, targetId: mine.id });
@@ -338,7 +375,7 @@ export class ComputerPlayer {
     if (now - this.lastIdleCheck < secondsToTicks(this.profile.idleCheckSeconds)) return;
     this.lastIdleCheck = now;
     const homeMines = new Set(keeps.flatMap((k) => this.minesNear(game, k).map((m) => m.id)));
-    const drops = game.buildings().filter((b) => b.owner === P && b.progress >= 1 && (b.type === 'hq' || b.type === 'lumbermill'));
+    const drops = game.buildings().filter((b) => b.owner === P && b.progress >= 1 && (isRole(b.type, 'hq') || isRole(b.type, 'lumbermill')));
     // Count gold workers per mine; move extras to wood, fill gaps from idle.
     const onMine = new Map<number, Unit[]>();
     const stray: Unit[] = [];
@@ -380,7 +417,7 @@ export class ComputerPlayer {
     }
     for (const w of toWood) {
       const k = keeps.reduce<Building | undefined>((a, b) => (!a || dist(b, w) < dist(a, w) ? b : a), undefined);
-      const mill = game.buildings().find((b) => b.owner === P && b.type === 'lumbermill' && b.progress >= 1);
+      const mill = game.buildings().find((b) => b.owner === P && isRole(b.type, 'lumbermill') && b.progress >= 1);
       const tree = this.nearestTree(game, mill ?? k ?? w);
       if (tree) game.issue({ type: 'gather', player: P, units: [w.id], nodeId: tree.id });
     }
@@ -403,14 +440,14 @@ export class ComputerPlayer {
       return;
     }
     if (w) {
-      const sawBase = this.knownEnemyBuildings(game).some((m) => m.type === 'hq');
+      const sawBase = this.knownEnemyBuildings(game).some((m) => isRole(m.type, 'hq'));
       if (sawBase || w.hp < w.maxHp * 0.6 || (w.order === null && dist(w, foe) < 8)) {
         const home = game.state.starts[P];
         const mine = game.resources().filter((r) => r.type === 'goldmine').sort((a, b) => dist(a, home) - dist(b, home))[0];
         if (mine) game.issue({ type: 'gather', player: P, units: [w.id], nodeId: mine.id });
         else game.issue({ type: 'stop', player: P, units: [w.id] });
         const known = this.knownEnemyBuildings(game);
-        this.note(game, `Laborer scouted the enemy base: ${known.length} buildings, ${known.filter((m) => m.type === 'barracks').length} Barracks.`);
+        this.note(game, `Laborer scouted the enemy base: ${known.length} buildings, ${known.filter((m) => isRole(m.type, 'barracks')).length} Barracks.`);
         this.scoutWorker = -1;
       }
       return;
@@ -428,7 +465,7 @@ export class ComputerPlayer {
   /** Wants another Keep now (timing, intel and the state of its home mine). */
   private wantsExpansion(game: Game, buildings: Building[]): boolean {
     const P = this.player;
-    const keeps = buildings.filter((b) => b.type === 'hq');
+    const keeps = buildings.filter((b) => isRole(b.type, 'hq'));
     if (keeps.length >= this.profile.maxKeeps) return false;
     const seconds = game.state.tick / 20;
     const me = game.player(P);
@@ -445,24 +482,26 @@ export class ComputerPlayer {
       keeps.length === 1 &&
       seconds >= CONFIG.ai.safeExpandSeconds &&
       this.threatSince < 0 &&
-      game.units().filter((u) => u.owner === P && u.type !== 'worker' && u.type !== 'outrider').length >= CONFIG.ai.safeExpandArmy;
+      game.units().filter((u) => u.owner === P && !isWorker(u.type) && !isScout(u.type)).length >= CONFIG.ai.safeExpandArmy;
     return seconds >= this.profile.expandSeconds || starved || greedy || safe;
   }
 
-  private planBuilding(game: Game, workers: Unit[], buildings: Building[]): BuildingType | null {
+  /** The next building it wants, by role. */
+  private planBuilding(game: Game, workers: Unit[], buildings: Building[]): BuildingRole | null {
     if (!workers.length) return null;
     const P = this.player;
-    const count = (t: BuildingType) => buildings.filter((b) => b.type === t).length;
+    const F = this.fac(game);
+    const count = (r: BuildingRole) => buildings.filter((b) => isRole(b.type, r)).length;
     const unfinished = buildings.filter((b) => b.progress < 1).length + workers.filter((w) => w.order?.type === 'build' && w.order.siteId < 0).length;
     if (count('hq') === 0) {
       // Lost the base: rebuild before anything else.
-      if (!workers.some((w) => w.order?.type === 'build' && w.order.buildingType === 'hq')) this.note(game, 'Lost its last Keep: rebuilding one before anything else.');
+      if (!workers.some((w) => w.order?.type === 'build' && isRole(w.order.buildingType, 'hq'))) this.note(game, 'Lost its last Keep: rebuilding one before anything else.');
       return 'hq';
     }
     if (unfinished >= this.profile.builders) return null;
     const pending = buildings.reduce((n, b) => n + b.queue.filter((q) => !q.started).reduce((s, q) => s + (q.unit ? CONFIG.units[q.unit].pop : 0), 0), 0);
     const spare = game.popCap(P) - game.popUsed(P) - pending;
-    const farmsBuilding = buildings.some((b) => b.type === 'farm' && b.progress < 1) || workers.some((w) => w.order?.type === 'build' && w.order.buildingType === 'farm');
+    const farmsBuilding = buildings.some((b) => isRole(b.type, 'farm') && b.progress < 1) || workers.some((w) => w.order?.type === 'build' && isRole(w.order.buildingType, 'farm'));
     const buffer = CONFIG.ai.popBuffer + 2 * count('barracks');
     if (spare < buffer && game.popCap(P) < CONFIG.match.maxPop && !farmsBuilding) return 'farm';
     // A hero-first style raises its Hall before the Barracks.
@@ -471,10 +510,10 @@ export class ComputerPlayer {
     if (count('barracks') > 0 && count('lumbermill') === 0) return 'lumbermill';
     if (count('barracks') > 0 && count('altar') === 0) return 'altar';
     const towers = this.profile.towers + (this.posture === 'threatened' ? 1 : 0);
-    if (count('tower') < towers && hasCompleted(game, P, 'barracks')) return 'tower';
-    if (this.profile.upgrades && count('smithy') === 0 && hasCompleted(game, P, 'lumbermill')) return 'smithy';
+    if (count('tower') < towers && hasCompleted(game, P, F.buildings.barracks)) return 'tower';
+    if (this.profile.upgrades && count('smithy') === 0 && hasCompleted(game, P, F.buildings.lumbermill)) return 'smithy';
     // Tier II production, for the units its mix calls for.
-    if (researched(game, P, 'castle')) {
+    if (researched(game, P, F.tiers[0])) {
       if (count('chapel') === 0 && this.profile.mix.cleric > 0) return 'chapel';
       if (count('workshop') === 0 && this.profile.mix.mangonel > 0) return 'workshop';
     }
@@ -485,7 +524,7 @@ export class ComputerPlayer {
   }
 
   private homeMineLow(game: Game, buildings: Building[]): boolean {
-    const k = buildings.find((b) => b.type === 'hq');
+    const k = buildings.find((b) => isRole(b.type, 'hq'));
     if (!k) return false;
     const m = this.minesNear(game, k)[0];
     return !m || m.amount < 1500;
@@ -500,11 +539,11 @@ export class ComputerPlayer {
 
   /** The best unguarded mine without a Keep beside it, reward weighed against distance. */
   private expansionMine(game: Game, buildings: Building[], allowGuarded = false): ResourceNode | undefined {
-    const home = buildings.find((b) => b.type === 'hq') ?? buildings[0];
+    const home = buildings.find((b) => isRole(b.type, 'hq')) ?? buildings[0];
     if (!home) return undefined;
     const keeps = [
-      ...game.buildings().filter((b) => b.type === 'hq' && b.owner === this.player),
-      ...game.vision.remembered(this.player).filter((m) => m.type === 'hq'),
+      ...game.buildings().filter((b) => isRole(b.type, 'hq') && b.owner === this.player),
+      ...game.vision.remembered(this.player).filter((m) => isRole(m.type, 'hq')),
     ];
     // Reward against distance: a rich mine is worth a longer walk, a small one less.
     const cost = (m: ResourceNode) => dist(m, home) - CONFIG.ai.richMineBonus * (m.miners - CONFIG.resources.goldmine.maxMiners) - (m.amount >= CONFIG.mineKinds.standard.gold ? CONFIG.ai.fullMineBonus : 0);
@@ -520,8 +559,9 @@ export class ComputerPlayer {
   private siteFor(game: Game, type: BuildingType, buildings: Building[], keeps: Building[]) {
     const P = this.player;
     const home = keeps[0] ?? buildings[0];
-    if (type === 'hq') {
-      if (!buildings.some((b) => b.type === 'hq')) {
+    const role = buildingRole(type);
+    if (role === 'hq') {
+      if (!buildings.some((b) => isRole(b.type, 'hq'))) {
         // Rebuilding: the mine nearest to what it has left, if no enemy is there.
         const anchor = buildings[0] ?? game.units().find((u) => u.owner === P);
         if (!anchor) return null;
@@ -529,25 +569,25 @@ export class ComputerPlayer {
           .resources()
           .filter((r) => r.type === 'goldmine' && r.amount > 500 && !this.dangerAt(r, 10))
           .sort((a, b) => dist(a, anchor) - dist(b, anchor))[0];
-        return mine ? findSite(game, P, 'hq', mine.x, mine.y) : null;
+        return mine ? findSite(game, P, type, mine.x, mine.y) : null;
       }
       const m = this.expansionMine(game, buildings) ?? (home ? this.minesNear(game, home)[0] : undefined);
-      return m ? findSite(game, P, 'hq', m.x, m.y) : null;
+      return m ? findSite(game, P, type, m.x, m.y) : null;
     }
     if (!home) return null;
-    if (type === 'lumbermill') {
+    if (role === 'lumbermill') {
       const tree = this.nearestTree(game, home);
       return tree ? findSite(game, P, type, tree.x + Math.sign(home.x - tree.x) * 2, tree.y + Math.sign(home.y - tree.y) * 2) : null;
     }
-    if (type === 'tower') {
+    if (role === 'tower') {
       // The first tower covers the approach; later ones the mines, where
       // raids hit Laborers.
-      const built = buildings.filter((b) => b.type === 'tower').length;
+      const built = buildings.filter((b) => isRole(b.type, 'tower')).length;
       const mines = keeps.flatMap((k) => this.minesNear(game, k).slice(0, 1).map((m) => ({ k, m })));
       const spot = built > 0 ? mines[(built - 1) % Math.max(1, mines.length)] : undefined;
       if (spot) return findSite(game, P, type, (spot.k.x + spot.m.x * 2) / 3, (spot.k.y + spot.m.y * 2) / 3);
     }
-    if (type === 'tower' || type === 'barracks' || type === 'altar' || type === 'smithy' || type === 'workshop') {
+    if (role === 'tower' || role === 'barracks' || role === 'altar' || role === 'smithy' || role === 'workshop') {
       const s = this.staging(game, home);
       return findSite(game, P, type, (s.x + home.x) / 2, (s.y + home.y) / 2);
     }
@@ -576,7 +616,7 @@ export class ComputerPlayer {
     if (!pool.length) return;
     const builder = pool.reduce((a, b) => (dist(b, centre) < dist(a, centre) ? b : a));
     game.issue({ type: 'build', player: this.player, units: [builder.id], buildingType: type, tx: site.tx, ty: site.ty });
-    if (type === 'hq' && keeps.length && this.expansionNoted < keeps.length + 1) {
+    if (isRole(type, 'hq') && keeps.length && this.expansionNoted < keeps.length + 1) {
       this.expansionNoted = keeps.length + 1;
       const m = game.resources().find((r) => r.type === 'goldmine' && distToRect(r.x, r.y, site) < 12);
       this.note(game, `Expanding to ${m && m.miners > CONFIG.resources.goldmine.maxMiners ? 'a rich mine' : 'a new mine'} (Keep ${keeps.length + 1}).`);
@@ -616,9 +656,9 @@ export class ComputerPlayer {
     const home = keeps[0];
     // Heroes come first: train its chosen heroes (a second once fortified),
     // and revive any that fall.
-    const altar = buildings.find((b) => b.type === 'altar' && b.progress >= 1);
+    const altar = buildings.find((b) => isRole(b.type, 'altar') && b.progress >= 1);
     if (altar) {
-      for (const type of this.profile.heroes) {
+      for (const type of this.profile.heroes.map((h) => this.fac(game).heroes[heroSlot(h)])) {
         if (heroProblem(game, P, type)) continue;
         const c = trainCost(game, P, type);
         if (me.gold - reserve.gold < c.gold || me.wood - reserve.wood < c.wood) break;
@@ -632,36 +672,45 @@ export class ComputerPlayer {
     }
     this.research(game, buildings, reserve);
     // Keep a scout or two out once there is a Barracks.
-    const rax = buildings.find((b) => b.type === 'barracks' && b.progress >= 1 && b.queue.length < 2);
-    const scouts = game.units().filter((u) => u.owner === P && u.type === 'outrider').length + buildings.reduce((n, b) => n + b.queue.filter((q) => q.unit === 'outrider').length, 0);
-    if (rax && scouts < this.profile.scouts && this.scoutsTrained < CONFIG.ai.maxScouts && me.gold - reserve.gold >= CONFIG.units.outrider.cost.gold) {
-      game.issue({ type: 'train', player: P, buildingId: rax.id, unit: 'outrider' });
+    const rax = buildings.find((b) => isRole(b.type, 'barracks') && b.progress >= 1 && b.queue.length < 2);
+    const scouts = game.units().filter((u) => u.owner === P && isScout(u.type)).length + buildings.reduce((n, b) => n + b.queue.filter((q) => !!q.unit && isScout(q.unit)).length, 0);
+    const scout = this.fac(game).units.scout;
+    if (rax && scouts < this.profile.scouts && this.scoutsTrained < CONFIG.ai.maxScouts && me.gold - reserve.gold >= CONFIG.units[scout].cost.gold) {
+      game.issue({ type: 'train', player: P, buildingId: rax.id, unit: scout });
       this.scoutsTrained++;
     }
     const mix = this.wantedMix(game);
     const total = Object.values(mix).reduce((a, b) => a + b, 0) || 1;
-    const counts = new Map<UnitType, number>();
-    for (const u of army) counts.set(u.type, (counts.get(u.type) ?? 0) + 1);
-    for (const b of buildings) for (const q of b.queue) if (q.unit) counts.set(q.unit, (counts.get(q.unit) ?? 0) + 1);
+    const counts = new Map<ArmyUnit, number>();
+    const tally = (t: UnitType) => {
+      const k = armyKey(t);
+      if (k) counts.set(k, (counts.get(k) ?? 0) + 1);
+    };
+    for (const u of army) tally(u.type);
+    for (const b of buildings) for (const q of b.queue) if (q.unit) tally(q.unit);
     const size = army.length + 1;
     // How far each soldier type is below its share of the wanted mix.
     const deficit = (t: ArmyUnit) => mix[t] / total - (counts.get(t) ?? 0) / size;
     for (const b of buildings) {
-      if (b.progress < 1 || !PRODUCTION.has(b.type)) continue;
+      const role = buildingRole(b.type);
+      if (b.progress < 1 || !role || !PRODUCTION.has(role)) continue;
       if (home && !b.rally) {
         const s = this.staging(game, home);
         game.issue({ type: 'setRally', player: P, buildingId: b.id, x: s.x, y: s.y, targetId: -1 });
       }
       if (b.queue.length >= 2) continue;
-      const options = (trainableAt(b.type) as ArmyUnit[]).filter((t) => ARMY_UNITS.includes(t) && mix[t] > 0 && !missingRequirement(game, P, t));
+      const options = trainableAt(b.type).filter((t) => {
+        const k = armyKey(t);
+        return k && mix[k] > 0 && !missingRequirement(game, P, t);
+      });
       if (!options.length) continue;
-      const unit = options.reduce((a, c) => (deficit(c) > deficit(a) ? c : a));
+      const unit = options.reduce((a, c) => (deficit(armyKey(c)!) > deficit(armyKey(a)!) ? c : a));
       // The Barracks always keeps training; specialist buildings only fill their share.
-      if (b.type !== 'barracks' && deficit(unit) <= 0) continue;
+      if (role !== 'barracks' && deficit(armyKey(unit)!) <= 0) continue;
       const c = CONFIG.units[unit].cost;
       if (me.gold - reserve.gold >= c.gold && me.wood - reserve.wood >= c.wood) {
         game.issue({ type: 'train', player: P, buildingId: b.id, unit });
-        counts.set(unit, (counts.get(unit) ?? 0) + 1);
+        tally(unit);
       }
     }
   }
@@ -676,13 +725,19 @@ export class ComputerPlayer {
     const mix = { ...this.profile.mix };
     // Banked wood is wasted wood: lean on the units that use it.
     if (this.profile.usesSurplus && game.player(this.player).wood > CONFIG.ai.woodSurplus)
-      for (const t of Object.keys(mix) as ArmyUnit[]) if (CONFIG.units[t].cost.wood >= 30) mix[t] *= 1.6;
+      for (const t of Object.keys(mix) as ArmyUnit[]) if (CONFIG.units[this.fac(game).units[ARMY_ROLE[t]]].cost.wood >= 30) mix[t] *= 1.6;
     if (!this.profile.adapt) return mix;
-    const seen = new Map<UnitType, number>();
-    for (const m of this.armySeen.values()) seen.set(m.type, (seen.get(m.type) ?? 0) + 1);
-    const n = [...seen.values()].reduce((a, b) => a + b, 0);
+    // Counted by role, so a Thornguard reads as a Guard would.
+    const seen = new Map<ArmyUnit, number>();
+    const types = new Map<UnitType, number>();
+    for (const m of this.armySeen.values()) {
+      const k = armyKey(m.type);
+      if (k) seen.set(k, (seen.get(k) ?? 0) + 1);
+      types.set(m.type, (types.get(m.type) ?? 0) + 1);
+    }
+    const n = [...types.values()].reduce((a, b) => a + b, 0);
     if (n < CONFIG.ai.adaptAfterSeen) return mix;
-    const share = (t: UnitType) => (seen.get(t) ?? 0) / n;
+    const share = (t: ArmyUnit) => (seen.get(t) ?? 0) / n;
     const k = CONFIG.ai.adaptStrength;
     // Lancers run down archers, casters and siege; Guards stop Lancers;
     // Archers shred light units; Clerics' magic burns heavy armor.
@@ -690,10 +745,10 @@ export class ComputerPlayer {
     mix.guard += k * share('lancer');
     mix.archer += k * share('cleric');
     mix.cleric += (k / 2) * share('guard');
-    if (!researched(game, this.player, 'castle')) mix.guard += k * share('archer') * 0.5; // no Lancers yet
+    if (!researched(game, this.player, this.fac(game).tiers[0])) mix.guard += k * share('archer') * 0.5; // no Lancers yet
     if (!this.adaptedNoted) {
       this.adaptedNoted = true;
-      const main = [...seen.entries()].sort((a, b) => b[1] - a[1])[0][0];
+      const main = [...types.entries()].sort((a, b) => b[1] - a[1])[0][0];
       this.note(game, `Adapting its army to what it has seen (mostly ${CONFIG.units[main].name}s).`);
     }
     return mix;
@@ -705,19 +760,21 @@ export class ComputerPlayer {
     const P = this.player;
     const me = game.player(P);
     const seconds = game.state.tick / 20;
-    const order: ResearchId[] = ['weapons1', 'armor1', 'saws'];
+    const up = this.fac(game).upgrades;
+    const [tier2, tier3] = this.fac(game).tiers;
+    const order: ResearchId[] = [up.weapons[0], up.armor[0], up.carryWood];
     // Mule Carts ties up the Keep, which also trains Laborers: not in the opening.
-    if (seconds >= CONFIG.ai.cartsSeconds) order.push('carts');
+    if (up.carryGold && seconds >= CONFIG.ai.cartsSeconds) order.push(up.carryGold);
     // Facing a turtle, it fortifies a fifth sooner.
     const woodBanked = this.profile.usesSurplus && me.wood > CONFIG.ai.woodSurplus * 1.5;
     const soon = this.posture === 'greedy' || woodBanked ? 0.8 : 1;
     if (this.profile.castleSeconds !== null && seconds >= this.profile.castleSeconds * soon) {
-      order.push('castle', 'weapons2', 'armor2');
-      if (this.profile.mix.archer > 0) order.push('longbows');
+      order.push(tier2, up.weapons[1], up.armor[1]);
+      if (this.profile.mix.archer > 0) order.push(up.range);
     }
     if (this.profile.citadelSeconds !== null && seconds >= this.profile.citadelSeconds * soon) {
-      order.push('citadel', 'weapons3', 'armor3');
-      if (this.profile.mix.cleric > 0) order.push('healing2');
+      order.push(tier3, up.weapons[2], up.armor[2]);
+      if (this.profile.mix.cleric > 0) order.push(up.heal);
     }
     for (const id of order) {
       const def = CONFIG.research[id];
@@ -726,8 +783,8 @@ export class ComputerPlayer {
       if (!b || researchProblem(game, P, b, id)) continue;
       if (me.gold - reserve.gold - CONFIG.ai.researchBuffer < def.cost.gold || me.wood - reserve.wood < def.cost.wood) return;
       game.issue({ type: 'research', player: P, buildingId: b.id, research: id });
-      if (id === 'castle') this.note(game, 'Fortifying to a Castle for tier II units and upgrades.');
-      if (id === 'citadel') this.note(game, 'Fortifying to a Citadel.');
+      if (id === tier2) this.note(game, id === 'castle' ? 'Fortifying to a Castle for tier II units and upgrades.' : `Raising its main hall to tier II (${def.name}) for new units and upgrades.`);
+      if (id === tier3) this.note(game, id === 'citadel' ? 'Fortifying to a Citadel.' : `Raising its main hall to tier III (${def.name}).`);
       return; // one new research per think
     }
   }
@@ -843,7 +900,9 @@ export class ComputerPlayer {
   /** What a hero would buy, best first: a permanent item it lacks, then a draught. */
   private shoppingList(h: Unit): ItemId[] {
     const has = new Set(h.hero!.items);
-    const wants: ItemId[] = h.type === 'sage' ? ['charm', 'mail', 'blade'] : h.type === 'ranger' ? ['blade', 'charm', 'mail'] : ['mail', 'blade', 'charm'];
+    // By hero slot: casters want mana, ranged heroes damage, fighters armor.
+    const slot = heroSlot(h.type);
+    const wants: ItemId[] = slot === 2 ? ['charm', 'mail', 'blade'] : slot === 1 ? ['blade', 'charm', 'mail'] : ['mail', 'blade', 'charm'];
     const list = wants.filter((it) => !has.has(it));
     if (!has.has('draught')) list.push('draught');
     return list;
@@ -909,10 +968,10 @@ export class ComputerPlayer {
         return true;
       };
       const hurt = allies.filter((u) => u.hp < u.maxHp * 0.5).sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
-      const threat = foes.find((f) => f.hero) ?? foes.filter((f) => f.type !== 'worker').sort((a, b) => b.hp - a.hp)[0];
+      const threat = foes.find((f) => f.hero) ?? foes.filter((f) => !isWorker(f.type)).sort((a, b) => b.hp - a.hp)[0];
       for (const ability of abilitiesOf(h.type)) {
         const def = CONFIG.hero.abilities[ability];
-        if (ability === 'farsight') {
+        if (def.effect === 'reveal') {
           // Scout the enemy base before a wave goes in blind.
           const known = this.knownEnemyBuildings(game).length > 0;
           const start = game.state.starts.find((_, p) => p !== P && !game.player(p).neutral && !game.player(p).defeated);
@@ -973,11 +1032,11 @@ export class ComputerPlayer {
     const now = game.state.tick;
     const enemies = this.seen;
     let threats = enemies.filter(
-      (e): e is Unit => e.kind === 'unit' && e.type !== 'outrider' && buildings.some((b) => distToRect(e.x, e.y, b) < CONFIG.ai.defendRadius),
+      (e): e is Unit => e.kind === 'unit' && !isScout(e.type) && buildings.some((b) => distToRect(e.x, e.y, b) < CONFIG.ai.defendRadius),
     );
     // A lone Laborer walking through is a scout, not an attack: towers and
     // nearby soldiers deal with it on their own.
-    if (threats.every((t) => t.type === 'worker') && threats.length < 2) threats = [];
+    if (threats.every((t) => isWorker(t.type)) && threats.length < 2) threats = [];
     this.wave = this.wave.filter((id) => game.unit(id));
     this.heroRecovery(game, army, keeps);
     const fit = army.filter((u) => !this.healing.has(u.id));
@@ -1002,7 +1061,7 @@ export class ComputerPlayer {
     if (this.evacuated.size) this.evacuated.clear();
 
     const seconds = now / 20;
-    const broke = !buildings.some((b) => b.type === 'hq') && game.player(P).gold < CONFIG.buildings.hq.cost.gold;
+    const broke = !buildings.some((b) => isRole(b.type, 'hq')) && game.player(P).gold < CONFIG.buildings[this.fac(game).buildings.hq].cost.gold;
     if (!this.wave.length) {
       // A threatened computer holds the army home a little longer.
       const needed = this.waveSize + (this.posture === 'threatened' ? 2 : 0);
@@ -1047,9 +1106,9 @@ export class ComputerPlayer {
     // A judging computer counts the towers standing near the threat, and never
     // recalls a wave over a couple of stragglers.
     const g = CONFIG.units.guard;
-    const towers = game.buildings().filter((b) => b.owner === P && b.type === 'tower' && b.progress >= 1 && dist(b, c) < 10).length;
+    const towers = game.buildings().filter((b) => b.owner === P && isRole(b.type, 'tower') && b.progress >= 1 && dist(b, c) < 10).length;
     const held = this.strength(home) + towers * CONFIG.ai.towerAsGuards * g.hp * (g.attack.damage / g.attack.cooldown);
-    const soldiers = threats.filter((t) => t.type !== 'worker');
+    const soldiers = threats.filter((t) => !isWorker(t.type));
     const serious = this.profile.judgeFights ? soldiers.length >= 2 && danger > held * 0.8 : threats.length >= 3;
     if (serious && this.wave.length) {
       this.note(game, 'Recalled its army to defend the base.');
@@ -1104,7 +1163,7 @@ export class ComputerPlayer {
     if (kind !== 'creep') this.creepAt = null;
     if (kind === 'raid') {
       this.lastRaid = game.state.tick;
-      this.note(game, `Sent ${units.length} soldiers to raid the enemy's Laborers.`);
+      this.note(game, `Sent ${units.length} soldiers to raid the enemy's workers.`);
     } else if (kind === 'attack') {
       this.note(game, `Attacking with ${units.length} units.`);
     }
@@ -1112,7 +1171,7 @@ export class ComputerPlayer {
 
   /** The enemy mine to raid: next to a Keep it knows of, or at the enemy start. */
   private raidTarget(game: Game): { x: number; y: number } | null {
-    const keeps = this.knownEnemyBuildings(game).filter((m) => m.type === 'hq');
+    const keeps = this.knownEnemyBuildings(game).filter((m) => isRole(m.type, 'hq'));
     const anchors = keeps.length ? keeps : game.state.starts.filter((_, p) => p !== this.player && !game.player(p).neutral && !game.player(p).defeated);
     // The newest base is usually the least defended.
     const anchor = anchors[anchors.length - 1];
@@ -1137,7 +1196,7 @@ export class ComputerPlayer {
     // Judging the fight in front of it: back off from a clearly stronger force.
     if (this.profile.judgeFights && this.waveKind !== 'creep') {
       const facing = enemies.filter((e): e is Unit => e.kind === 'unit' && !game.player(e.owner).neutral && dist(e, c) < 12);
-      const towers = enemies.filter((e): e is Building => e.kind === 'building' && e.type === 'tower' && e.progress >= 1 && dist(e, c) < 12);
+      const towers = enemies.filter((e): e is Building => e.kind === 'building' && isRole(e.type, 'tower') && e.progress >= 1 && dist(e, c) < 12);
       const theirs = this.strength(facing) + towers.length * this.strength(waveUnits.slice(0, 1)) * 1.5;
       // Turning tail in the middle of a fight gets an army cut down from
       // behind: once engaged it only runs from a hopeless fight; before
@@ -1148,7 +1207,7 @@ export class ComputerPlayer {
     }
     if (this.waveKind === 'raid') {
       if (now - this.waveStart > secondsToTicks(CONFIG.ai.raidSeconds)) return goHome(false, 'Raid over: back home.');
-      const workersThere = enemies.filter((e): e is Unit => e.kind === 'unit' && e.type === 'worker' && dist(e, c) < 10);
+      const workersThere = enemies.filter((e): e is Unit => e.kind === 'unit' && isWorker(e.type) && dist(e, c) < 10);
       if (now - this.lastWaveOrder < secondsToTicks(2)) return;
       this.lastWaveOrder = now;
       // Laborers first: that is the point of a raid.
@@ -1225,9 +1284,9 @@ export class ComputerPlayer {
   private attackTarget(game: Game, from: { x: number; y: number }): { x: number; y: number } | null {
     const known = this.knownEnemyBuildings(game);
     if (known.length) {
-      const towersNear = (p: { x: number; y: number }) => known.filter((m) => m.type === 'tower' && dist(m, p) < 9).length;
+      const towersNear = (p: { x: number; y: number }) => known.filter((m) => isRole(m.type, 'tower') && dist(m, p) < 9).length;
       const starts = game.state.starts;
-      const outlying = (m: { x: number; y: number; type: string }) => m.type === 'hq' && starts.every((s) => dist(s, m) > 6);
+      const outlying = (m: { x: number; y: number; type: BuildingType }) => isRole(m.type, 'hq') && starts.every((s) => dist(s, m) > 6);
       const score = (m: (typeof known)[number]) =>
         dist(m, from) + (this.profile.readsIntel ? 12 * towersNear(m) - (outlying(m) ? 10 : 0) : 0);
       return known.reduce((a, b) => (score(b) < score(a) ? b : a));
@@ -1278,7 +1337,7 @@ export class ComputerPlayer {
   private strength(units: Unit[]): number {
     let s = 0;
     for (const u of units) {
-      if (u.type === 'worker') continue;
+      if (isWorker(u.type)) continue;
       const a = CONFIG.units[u.type].attack;
       s += u.hp * (a.damage / a.cooldown);
     }
@@ -1299,7 +1358,7 @@ export class ComputerPlayer {
       // Attacking into a base means its towers too, and a defender close to
       // its healing, its production and its Laborers.
       const g = CONFIG.units.guard;
-      const towers = this.knownEnemyBuildings(game).filter((m) => m.type === 'tower' && m.done).length;
+      const towers = this.knownEnemyBuildings(game).filter((m) => isRole(m.type, 'tower') && m.done).length;
       theirs = (theirs + towers * CONFIG.ai.towerAsGuards * g.hp * (g.attack.damage / g.attack.cooldown)) * CONFIG.ai.defenderEdge;
     }
     return this.strength(home) >= theirs * CONFIG.ai.attackAdvantage;
@@ -1331,11 +1390,11 @@ export class ComputerPlayer {
       if (guard) return { x: guard.x, y: guard.y };
     }
     const keepsKnown = [
-      ...game.buildings().filter((b) => b.type === 'hq' && b.owner === this.player),
-      ...game.vision.remembered(this.player).filter((m) => m.type === 'hq'),
+      ...game.buildings().filter((b) => isRole(b.type, 'hq') && b.owner === this.player),
+      ...game.vision.remembered(this.player).filter((m) => isRole(m.type, 'hq')),
     ];
     // Without a Keep, any camp will do: the bounty is the way back.
-    const anywhere = !buildings.some((b) => b.type === 'hq');
+    const anywhere = !buildings.some((b) => isRole(b.type, 'hq'));
     const camps = this.campsSeen.filter((c) => (anywhere || ownHalf(c)) && open(c)).sort((a, b) => dist(a, home) - dist(b, home));
     if (camps[0]) return { x: camps[0].x, y: camps[0].y };
     const options = game

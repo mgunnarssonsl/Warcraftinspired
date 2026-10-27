@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { ComputerPlayer } from '../src/ai/computer';
 import { CONFIG } from '../src/sim/config';
+import type { FactionId } from '../src/sim/factions';
 import { Game } from '../src/sim/game';
 import { makeSave, parseSave, SAVE_FORMAT, SAVE_VERSION, SaveStore, type SaveFile } from '../src/save/save';
 
 const SEC = 20;
 
-function match(seed = 4, map = 'river') {
-  const g = Game.create(seed, map);
+function match(seed = 4, map = 'river', factions: FactionId[] = []) {
+  const g = Game.create(seed, map, factions);
   const ais = [new ComputerPlayer(0, 'hard', 'raider'), new ComputerPlayer(1, 'normal', 'warlord')];
   const run = (game: Game, players: ComputerPlayer[], seconds: number) => {
     for (let t = 0; t < seconds * SEC && !game.state.outcome; t++) {
@@ -21,7 +22,7 @@ function match(seed = 4, map = 'river') {
 /** Save to text and load it back, as the game does. */
 function roundTrip(g: Game, ais: ComputerPlayer[]): { g: Game; ais: ComputerPlayer[]; text: string } {
   const save = makeSave({
-    match: { seed: g.state.seed, difficulty: 'hard', mapId: g.state.mapId, style: 'raider', advantage: 'none' },
+    match: { seed: g.state.seed, difficulty: 'hard', mapId: g.state.mapId, style: 'raider', advantage: 'none', faction: 'crown', opponentFaction: 'crown' },
     state: g.state,
     pending: g.pendingCommands(),
     visible: g.vision.snapshot(),
@@ -72,6 +73,17 @@ describe('save and load', () => {
     for (const p of [0, 1]) for (const [x, y] of [[10, 56], [84, 14], [48, 36]]) expect(copy.vision.isVisible(p, x, y)).toBe(g.vision.isVisible(p, x, y));
   }, 60_000);
 
+  it('a Thornwild match, with buildings still growing and wounds regrowing, continues exactly', () => {
+    const { g, ais, run } = match(5, 'vales', ['wild', 'crown']);
+    run(g, ais, 400);
+    expect(g.buildings().some((b) => b.owner === 0 && b.grows)).toBe(true);
+    const copy = roundTrip(g, ais);
+    expect(copy.g.player(0).faction).toBe('wild');
+    run(g, ais, 120);
+    run(copy.g, copy.ais, 120);
+    expect(copy.g.toJSON()).toBe(g.toJSON());
+  }, 60_000);
+
   it('a command given just before saving is carried out after loading', () => {
     const { g, ais, run } = match();
     run(g, ais, 60);
@@ -113,6 +125,27 @@ describe('incompatible or damaged saves are refused with a reason', () => {
     expect(reason(JSON.stringify({ ...s, state: { ...s.state, map: { ...s.state.map, terrain: [1, 2] } } }))).toMatch(/map/);
     expect(reason(JSON.stringify({ ...s, ai: undefined }))).toMatch(/computer/);
   });
+
+  it('a save from before factions (version 1) loads as a Crown match', () => {
+    const s = good() as unknown as Record<string, any>;
+    s.version = 1;
+    delete s.match.faction;
+    delete s.match.opponentFaction;
+    for (const p of s.state.players) delete p.faction;
+    for (const e of Object.values(s.state.entities) as Array<Record<string, unknown>>) {
+      delete e.hurt;
+      delete e.grows;
+    }
+    const r = parseSave(JSON.stringify(s));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.save.version).toBe(SAVE_VERSION);
+    expect(r.save.match).toMatchObject({ faction: 'crown', opponentFaction: 'crown' });
+    const g = Game.restore(r.save.state, r.save.pending, r.save.visible);
+    expect(g.state.players.map((p) => p.faction)).toEqual(g.state.players.map(() => 'crown'));
+    for (let t = 0; t < 200; t++) g.step();
+    expect(g.buildings().every((b) => b.grows === false)).toBe(true);
+  }, 30_000);
 
   it('the current version loads, with its format and version stamped', () => {
     const r = parseSave(JSON.stringify(good()));

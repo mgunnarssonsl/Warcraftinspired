@@ -3,7 +3,7 @@
 // on, or finish what you start. Applied once a second.
 
 import { CONFIG, TICK_RATE } from './config';
-import { FACTION, regenRate } from './factions';
+import { regenRate } from './factions';
 import type { Game } from './game';
 import { researched } from './tech';
 
@@ -15,7 +15,6 @@ export function updateRegrowth(game: Game): void {
     const p = game.state.players[owner];
     return p && p.faction === 'wild' && researched(game, owner, 'deeproots') ? CONFIG.wild.deepRootsFactor : 1;
   };
-  void FACTION;
   for (const u of game.units()) {
     if (u.hp >= u.maxHp || u.hurt > quiet || u.hidden) continue;
     const r = regenRate('unit', u.type);

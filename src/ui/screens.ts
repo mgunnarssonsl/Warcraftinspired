@@ -7,6 +7,7 @@ import type { AdvantageId, Difficulty, StyleId } from '../ai/profile';
 import { SLOTS, type SaveStore, type SlotId } from '../save/save';
 import { CONFIG, TICK_RATE } from '../sim/config';
 import type { Game } from '../sim/game';
+import { FACTION, FACTIONS, type FactionId } from '../sim/factions';
 import { mapById, MAPS } from '../sim/maps';
 import type { Settings } from './settings';
 import { settingsHtml, wireSettings, type SettingsTab } from './settingsPanel';
@@ -21,6 +22,9 @@ export interface MatchSettings {
   /** The opponent's strategic style, or 'random' (fixed by the seed, revealed at the end). */
   style: StyleId | 'random';
   advantage: AdvantageId;
+  /** The viewer's faction, and the computer's: 'random' is fixed by the seed and shown from the start. */
+  faction: FactionId;
+  opponentFaction: FactionId | 'random';
 }
 
 /** What the screens need from the running game (main.ts provides it). */
@@ -50,7 +54,7 @@ const DIFFICULTIES: Array<{ id: Difficulty; label: string; blurb: string }> = [
 
 /** Reload into a new match (a clean page is the most reliable reset). */
 export function startMatch(s: MatchSettings): void {
-  const q = new URLSearchParams({ seed: String(s.seed), difficulty: s.difficulty, map: s.mapId, style: s.style, adv: s.advantage, start: '1' });
+  const q = new URLSearchParams({ ...matchParams(s), start: '1' });
   location.search = q.toString();
 }
 
@@ -59,6 +63,10 @@ export function opponentLabel(s: MatchSettings, resolved: StyleId, reveal: boole
   const level = s.difficulty[0].toUpperCase() + s.difficulty.slice(1);
   const style = s.style === 'random' && !reveal ? 'random style' : CONFIG.ai.styles[resolved].name;
   return `${level} · ${style}`;
+}
+
+function matchParams(s: MatchSettings): Record<string, string> {
+  return { seed: String(s.seed), difficulty: s.difficulty, map: s.mapId, style: s.style, adv: s.advantage, faction: s.faction, vs: s.opponentFaction };
 }
 
 export function newSeed(): number {
@@ -121,6 +129,8 @@ export class Screens {
     let pickedMap = this.settings.mapId;
     let pickedStyle: StyleId | 'random' = this.settings.style;
     let pickedAdv: AdvantageId = this.settings.advantage;
+    let pickedFaction: FactionId = this.settings.faction;
+    let pickedVs: FactionId | 'random' = this.settings.opponentFaction;
     const styles: Array<{ id: StyleId | 'random'; name: string; blurb: string }> = [
       { id: 'random', name: 'Random', blurb: 'One of the styles below, kept secret until the end of the match.' },
       ...(Object.entries(CONFIG.ai.styles) as Array<[StyleId, (typeof CONFIG.ai.styles)[StyleId]]>).map(([id, st]) => ({ id, name: st.name, blurb: st.blurb })),
@@ -142,6 +152,10 @@ export class Screens {
       <h2 class="new-match">New match</h2>
       <div class="choices">
         <div>
+          <h3>Your faction</h3>
+          <div class="difficulty">
+            ${FACTIONS.map((f) => `<button data-f="${f}" class="${f === pickedFaction ? 'picked' : ''}"><b>${FACTION[f].name}</b><span>${FACTION[f].blurb}</span></button>`).join('')}
+          </div>
           <h3>Map</h3>
           <div class="difficulty">
             ${MAPS.map((m) => `<button data-m="${m.id}" class="${m.id === pickedMap ? 'picked' : ''}"><b>${m.name}</b><span>${m.blurb}</span></button>`).join('')}
@@ -151,6 +165,10 @@ export class Screens {
           <h3>Opponent</h3>
           <div class="difficulty">
             ${DIFFICULTIES.map((d) => `<button data-d="${d.id}" class="${d.id === picked ? 'picked' : ''}"><b>${d.label}</b><span>${d.blurb}</span></button>`).join('')}
+          </div>
+          <h3>Opponent faction</h3>
+          <div class="chips">
+            ${[...FACTIONS, 'random' as const].map((f) => `<button data-v="${f}" class="${f === pickedVs ? 'picked' : ''}">${f === 'random' ? 'Random' : FACTION[f].name}</button>`).join('')}
           </div>
           <h3>Style</h3>
           <div class="chips">
@@ -180,8 +198,10 @@ export class Screens {
       this.root.querySelector('#style-blurb')!.textContent = styleBlurb(pickedStyle);
     });
     pick('a', (v) => (pickedAdv = v as AdvantageId));
+    pick('f', (v) => (pickedFaction = v as FactionId));
+    pick('v', (v) => (pickedVs = v as FactionId | 'random'));
     this.on('#go', () => {
-      const next: MatchSettings = { seed: this.settings.seed, difficulty: picked, mapId: pickedMap, style: pickedStyle, advantage: pickedAdv };
+      const next: MatchSettings = { seed: this.settings.seed, difficulty: picked, mapId: pickedMap, style: pickedStyle, advantage: pickedAdv, faction: pickedFaction, opponentFaction: pickedVs };
       const same = !this.host.tutorial && (Object.keys(next) as Array<keyof MatchSettings>).every((k) => next[k] === this.settings[k]);
       if (!same) startMatch(next);
       else this.close();
@@ -198,7 +218,7 @@ export class Screens {
     this.open(
       'menu',
       `<h2>Paused</h2>
-      <p class="fine">${this.host.tutorial ? 'Tutorial' : `Map: ${mapById(this.settings.mapId).name} · opponent: ${opponentLabel(this.settings, this.opponent.style, over)}${this.settings.advantage === 'none' ? '' : ` · ${CONFIG.ai.advantages[this.settings.advantage].name}`}`} · match time ${fmtTime(this.game.state.tick)} · seed ${this.settings.seed}</p>
+      <p class="fine">${this.host.tutorial ? 'Tutorial' : `Map: ${mapById(this.settings.mapId).name} · opponent: ${opponentLabel(this.settings, this.opponent.style, over)} ${this.opponentFaction()}${this.settings.advantage === 'none' ? '' : ` · ${CONFIG.ai.advantages[this.settings.advantage].name}`}`} · match time ${fmtTime(this.game.state.tick)} · seed ${this.settings.seed}</p>
       <div class="stack">
         <button class="primary" id="resume">Resume</button>
         ${this.host.tutorial ? '' : '<button id="save">Save game…</button>'}
@@ -215,13 +235,18 @@ export class Screens {
     this.on('#settings', () => this.showSettings('menu'));
     this.on('#restart', () => (this.host.tutorial ? this.host.startTutorial() : startMatch(this.settings)));
     this.on('#new', () => {
-      const q = new URLSearchParams({ seed: String(newSeed()), difficulty: this.settings.difficulty, map: this.settings.mapId, style: this.settings.style, adv: this.settings.advantage });
+      const q = new URLSearchParams(matchParams({ ...this.settings, seed: newSeed() }));
       location.search = q.toString();
     });
     this.on('#surrender', () => {
       this.onSurrender();
       this.close();
     });
+  }
+
+  private opponentFaction(): string {
+    const foe = this.game.state.players.find((p) => !p.neutral && p.id !== this.viewer);
+    return foe ? FACTION[foe.faction].name : '';
   }
 
   private slotLine(slot: SlotId): string {
@@ -311,7 +336,7 @@ export class Screens {
       ${
         this.host.tutorial
           ? ''
-          : `<h3>Your opponent: ${opponentLabel(this.settings, this.opponent.style, true)}${this.settings.style === 'random' ? ' (picked at random)' : ''}</h3>
+          : `<h3>Your opponent: ${opponentLabel(this.settings, this.opponent.style, true)}${this.settings.style === 'random' ? ' (picked at random)' : ''}, playing the ${this.opponentFaction()}</h3>
       <p class="fine">${CONFIG.ai.styles[this.opponent.style].blurb}${this.settings.advantage === 'none' ? ' It had no advantage.' : ` It had an advantage: ${CONFIG.ai.advantages[this.settings.advantage].name}.`}</p>
       ${this.journalHtml()}`
       }
@@ -323,7 +348,7 @@ export class Screens {
     );
     this.on('#again', () => startMatch({ ...this.settings, seed: newSeed() }));
     this.on('#change', () => {
-      const q = new URLSearchParams({ seed: String(newSeed()), difficulty: this.settings.difficulty, map: this.settings.mapId, style: this.settings.style, adv: this.settings.advantage });
+      const q = new URLSearchParams(matchParams({ ...this.settings, seed: newSeed() }));
       location.search = q.toString();
     });
     this.on('#watch', () => this.close());

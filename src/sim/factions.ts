@@ -120,3 +120,9 @@ export function regenRate(kind: 'unit' | 'building', type: UnitType | BuildingTy
 export function tierResearch(f: FactionId, tier: 2 | 3): ResearchId {
   return FACTION[f].tiers[tier - 2];
 }
+
+/** The role a unit type plays, for any faction (null for heroes and neutrals). */
+export function unitRole(t: UnitType): UnitRole | null {
+  for (const f of FACTIONS) for (const [role, type] of Object.entries(FACTION[f].units)) if (type === t) return role as UnitRole;
+  return null;
+}

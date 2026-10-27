@@ -7,6 +7,7 @@ import { checkPlacement } from '../sim/construction';
 import type { Game } from '../sim/game';
 import { distToRect } from '../sim/movement';
 import type { Footprint } from '../sim/types';
+import { isHall } from '../sim/factions';
 
 const overlaps = (a: Footprint, b: Footprint) =>
   a.tx < b.tx + b.w && b.tx < a.tx + a.w && a.ty < b.ty + b.h && b.ty < a.ty + a.h;
@@ -21,7 +22,7 @@ function rectGap(a: Footprint, b: Footprint): number {
 export function miningLanes(game: Game, player: number): Footprint[] {
   const lanes: Footprint[] = [];
   for (const k of game.buildings()) {
-    if (k.owner !== player || k.type !== 'hq') continue;
+    if (k.owner !== player || !isHall(k.type)) continue;
     for (const m of game.resources()) {
       if (m.type !== 'goldmine' || distToRect(m.x, m.y, k) > 12) continue;
       const tx = Math.min(k.tx, m.tx) - 1;
@@ -44,7 +45,7 @@ export function findSite(game: Game, player: number, type: BuildingType, x: numb
   const lanes = miningLanes(game, player);
   const mines = game.resources().filter((r) => r.type === 'goldmine');
   // Keeps sit a little back from their mine; everything else keeps clear of mines.
-  const mineGap = type === 'hq' ? 3 : 2;
+  const mineGap = isHall(type) ? 3 : 2;
   // Maps are point-symmetric. A player starting in the rotated half scans in
   // the rotated order, so both sides build mirror-image bases: the order of a
   // search must never favour one seat.
