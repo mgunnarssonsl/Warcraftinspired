@@ -35,10 +35,11 @@ import { findSite } from './placement';
 import { flareProblem } from '../sim/commands';
 import { buildingRole, FACTION, isWorker, unitFaction, unitRole, type BuildingRole, type Faction, type UnitRole } from '../sim/factions';
 import { composeProfile, type Difficulty, type Profile, type ProfileOverrides, type StyleId } from './profile';
+import { len } from '../sim/dmath';
 
 export type { Difficulty, ProfileOverrides, StyleId } from './profile';
 
-const dist = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
+const dist = (a: { x: number; y: number }, b: { x: number; y: number }) => len(a.x - b.x, a.y - b.y);
 
 type ArmyUnit = keyof ArmyMix;
 /**
@@ -71,7 +72,7 @@ function segmentDistance(p: { x: number; y: number }, a: { x: number; y: number 
   const dy = b.y - a.y;
   const l2 = dx * dx + dy * dy;
   const t = l2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2)) : 0;
-  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+  return len(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
 }
 
 export class ComputerPlayer {

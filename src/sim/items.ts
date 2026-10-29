@@ -8,6 +8,7 @@ import type { Game } from './game';
 import { refreshHeroStats } from './hero';
 import { distToRect } from './movement';
 import type { Order, Unit } from './types';
+import { len } from './dmath';
 
 type PickupOrder = Extract<Order, { type: 'pickup' }>;
 type StatField = 'damage' | 'armor' | 'hp' | 'mana' | 'speed';
@@ -47,10 +48,10 @@ export function updatePickup(game: Game, u: Unit, o: PickupOrder): void {
     return;
   }
   const it = game.state.items[idx];
-  if (Math.hypot(it.x - u.x, it.y - u.y) > 0.9) {
+  if (len(it.x - u.x, it.y - u.y) > 0.9) {
     game.moveTo(u, { kind: 'point', x: it.x, y: it.y });
     if (u.move?.state === 'moving') return;
-    if (Math.hypot(it.x - u.x, it.y - u.y) > 1.5) {
+    if (len(it.x - u.x, it.y - u.y) > 1.5) {
       u.order = null;
       u.move = null;
       return;
@@ -90,7 +91,7 @@ export function useItem(game: Game, u: Unit, slot: number): void {
       game.emit({ type: 'cantItem', player: u.owner, reason: 'You have no main hall (Keep or Heartwood) to return to.' });
       return;
     }
-    const k = keeps.reduce((a, b) => (Math.hypot(b.x - u.x, b.y - u.y) < Math.hypot(a.x - u.x, a.y - u.y) ? b : a));
+    const k = keeps.reduce((a, b) => (len(b.x - u.x, b.y - u.y) < len(a.x - u.x, a.y - u.y) ? b : a));
     const spot = game.freeTilesAround(k, 1)[0];
     if (!spot) return;
     const from = { x: u.x, y: u.y };
@@ -105,7 +106,7 @@ export function useItem(game: Game, u: Unit, slot: number): void {
   } else if (it === 'tonic') {
     u.hero!.mana = Math.min(u.hero!.maxMana, u.hero!.mana + def.restore);
   } else if (it === 'salve') {
-    for (const a of game.units()) if (a.owner === u.owner && !a.hidden && Math.hypot(a.x - u.x, a.y - u.y) <= 6) a.hp = Math.min(a.maxHp, a.hp + def.heal);
+    for (const a of game.units()) if (a.owner === u.owner && !a.hidden && len(a.x - u.x, a.y - u.y) <= 6) a.hp = Math.min(a.maxHp, a.hp + def.heal);
   }
   u.hero!.items[slot] = null;
   game.emit({ type: 'itemUsed', player: u.owner, hero: u.id, item: it, x: u.x, y: u.y });

@@ -4,6 +4,7 @@
 
 import type { Footprint, GameState } from './types';
 import { terrainBlocks } from './types';
+import { len } from './dmath';
 
 export class NavGrid {
   readonly w: number;
@@ -58,8 +59,8 @@ export class NavGrid {
     const STEP = 0.1;
     const dx = x1 - x0;
     const dy = y1 - y0;
-    const len = Math.hypot(dx, dy);
-    const steps = Math.max(1, Math.ceil(len / STEP));
+    const length = len(dx, dy);
+    const steps = Math.max(1, Math.ceil(length / STEP));
     const px = Math.abs(dx) / steps / 2 + 1e-6;
     const py = Math.abs(dy) / steps / 2 + 1e-6;
     // Consecutive samples mostly cover the same four corner tiles: those

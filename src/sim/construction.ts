@@ -16,6 +16,7 @@ import type { Game } from './game';
 import { releaseFromNode, startGather } from './gathering';
 import { atRect, distToRect } from './movement';
 import type { Building, Footprint, Order, Unit } from './types';
+import { datan2, dcos, dsin, len } from './dmath';
 
 type BuildOrder = Extract<Order, { type: 'build' }>;
 
@@ -129,10 +130,10 @@ export function ejectUnits(game: Game, f: Footprint): void {
       const n = ring * 8;
       for (let k = 0; k < n; k++) {
         const a = (k / n) * Math.PI * 2;
-        const x = u.x + Math.cos(a) * ring * 0.5;
-        const y = u.y + Math.sin(a) * ring * 0.5;
+        const x = u.x + dcos(a) * ring * 0.5;
+        const y = u.y + dsin(a) * ring * 0.5;
         if (!game.nav.canStand(x, y, u.radius)) continue;
-        const d = Math.hypot(x - u.x, y - u.y);
+        const d = len(x - u.x, y - u.y);
         if (d < bestD) {
           bestD = d;
           best = { x, y };
@@ -196,7 +197,7 @@ export function updateBuilder(game: Game, u: Unit, o: BuildOrder): void {
     o.phase = 'toSite';
     return;
   }
-  u.facing = Math.atan2(site.y - u.y, site.x - u.x);
+  u.facing = datan2(site.y - u.y, site.x - u.x);
   if (o.phase === 'standby') {
     if (!activeBuilder(game, site.id, u)) o.phase = 'building';
     return;
@@ -259,7 +260,7 @@ export function updateRepairer(game: Game, u: Unit, o: RepairOrder): void {
   }
   u.move = null;
   o.phase = 'repairing';
-  u.facing = Math.atan2(b.y - u.y, b.x - u.x);
+  u.facing = datan2(b.y - u.y, b.x - u.x);
   const def = CONFIG.buildings[b.type];
   const gain = Math.min(b.maxHp - b.hp, b.maxHp / secondsToTicks(def.buildSeconds * CONFIG.construction.repairTime));
   const share = (CONFIG.construction.repairCost * gain) / b.maxHp;

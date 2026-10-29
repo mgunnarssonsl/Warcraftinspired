@@ -10,6 +10,7 @@ import type { Game } from './game';
 import { itemBonus } from './items';
 import { distToRect } from './movement';
 import type { Building, HeroRecord, HeroState, Order, Unit } from './types';
+import { datan2, len } from './dmath';
 
 type CastOrder = Extract<Order, { type: 'cast' }>;
 
@@ -111,7 +112,7 @@ export function onKill(game: Game, killer: number, victim: Unit | Building): voi
     kp.stats.bounty += bounty;
     game.emit({ type: 'bounty', player: killer, amount: bounty, x: victim.x, y: victim.y });
   }
-  const heroes = game.units().filter((h) => h.owner === killer && h.hero && Math.hypot(h.x - victim.x, h.y - victim.y) <= CONFIG.hero.xpRadius);
+  const heroes = game.units().filter((h) => h.owner === killer && h.hero && len(h.x - victim.x, h.y - victim.y) <= CONFIG.hero.xpRadius);
   if (!heroes.length) return;
   const share = xpValue(victim) / heroes.length;
   const neutral = !!game.state.players[victim.owner]?.neutral;
@@ -206,10 +207,10 @@ export function updateCast(game: Game, u: Unit, o: CastOrder): void {
   const t = def.target === 'enemy' || def.target === 'ally' ? game.unit(o.targetId)! : null;
   const at = t ?? (def.target === 'point' ? { x: o.x, y: o.y } : null);
   if (at) {
-    const d = Math.hypot(at.x - u.x, at.y - u.y) - u.radius - (t ? t.radius : 0);
+    const d = len(at.x - u.x, at.y - u.y) - u.radius - (t ? t.radius : 0);
     if (d > def.range) {
       const g = u.move?.goal;
-      if (!g || g.kind !== 'point' || Math.hypot(g.x - at.x, g.y - at.y) > 0.75 || u.move?.state !== 'moving') {
+      if (!g || g.kind !== 'point' || len(g.x - at.x, g.y - at.y) > 0.75 || u.move?.state !== 'moving') {
         u.move = null;
         game.moveTo(u, { kind: 'point', x: at.x, y: at.y });
       }
@@ -228,7 +229,7 @@ function cast(game: Game, u: Unit, ability: AbilityId, t: Unit | null, at: { x: 
   const def = CONFIG.hero.abilities[ability];
   hs.mana -= def.mana;
   hs.ready[ability] = tick + secondsToTicks(def.cooldown);
-  if (at !== u) u.facing = Math.atan2(at.y - u.y, at.x - u.x);
+  if (at !== u) u.facing = datan2(at.y - u.y, at.x - u.x);
   const until = tick + secondsToTicks(def.duration[r]);
   switch (def.effect) {
     case 'bolt':
@@ -257,7 +258,7 @@ function cast(game: Game, u: Unit, ability: AbilityId, t: Unit | null, at: { x: 
         });
       break;
     case 'rally':
-      for (const a of game.units()) if (a.owner === u.owner && !a.hidden && Math.hypot(a.x - u.x, a.y - u.y) <= def.radius) addBuff(a, 'cry', until, def.bonus[r]);
+      for (const a of game.units()) if (a.owner === u.owner && !a.hidden && len(a.x - u.x, a.y - u.y) <= def.radius) addBuff(a, 'cry', until, def.bonus[r]);
       break;
     case 'heal':
       if (t) t.hp = Math.min(t.maxHp, t.hp + def.heal[r]);
@@ -267,7 +268,7 @@ function cast(game: Game, u: Unit, ability: AbilityId, t: Unit | null, at: { x: 
       // Area damage at the spot: enemy units (Flame Burst also burns buildings).
       for (const e of [...game.units(), ...(def.effect === 'burn' ? game.buildings() : [])]) {
         if (!isEnemy(game, u.owner, e.owner) || !targetable(e)) continue;
-        const d = e.kind === 'unit' ? Math.hypot(e.x - at.x, e.y - at.y) - e.radius : distToRect(at.x, at.y, e);
+        const d = e.kind === 'unit' ? len(e.x - at.x, e.y - at.y) - e.radius : distToRect(at.x, at.y, e);
         if (d <= def.radius && game.state.entities[e.id]) dealDamage(game, u.id, u.owner, e, def.damage[r], 'hero');
       }
       break;

@@ -31,6 +31,7 @@ import type {
   ResourceNode,
   Unit,
 } from './types';
+import { len } from './dmath';
 
 export const PLAYER_COLORS = ['#3a7bd5', '#c0392b', '#27ae60', '#8e44ad'];
 export const NEUTRAL_COLOR = '#8a5a2b';
@@ -179,8 +180,8 @@ export class Game {
     const { width: W, height: H } = this.state.map;
     const [a, b] = this.state.starts;
     if (!a || !b) return;
-    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-    const dir = { x: -(b.y - a.y) / len, y: (b.x - a.x) / len };
+    const span = len(b.x - a.x, b.y - a.y) || 1;
+    const dir = { x: -(b.y - a.y) / span, y: (b.x - a.x) / span };
     const home = this.nav.component(Math.floor(a.x), Math.floor(a.y + 3));
     for (const [type, offset] of [['shop', 15], ['fountain', 8]] as const) {
       const size = CONFIG.buildings[type].size;
@@ -216,7 +217,7 @@ export class Game {
           // not mean fighting a camp.
           const cx2 = tx + size / 2;
           const cy2 = ty + size / 2;
-          if (this.resources().some((m) => m.type === 'goldmine' && Math.min(Math.hypot(m.x - cx2, m.y - cy2), Math.hypot(m.x - (W - cx2), m.y - (H - cy2))) < 9)) continue;
+          if (this.resources().some((m) => m.type === 'goldmine' && Math.min(len(m.x - cx2, m.y - cy2), len(m.x - (W - cx2), m.y - (H - cy2))) < 9)) continue;
           return { tx, ty };
         }
     return null;

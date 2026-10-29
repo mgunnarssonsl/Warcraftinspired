@@ -9,11 +9,12 @@ import { CONFIG, TICK_SECONDS } from './config';
 import type { Game } from './game';
 import { findPath, smoothPath, type GoalRect } from './pathfinding';
 import { TERRAIN, type Footprint, type MoveGoal, type Unit } from './types';
+import { datan2, dcos, dsin, len } from './dmath';
 
 export function distToRect(x: number, y: number, f: Footprint): number {
   const dx = x < f.tx ? f.tx - x : x > f.tx + f.w ? x - (f.tx + f.w) : 0;
   const dy = y < f.ty ? f.ty - y : y > f.ty + f.h ? y - (f.ty + f.h) : 0;
-  return Math.hypot(dx, dy);
+  return len(dx, dy);
 }
 
 export function atRect(u: Unit, f: Footprint): boolean {
@@ -145,8 +146,8 @@ export function updateMovement(game: Game, units: Unit[]): void {
       const wp = mv.path[0];
       const dx = wp.x - u.x;
       const dy = wp.y - u.y;
-      const d = Math.hypot(dx, dy);
-      if (d > 1e-6) u.facing = Math.atan2(dy, dx);
+      const d = len(dx, dy);
+      if (d > 1e-6) u.facing = datan2(dy, dx);
       if (d <= budget) {
         u.x = wp.x;
         u.y = wp.y;
@@ -183,7 +184,7 @@ export function updateMovement(game: Game, units: Unit[]): void {
       continue;
     }
     if (tick - mv.checkTick < window) continue;
-    const moved = Math.hypot(u.x - mv.checkX, u.y - mv.checkY);
+    const moved = len(u.x - mv.checkX, u.y - mv.checkY);
     const expected = moveSpeed(u) * TICK_SECONDS * window;
     mv.checkX = u.x;
     mv.checkY = u.y;
@@ -195,7 +196,7 @@ export function updateMovement(game: Game, units: Unit[]): void {
     mv.repaths++;
     const goal = mv.goal;
     const near =
-      goal.kind === 'point' ? Math.hypot(u.x - goal.x, u.y - goal.y) < 2.0 : atRect(u, goal);
+      goal.kind === 'point' ? len(u.x - goal.x, u.y - goal.y) < 2.0 : atRect(u, goal);
     if (near) {
       mv.state = goalReached(u, goal) || goal.kind === 'point' ? 'arrived' : 'failed';
     } else if (mv.repaths > CONFIG.movement.maxRepaths) {
@@ -239,14 +240,14 @@ function separate(game: Game, units: Unit[]): void {
           if (b.id <= a.id) continue;
           let dx = b.x - a.x;
           let dy = b.y - a.y;
-          const d = Math.hypot(dx, dy);
+          const d = len(dx, dy);
           const min = a.radius + b.radius;
           if (d >= min) continue;
           if (d < 1e-6) {
             // Deterministic split direction for exactly coincident units.
             const ang = ((a.id * 7919 + b.id * 104729) % 628) / 100;
-            dx = Math.cos(ang);
-            dy = Math.sin(ang);
+            dx = dcos(ang);
+            dy = dsin(ang);
           } else {
             dx /= d;
             dy /= d;

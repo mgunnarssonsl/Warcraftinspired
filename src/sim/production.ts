@@ -9,6 +9,7 @@ import { startGather } from './gathering';
 import { heroLimit, heroRecord, initHero, reviveCost, reviveSeconds } from './hero';
 import { completeResearch, researched, researchProblem } from './tech';
 import type { Building, QueueItem } from './types';
+import { len } from './dmath';
 
 export function trainableAt(type: BuildingType): UnitType[] {
   return (Object.keys(CONFIG.units) as UnitType[]).filter((u) => CONFIG.units[u].trainedAt === type);
@@ -202,7 +203,7 @@ function spawn(game: Game, b: Building, item: QueueItem): boolean {
   if (!spots.length) return false; // completely boxed in: hold at 100% until space frees up
   const r = b.rally;
   const spot = r
-    ? spots.reduce((a, c) => (Math.hypot(c.x + 0.5 - r.x, c.y + 0.5 - r.y) < Math.hypot(a.x + 0.5 - r.x, a.y + 0.5 - r.y) ? c : a))
+    ? spots.reduce((a, c) => (len(c.x + 0.5 - r.x, c.y + 0.5 - r.y) < len(a.x + 0.5 - r.x, a.y + 0.5 - r.y) ? c : a))
     : spots[0];
   const u = game.addUnit(type, b.owner, spot.x + 0.5, spot.y + 0.5);
   if (isHeroType(type)) {

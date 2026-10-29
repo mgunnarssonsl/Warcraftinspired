@@ -8,6 +8,7 @@ import { CONFIG, secondsToTicks, TICK_SECONDS } from './config';
 import type { Game } from './game';
 import { healAmount } from './tech';
 import type { Unit } from './types';
+import { len } from './dmath';
 
 export function updatePrayers(game: Game, units: readonly Unit[]): void {
   const c = CONFIG.cleric;
@@ -33,7 +34,7 @@ function mostWounded(units: readonly Unit[], cleric: Unit): Unit | undefined {
   let bestShare = Infinity;
   for (const a of units) {
     if (a.owner !== cleric.owner || a.hidden || a.maxHp - a.hp < c.minMissing) continue;
-    if (Math.hypot(a.x - cleric.x, a.y - cleric.y) - a.radius > c.healRange) continue;
+    if (len(a.x - cleric.x, a.y - cleric.y) - a.radius > c.healRange) continue;
     const share = a.hp / a.maxHp;
     if (share < bestShare) {
       bestShare = share;

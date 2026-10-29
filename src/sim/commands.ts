@@ -12,6 +12,7 @@ import { canAttack, isEnemy, targetable } from './combat';
 import { defeat } from './outcome';
 import { releaseFromNode, startGather, startReturnCargo } from './gathering';
 import type { QueuedOrder, Unit } from './types';
+import { dcos, dsin, len } from './dmath';
 
 export type Command =
   | { type: 'move'; player: number; units: number[]; x: number; y: number; queued?: boolean }
@@ -119,7 +120,7 @@ export function applyCommand(game: Game, cmd: Command): void {
       // buildings line up for one builder.
       const busy = cmd.queued ? workers.filter((u) => u.order?.type === 'build' || u.orderQueue.some((q) => q.type === 'build')) : [];
       const pool = busy.length ? busy : workers;
-      const builder = pool.reduce((a, b) => (Math.hypot(a.x - cx, a.y - cy) <= Math.hypot(b.x - cx, b.y - cy) ? a : b));
+      const builder = pool.reduce((a, b) => (len(a.x - cx, a.y - cy) <= len(b.x - cx, b.y - cy) ? a : b));
       give(game, builder, { type: 'build', buildingType: cmd.buildingType, tx: cmd.tx, ty: cmd.ty }, cmd.queued);
       return;
     }
@@ -271,7 +272,7 @@ export function groupPace(units: Unit[]): number | undefined {
   if (units.length < 2) return undefined;
   const cx = units.reduce((s, u) => s + u.x, 0) / units.length;
   const cy = units.reduce((s, u) => s + u.y, 0) / units.length;
-  if (units.some((u) => Math.hypot(u.x - cx, u.y - cy) > CONFIG.movement.groupRadius)) return undefined;
+  if (units.some((u) => len(u.x - cx, u.y - cy) > CONFIG.movement.groupRadius)) return undefined;
   return Math.min(...units.map((u) => CONFIG.units[u.type].speed));
 }
 
@@ -293,8 +294,8 @@ export function formationSlots(game: Game, units: Unit[], x: number, y: number):
     for (let ring = 1; ring < 40 && !best; ring++) {
       for (let a = 0; a < ring * 8; a++) {
         const ang = (a / (ring * 8)) * Math.PI * 2;
-        const px = x + Math.cos(ang) * ring * 0.5;
-        const py = y + Math.sin(ang) * ring * 0.5;
+        const px = x + dcos(ang) * ring * 0.5;
+        const py = y + dsin(ang) * ring * 0.5;
         if (nav.canStand(px, py, r)) {
           best = { x: px, y: py };
           break;
@@ -315,7 +316,7 @@ export function formationSlots(game: Game, units: Unit[], x: number, y: number):
         const py = anchor.y + j * SLOT_SPACING;
         if (!nav.canStand(px, py, r)) continue;
         if (nav.component(Math.floor(px), Math.floor(py)) !== comp) continue;
-        cand.push({ x: px, y: py, d: Math.hypot(i, j) });
+        cand.push({ x: px, y: py, d: len(i, j) });
       }
   }
   cand.sort((a, b) => a.d - b.d);
@@ -324,13 +325,13 @@ export function formationSlots(game: Game, units: Unit[], x: number, y: number):
 
   const cx = units.reduce((s, u) => s + u.x, 0) / need;
   const cy = units.reduce((s, u) => s + u.y, 0) / need;
-  const spread = Math.max(...units.map((u) => Math.hypot(u.x - cx, u.y - cy)));
+  const spread = Math.max(...units.map((u) => len(u.x - cx, u.y - cy)));
   const keepShape = spread < 3;
   const used = new Array<boolean>(slots.length).fill(false);
   const out = new Array<{ x: number; y: number }>(need);
   // Assign units furthest from the target first; they have the least choice.
   const order = units
-    .map((u, i) => ({ u, i, d: Math.hypot(u.x - anchor.x, u.y - anchor.y) }))
+    .map((u, i) => ({ u, i, d: len(u.x - anchor.x, u.y - anchor.y) }))
     .sort((a, b) => b.d - a.d || a.u.id - b.u.id);
   for (const { u, i } of order) {
     const px = keepShape ? anchor.x + (u.x - cx) : anchor.x + (u.x - anchor.x) * 0.05;
@@ -339,7 +340,7 @@ export function formationSlots(game: Game, units: Unit[], x: number, y: number):
     let bestD = Infinity;
     for (let s = 0; s < slots.length; s++) {
       if (used[s]) continue;
-      const d = Math.hypot(slots[s].x - px, slots[s].y - py);
+      const d = len(slots[s].x - px, slots[s].y - py);
       if (d < bestD) {
         bestD = d;
         best = s;

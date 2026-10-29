@@ -7,6 +7,7 @@ import { CONFIG, type MineKind } from './config';
 import { mapById, type MapDef } from './maps';
 import { valueNoise } from './rng';
 import { TERRAIN } from './types';
+import { datan2, len } from './dmath';
 
 export interface MinePlacement {
   tx: number;
@@ -46,7 +47,7 @@ function onSegment(px: number, py: number, x0: number, y0: number, x1: number, y
   const len2 = dx * dx + dy * dy;
   const t = ((px - x0) * dx + (py - y0) * dy) / len2;
   const ct = Math.max(0, Math.min(1, t));
-  return { d: Math.hypot(px - (x0 + dx * ct), py - (y0 + dy * ct)), t };
+  return { d: len(px - (x0 + dx * ct), py - (y0 + dy * ct)), t };
 }
 
 /** Is angle a within [a0, a1] (radians, any winding)? */
@@ -77,9 +78,9 @@ export function generateMap(seed: number, mapId?: string): MapLayout {
         const jitter = (n(x, y, 3, 2) - 0.5) * 2.5;
         if (x >= f.x0 + jitter && x <= f.x1 + jitter && y >= f.y0 + jitter && y <= f.y1 - jitter * 0.5) tree[i] = 1;
       }
-      for (const [cx, cy, r] of def.groves) if (Math.hypot(px - cx, py - cy) < r + (n(x, y, 2.5, 3) - 0.5) * 2) tree[i] = 1;
+      for (const [cx, cy, r] of def.groves) if (len(px - cx, py - cy) < r + (n(x, y, 2.5, 3) - 0.5) * 2) tree[i] = 1;
       for (const [cx, cy, r] of def.lakes) {
-        if (Math.hypot(px - cx, py - cy) < r + (n(x, y, 2, 4) - 0.5) * 1.5) {
+        if (len(px - cx, py - cy) < r + (n(x, y, 2, 4) - 0.5) * 1.5) {
           terrain[i] = TERRAIN.water;
           tree[i] = 0;
         }
@@ -93,7 +94,7 @@ export function generateMap(seed: number, mapId?: string): MapLayout {
         }
       }
       for (const [cx, cy, r] of def.outcrops) {
-        if (Math.hypot(px - cx, py - cy) < r + (n(x, y, 2, 6) - 0.5)) {
+        if (len(px - cx, py - cy) < r + (n(x, y, 2, 6) - 0.5)) {
           terrain[i] = TERRAIN.rock;
           tree[i] = 0;
         }
@@ -107,9 +108,9 @@ export function generateMap(seed: number, mapId?: string): MapLayout {
         tree[i] = 0;
       }
       for (const ring of def.rings) {
-        const d = Math.hypot(px - ring.cx, py - ring.cy);
+        const d = len(px - ring.cx, py - ring.cy);
         if (Math.abs(d - ring.r) > ring.width) continue;
-        const a = Math.atan2(py - ring.cy, px - ring.cx);
+        const a = datan2(py - ring.cy, px - ring.cx);
         if (ring.ramps.some(([a0, a1]) => angleIn(a, a0, a1))) {
           terrain[i] = TERRAIN.dirt;
           tree[i] = 0;
@@ -164,7 +165,7 @@ export function generateMap(seed: number, mapId?: string): MapLayout {
       const south = y >= H / 2;
       const lx = south ? x : W - 1 - x;
       const ly = south ? y : H - 1 - y;
-      if (Math.hypot(lx + 0.5 - cx, ly + 0.5 - cy) < 5.5 + n(lx, ly, 2, 7) * 2.5) terrain[i] = TERRAIN.dirt;
+      if (len(lx + 0.5 - cx, ly + 0.5 - cy) < 5.5 + n(lx, ly, 2, 7) * 2.5) terrain[i] = TERRAIN.dirt;
     }
 
   const mirrorFoot = (tx: number, ty: number, w: number, h: number) => ({ tx: W - tx - w, ty: H - ty - h });

@@ -8,6 +8,7 @@ import type { Game } from './game';
 import { goldCarry, woodCarry } from './tech';
 import { atRect, closestAround, distToRect } from './movement';
 import type { Building, Order, ResourceKind, ResourceNode, Unit } from './types';
+import { datan2, len } from './dmath';
 
 type GatherOrder = Extract<Order, { type: 'gather' }>;
 
@@ -127,7 +128,7 @@ export function findTree(game: Game, u: Unit, x: number, y: number, excludeId = 
       if (!id || id === excludeId) continue;
       const node = game.resource(id);
       if (!node || node.type !== 'tree') continue;
-      const d = Math.hypot(tx + 0.5 - x, ty + 0.5 - y);
+      const d = len(tx + 0.5 - x, ty + 0.5 - y);
       if (d > R) continue;
       const score = d + 1.5 * (busy.get(id) ?? 0);
       if (score >= bestScore) continue;
@@ -210,7 +211,7 @@ function tryStartWork(game: Game, u: Unit, o: GatherOrder, node: ResourceNode): 
   if (workingCount(game, node.id) < CONFIG.resources.tree.maxChoppers) {
     o.phase = 'working';
     o.timer = secondsToTicks(workerDef(u).chopSeconds);
-    u.facing = Math.atan2(node.y - u.y, node.x - u.x);
+    u.facing = datan2(node.y - u.y, node.x - u.x);
     return;
   }
   const alt = findTree(game, u, node.x, node.y, node.id);

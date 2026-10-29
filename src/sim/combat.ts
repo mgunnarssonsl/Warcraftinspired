@@ -24,6 +24,7 @@ import { onCampGuardDeath } from './items';
 import { destroyBuilding } from './production';
 import { armorTypeOf, armorValue, attackDamage, attackRange, typeMultiplier } from './tech';
 import type { Building, Entity, Order, Unit } from './types';
+import { datan2, dcos, dsin, len } from './dmath';
 
 type Target = Unit | Building;
 
@@ -50,7 +51,7 @@ export function targetable(e: Entity | undefined): e is Target {
 
 /** Edge-to-edge distance from a unit to a target. */
 export function gap(u: Unit, t: Target): number {
-  if (t.kind === 'unit') return Math.hypot(t.x - u.x, t.y - u.y) - u.radius - t.radius;
+  if (t.kind === 'unit') return len(t.x - u.x, t.y - u.y) - u.radius - t.radius;
   return distToRect(u.x, u.y, t) - u.radius;
 }
 
@@ -116,14 +117,14 @@ function fight(game: Game, u: Unit, targetId: number, mayMove: boolean): boolean
   if (d < def.minRange) {
     // Too close for a siege engine: back off (or give up when holding).
     if (!mayMove) return false;
-    const away = Math.atan2(u.y - t.y, u.x - t.x);
+    const away = datan2(u.y - t.y, u.x - t.x);
     const back = def.minRange + 1.5;
-    game.moveTo(u, { kind: 'point', x: t.x + Math.cos(away) * (back + (t.kind === 'unit' ? t.radius : t.w / 2)), y: t.y + Math.sin(away) * (back + (t.kind === 'unit' ? t.radius : t.w / 2)) });
+    game.moveTo(u, { kind: 'point', x: t.x + dcos(away) * (back + (t.kind === 'unit' ? t.radius : t.w / 2)), y: t.y + dsin(away) * (back + (t.kind === 'unit' ? t.radius : t.w / 2)) });
     return true;
   }
   if (d <= attackRange(game, u)) {
     u.move = null;
-    u.facing = Math.atan2(t.y - u.y, t.x - u.x);
+    u.facing = datan2(t.y - u.y, t.x - u.x);
     if (u.swing === 0 && u.cooldown <= 0) {
       u.swing = secondsToTicks(def.windup);
       u.swingTarget = t.id;
@@ -137,7 +138,7 @@ function fight(game: Game, u: Unit, targetId: number, mayMove: boolean): boolean
   } else {
     // Re-plan only when the target has drifted from the planned goal.
     const g = u.move?.goal;
-    if (!g || g.kind !== 'point' || Math.hypot(g.x - t.x, g.y - t.y) > 0.75 || u.move?.state !== 'moving') {
+    if (!g || g.kind !== 'point' || len(g.x - t.x, g.y - t.y) > 0.75 || u.move?.state !== 'moving') {
       u.move = null;
       game.moveTo(u, { kind: 'point', x: t.x, y: t.y });
     }
@@ -146,7 +147,7 @@ function fight(game: Game, u: Unit, targetId: number, mayMove: boolean): boolean
 }
 
 function returnTo(u: Unit, x: number, y: number): void {
-  u.order = Math.hypot(u.x - x, u.y - y) > 0.5 ? { type: 'move', x, y } : null;
+  u.order = len(u.x - x, u.y - y) > 0.5 ? { type: 'move', x, y } : null;
   u.move = null;
 }
 
@@ -169,14 +170,14 @@ export function updateCombatOrder(game: Game, u: Unit): void {
   if (o.type === 'attack') {
     if (o.auto) {
       const leash = u.home ? CONFIG.combat.campLeash : CONFIG.combat.leash;
-      if (Math.hypot(u.x - o.anchorX, u.y - o.anchorY) > leash) return returnTo(u, o.anchorX, o.anchorY);
+      if (len(u.x - o.anchorX, u.y - o.anchorY) > leash) return returnTo(u, o.anchorX, o.anchorY);
     }
     const t = game.get(o.targetId);
     if (t?.kind === 'unit' && targetable(t) && isEnemy(game, u.owner, t.owner)) {
       if (game.vision.canSee(u.owner, t)) {
         o.lastX = t.x;
         o.lastY = t.y;
-      } else if (!o.auto && Math.hypot(u.x - o.lastX, u.y - o.lastY) > 1) {
+      } else if (!o.auto && len(u.x - o.lastX, u.y - o.lastY) > 1) {
         // Ordered pursuit: head for where the target was last seen.
         if (!u.move || u.move.state !== 'moving') game.moveTo(u, { kind: 'point', x: o.lastX, y: o.lastY });
         return;
@@ -381,7 +382,7 @@ function splashDamage(game: Game, p: { sourceId: number; owner: number; damage: 
   const victims: Array<{ t: Target; d: number }> = [];
   for (const u of game.units()) {
     if (!isEnemy(game, p.owner, u.owner) || !targetable(u)) continue;
-    const d = Math.max(0, Math.hypot(u.x - x, u.y - y) - u.radius);
+    const d = Math.max(0, len(u.x - x, u.y - y) - u.radius);
     if (d <= p.splash) victims.push({ t: u, d });
   }
   for (const b of game.buildings()) {
@@ -407,7 +408,7 @@ function updateProjectiles(game: Game): Array<() => void> {
       // Ground-targeted: fly to the spot, then burst.
       const dx = p.tx - p.x;
       const dy = p.ty - p.y;
-      const d = Math.hypot(dx, dy);
+      const d = len(dx, dy);
       const step = p.speed * TICK_SECONDS;
       if (d <= step) {
         p.x = p.tx;
@@ -424,7 +425,7 @@ function updateProjectiles(game: Game): Array<() => void> {
     if (!targetable(t)) continue; // target died or hid: the shot fizzles
     const dx = t.x - p.x;
     const dy = t.y - p.y;
-    const d = Math.hypot(dx, dy);
+    const d = len(dx, dy);
     const step = p.speed * TICK_SECONDS;
     if (d <= step + (t.kind === 'unit' ? t.radius : 0.5)) {
       p.x = t.x;
