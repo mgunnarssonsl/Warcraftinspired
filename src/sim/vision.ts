@@ -12,6 +12,45 @@ import { CONFIG } from './config';
 import type { Game } from './game';
 import type { Building, Entity, RememberedBuilding, Unit } from './types';
 
+/** Is the centre of tile (tx, ty) within r of (x, y)? The one rule for what a circle of sight covers. */
+function inDisc(tx: number, ty: number, x: number, y: number, r2: number): boolean {
+  const dx = tx + 0.5 - x;
+  const dy = ty + 0.5 - y;
+  return dx * dx + dy * dy <= r2;
+}
+
+/**
+ * Mark every tile whose centre lies within r of (x, y) as visible and
+ * explored. Row by row: the span from the circle's chord, its ends then
+ * checked against inDisc so rounding can never add or drop a tile, and no
+ * tile inside the span needs its own distance test.
+ */
+export function revealDisc(vis: Uint8Array, exp: number[], w: number, h: number, x: number, y: number, r: number): void {
+  const r2 = r * r;
+  const x0 = Math.max(0, Math.floor(x - r));
+  const x1 = Math.min(w - 1, Math.floor(x + r));
+  const y0 = Math.max(0, Math.floor(y - r));
+  const y1 = Math.min(h - 1, Math.floor(y + r));
+  for (let ty = y0; ty <= y1; ty++) {
+    const dy = ty + 0.5 - y;
+    const rest = r2 - dy * dy;
+    if (rest < 0) continue;
+    const half = Math.sqrt(rest);
+    let a = Math.max(x0, Math.ceil(x - 0.5 - half));
+    let b = Math.min(x1, Math.floor(x - 0.5 + half));
+    while (a > x0 && inDisc(a - 1, ty, x, y, r2)) a--;
+    while (a <= b && !inDisc(a, ty, x, y, r2)) a++;
+    while (b < x1 && inDisc(b + 1, ty, x, y, r2)) b++;
+    while (b >= a && !inDisc(b, ty, x, y, r2)) b--;
+    if (a > b) continue;
+    // A plain loop: the spans are short, and fill() costs more per call.
+    for (let i = ty * w + a, end = ty * w + b; i <= end; i++) {
+      vis[i] = 1;
+      exp[i] = 1;
+    }
+  }
+}
+
 export class Vision {
   readonly w: number;
   readonly h: number;
@@ -66,23 +105,8 @@ export class Vision {
     for (const v of this.visible) v.fill(0);
     const reveal = (p: number, x: number, y: number, r: number) => {
       const vis = this.visible[p];
-      const exp = state.explored[p];
       if (!vis) return;
-      const r2 = r * r;
-      const x0 = Math.max(0, Math.floor(x - r));
-      const x1 = Math.min(w - 1, Math.floor(x + r));
-      const y0 = Math.max(0, Math.floor(y - r));
-      const y1 = Math.min(h - 1, Math.floor(y + r));
-      for (let ty = y0; ty <= y1; ty++) {
-        const dy = ty + 0.5 - y;
-        for (let tx = x0; tx <= x1; tx++) {
-          const dx = tx + 0.5 - x;
-          if (dx * dx + dy * dy > r2) continue;
-          const i = ty * w + tx;
-          vis[i] = 1;
-          exp[i] = 1;
-        }
-      }
+      revealDisc(vis, state.explored[p], w, h, x, y, r);
     };
     for (const u of game.units()) if (u.owner >= 0) reveal(u.owner, u.x, u.y, CONFIG.units[u.type].sight);
     for (const b of game.buildings()) {

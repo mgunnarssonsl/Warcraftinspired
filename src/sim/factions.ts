@@ -77,10 +77,17 @@ export function buildingFaction(t: BuildingType): FactionId | null {
   return null;
 }
 
+// Lookups by type, built once (the computer asks these many times a tick).
+const BUILDING_ROLE = new Map<string, BuildingRole>();
+const UNIT_ROLE = new Map<string, UnitRole>();
+for (const f of FACTIONS) {
+  for (const [role, type] of Object.entries(FACTION[f].buildings)) BUILDING_ROLE.set(type, role as BuildingRole);
+  for (const [role, type] of Object.entries(FACTION[f].units)) UNIT_ROLE.set(type, role as UnitRole);
+}
+
 /** The role a building plays (its Crown counterpart's name), for keys and the computer. */
 export function buildingRole(t: BuildingType): BuildingRole | null {
-  for (const f of FACTIONS) for (const [role, type] of Object.entries(FACTION[f].buildings)) if (type === t) return role as BuildingRole;
-  return null;
+  return BUILDING_ROLE.get(t) ?? null;
 }
 
 /** Gatherers and builders. */
@@ -123,6 +130,5 @@ export function tierResearch(f: FactionId, tier: 2 | 3): ResearchId {
 
 /** The role a unit type plays, for any faction (null for heroes and neutrals). */
 export function unitRole(t: UnitType): UnitRole | null {
-  for (const f of FACTIONS) for (const [role, type] of Object.entries(FACTION[f].units)) if (type === t) return role as UnitRole;
-  return null;
+  return UNIT_ROLE.get(t) ?? null;
 }

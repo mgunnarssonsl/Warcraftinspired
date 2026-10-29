@@ -62,11 +62,30 @@ export class NavGrid {
     const steps = Math.max(1, Math.ceil(len / STEP));
     const px = Math.abs(dx) / steps / 2 + 1e-6;
     const py = Math.abs(dy) / steps / 2 + 1e-6;
+    // Consecutive samples mostly cover the same four corner tiles: those
+    // are checked once (the same answer as checking every sample).
+    let pa = -1;
+    let pb = -1;
+    let pc = -1;
+    let pd = -1;
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
       // Endpoints only need plain clearance; they are where units actually stop.
       const end = i === 0 || i === steps;
-      if (!this.canStand(x0 + dx * t, y0 + dy * t, end ? r : r + px, end ? r : r + py)) return false;
+      const x = x0 + dx * t;
+      const y = y0 + dy * t;
+      const rx = end ? r : r + px;
+      const ry = end ? r : r + py;
+      const a = Math.floor(x - rx);
+      const b = Math.floor(x + rx);
+      const c = Math.floor(y - ry);
+      const d = Math.floor(y + ry);
+      if (a === pa && b === pb && c === pc && d === pd) continue;
+      if (!this.passable(a, c) || !this.passable(b, c) || !this.passable(a, d) || !this.passable(b, d)) return false;
+      pa = a;
+      pb = b;
+      pc = c;
+      pd = d;
     }
     return true;
   }

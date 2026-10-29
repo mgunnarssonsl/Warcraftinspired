@@ -73,9 +73,10 @@ export function symTile(v: number, size: number): number {
   return f === v && v > size / 2 ? f - 1 : f;
 }
 
-export function planPath(game: Game, u: Unit): void {
+/** Plan the unit's route; returns the search's cost (tiles expanded). */
+export function planPath(game: Game, u: Unit): number {
   const mv = u.move;
-  if (!mv) return;
+  if (!mv) return 0;
   const nav = game.nav;
   const goal = mv.goal;
   const { width: W, height: H } = game.state.map;
@@ -107,6 +108,7 @@ export function planPath(game: Game, u: Unit): void {
   }
   mv.path = path;
   mv.navVersion = nav.version;
+  return res.expanded;
 }
 
 function goalReached(u: Unit, goal: MoveGoal): boolean {
@@ -127,12 +129,16 @@ function tryShift(game: Game, u: Unit, dx: number, dy: number): void {
 
 export function updateMovement(game: Game, units: Unit[]): void {
   const tick = game.state.tick;
+  const spent = new Map<number, number>();
   for (const u of units) {
     const mv = u.move;
     if (!mv || mv.state !== 'moving' || u.hidden || u.stun > 0) continue;
     if (mv.navVersion !== game.nav.version) {
-      // Terrain changed (tree felled, building placed); paths may be stale.
-      planPath(game, u);
+      // A new order, or the terrain changed (tree felled, building placed):
+      // plan now if this player's search budget for the tick allows.
+      const used = spent.get(u.owner) ?? 0;
+      if (used >= CONFIG.movement.pathBudget) continue;
+      spent.set(u.owner, used + planPath(game, u));
     }
     let budget = moveSpeed(u) * TICK_SECONDS;
     while (budget > 1e-9 && mv.path.length) {
@@ -171,6 +177,11 @@ export function updateMovement(game: Game, units: Unit[]): void {
   for (const u of units) {
     const mv = u.move;
     if (!mv || mv.state !== 'moving' || u.hidden) continue;
+    // Still waiting for its path: not stuck.
+    if (mv.navVersion !== game.nav.version) {
+      mv.checkTick = tick;
+      continue;
+    }
     if (tick - mv.checkTick < window) continue;
     const moved = Math.hypot(u.x - mv.checkX, u.y - mv.checkY);
     const expected = moveSpeed(u) * TICK_SECONDS * window;

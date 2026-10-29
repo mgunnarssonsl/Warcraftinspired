@@ -1801,6 +1801,13 @@ export const CONFIG = {
     maxRepaths: 4,
     /** Units within this distance (tiles) of their group's centre march together at the slowest one's pace. */
     groupRadius: 5,
+    /**
+     * Path-search work (tiles expanded) each player may spend per tick. A
+     * huge group order spreads over a few ticks instead of freezing one: a
+     * unit still waiting simply starts a tick later. Per player, so no seat
+     * plans first.
+     */
+    pathBudget: 12000,
   },
 } as const;
 

@@ -16,7 +16,7 @@ import { updateBuilder, updateRepairer } from './construction';
 import { updateProduction } from './production';
 import { updateGatherer } from './gathering';
 import { generateMap } from './mapgen';
-import { planPath, updateMovement } from './movement';
+import { updateMovement } from './movement';
 import { NavGrid } from './nav';
 import { Vision } from './vision';
 import { emptyStats } from './types';
@@ -580,7 +580,7 @@ export class Game {
       repaths: 0,
       navVersion: -1,
     };
-    planPath(this, u);
+    // Planned in the movement step (see updateMovement), within the tick's search budget.
   }
 }
 
