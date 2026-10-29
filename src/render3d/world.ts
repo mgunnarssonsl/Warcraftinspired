@@ -29,6 +29,7 @@ import {
   type BuildingParts,
   type MineParts,
   type WorkerParts,
+  isSharedMaterial,
 } from './models';
 
 interface Marker {
@@ -255,7 +256,7 @@ export class World3D {
   recolor(): void {
     for (const v of this.units.values()) this.removePickable(v.root);
     for (const v of this.buildings.values()) this.removePickable(v.root);
-    for (const g of this.memoryGhosts.values()) this.scene.remove(g.root);
+    for (const g of this.memoryGhosts.values()) this.drop(g.root);
     this.units.clear();
     this.buildings.clear();
     this.memoryGhosts.clear();
@@ -561,7 +562,7 @@ export class World3D {
         live.add(m.id);
         let g = this.memoryGhosts.get(m.id);
         if (!g || g.tier !== m.tier || g.done !== m.done) {
-          if (g) this.scene.remove(g.root);
+          if (g) this.drop(g.root);
           const parts = makeBuilding(m.type, teamColor(this.game, m.owner), m.w, m.tier);
           parts.root.position.set(m.x, 0, m.y);
           parts.scaffold.visible = !m.done;
@@ -574,7 +575,7 @@ export class World3D {
     }
     for (const [id, g] of this.memoryGhosts) {
       if (live.has(id)) continue;
-      this.scene.remove(g.root);
+      this.drop(g.root);
       this.memoryGhosts.delete(id);
     }
   }
@@ -605,7 +606,7 @@ export class World3D {
       if (seen.has(id)) continue;
       // Keep the body around briefly so deaths read clearly.
       if (v.root.visible) this.dying.push({ root: v.root, t0: now, building: false });
-      else this.scene.remove(v.root);
+      else this.drop(v.root);
       this.units.delete(id);
       this.flinches.delete(id);
     }
@@ -691,13 +692,13 @@ export class World3D {
         // Collapse: sink and squash over a second.
         d.root.scale.y = Math.max(0.05, 1 - t);
         d.root.position.y = -t * 0.4;
-        if (t > 1.2) this.scene.remove(d.root);
+        if (t > 1.2) this.drop(d.root);
         return t <= 1.2;
       }
       // Topple, then sink into the ground.
       d.root.rotation.z = Math.min(1, t / 0.35) * (Math.PI / 2) * 0.9;
       d.root.position.y = t > 0.9 ? -(t - 0.9) * 0.5 : 0;
-      if (t > 1.8) this.scene.remove(d.root);
+      if (t > 1.8) this.drop(d.root);
       return t <= 1.8;
     });
   }
@@ -760,8 +761,24 @@ export class World3D {
   }
 
   private removePickable(o: THREE.Object3D): void {
-    this.scene.remove(o);
     this.pickables = this.pickables.filter((p) => p !== o);
+    this.drop(o);
+  }
+
+  /**
+   * Take a view out of the scene and free its GPU buffers: every model
+   * builds its own geometry, so a match that trains and loses hundreds of
+   * units would otherwise keep all of them in memory. Cached materials
+   * (shared by all models) and the shared ring stay.
+   */
+  private drop(root: THREE.Object3D): void {
+    this.scene.remove(root);
+    root.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      if (m.geometry !== this.ringGeo) m.geometry.dispose();
+      for (const mt of Array.isArray(m.material) ? m.material : [m.material]) if (!isSharedMaterial(mt)) mt.dispose();
+    });
   }
 
   /** Items on the ground: shown where the viewer can see, gems bobbing. */
@@ -782,7 +799,7 @@ export class World3D {
     }
     for (const [id, v] of this.items) {
       if (live.has(id)) continue;
-      this.scene.remove(v);
+      this.drop(v);
       this.items.delete(id);
     }
   }
@@ -986,7 +1003,7 @@ export class World3D {
       const t = now - r.t0;
       const mat = (r.root.children[0] as THREE.Mesh | undefined)?.material as THREE.MeshStandardMaterial | undefined;
       if (mat && t > 24) mat.opacity = Math.max(0, 1 - (t - 24) / 6);
-      if (t > 30) this.scene.remove(r.root);
+      if (t > 30) this.drop(r.root);
       return t <= 30;
     });
   }

@@ -24,9 +24,15 @@ export function mat(color: string | number, opts: { emissive?: number; rough?: n
         emissive: opts.emissive ?? 0x000000,
       }),
     );
+    m.userData.cacheKey = key;
     matCache.set(key, m);
   }
   return m;
+}
+
+/** Is this one of the cached materials every model shares (never disposed)? */
+export function isSharedMaterial(m: THREE.Material): boolean {
+  return matCache.get(`${(m as THREE.MeshStandardMaterial).userData.cacheKey}`) === m;
 }
 
 export function mesh(geo: THREE.BufferGeometry, m: THREE.Material, x = 0, y = 0, z = 0): THREE.Mesh {

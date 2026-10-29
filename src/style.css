@@ -1070,3 +1070,17 @@ table.stats td:first-child {
   justify-content: center;
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.7));
 }
+
+/* Shown instead of the game when the browser cannot run it (see main.ts). */
+.fatal {
+  max-width: 34rem;
+  margin: 15vh auto;
+  padding: 1.5rem 2rem;
+  background: #221c14;
+  color: #eadcc0;
+  border: 1px solid #5a4a32;
+  border-radius: 8px;
+  font: 16px/1.5 system-ui, sans-serif;
+}
+.fatal h1 { margin: 0 0 0.5rem; color: #f0d68a; }
+.fatal button { margin-top: 1rem; padding: 0.4rem 1.2rem; }
