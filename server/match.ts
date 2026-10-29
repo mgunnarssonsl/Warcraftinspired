@@ -313,6 +313,8 @@ export class MatchServer {
 
   /** Send out every turn all seats have submitted, in order. */
   private flush(room: Room): void {
+    // With nobody left to play, no turn is ever complete (and none is needed).
+    if (room.seats.every((s) => !s || s.gone)) return;
     for (;;) {
       const turn = room.completed + 1;
       const row = room.pending.get(turn);
@@ -393,7 +395,7 @@ export class MatchServer {
       // Hash reports that can never complete (a player left before sending theirs).
       for (const turn of room.hashes.keys()) if (turn < room.completed - HASH_TURNS * 10) room.hashes.delete(turn);
       if (ping) {
-        for (const s of seats) s.conn?.send({ t: 'ping', at: now });
+        for (const s of seats) s.conn?.send({ t: 'ping', at: now, rtt: s.rtt });
         if (room.setup) this.adjustDelay(room);
       }
       // Forget rooms nobody is in any more (after a while, so a reload can rejoin).

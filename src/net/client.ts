@@ -16,6 +16,8 @@ export class NetClient {
   room: RoomState | null = null;
   seat = -1;
   token = '';
+  /** Last round trip to the server the server measured for us (ms). */
+  rtt = 0;
   /** Every server message (after the client's own bookkeeping). */
   onMessage: (m: ServerMsg) => void = () => {};
   onClose: () => void = () => {};
@@ -23,7 +25,12 @@ export class NetClient {
 
   constructor(private transport: Transport) {
     transport.onMessage = (m) => {
-      if (m.t === 'ping') return transport.send({ t: 'pong', at: m.at });
+      if (m.t === 'ping') {
+        this.rtt = m.rtt;
+        transport.send({ t: 'pong', at: m.at });
+        this.onMessage(m);
+        return;
+      }
       if (m.t === 'room') {
         this.room = m.room;
         this.seat = m.seat;
@@ -83,4 +90,25 @@ export function websocketTransport(url: string): Promise<Transport> {
     };
     ws.onclose = () => t.onClose();
   });
+}
+
+/**
+ * Where the match server is: ?server=host:port if given, else the page's
+ * own host at /ws (the game server serves the game; in development, Vite
+ * forwards /ws to it).
+ */
+export function serverUrl(): string {
+  const explicit = new URLSearchParams(location.search).get('server');
+  const secure = location.protocol === 'https:';
+  if (explicit) return /^wss?:\/\//.test(explicit) ? explicit : `${secure ? 'wss' : 'ws'}://${explicit}/ws`;
+  return `${secure ? 'wss' : 'ws'}://${location.host}/ws`;
+}
+
+/** Where this browser keeps its seat in an online match (to rejoin after a reload). */
+export const ONLINE_KEY = 'ironvale.online';
+
+export interface StoredSeat {
+  code: string;
+  token: string;
+  server: string;
 }

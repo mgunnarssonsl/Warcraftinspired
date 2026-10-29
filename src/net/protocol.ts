@@ -80,7 +80,8 @@ export type ServerMsg =
   | { t: 'delay'; turns: number; rtt: number[] }
   | { t: 'peer'; seat: number; state: 'connected' | 'disconnected' | 'forfeited'; graceMs?: number }
   | { t: 'desync'; turn: number; hashes: Array<string | null> }
-  | { t: 'ping'; at: number }
+  /** `rtt`: this player's last measured round trip to the server, in ms. */
+  | { t: 'ping'; at: number; rtt: number }
   | { t: 'error'; reason: string };
 
 /** Room codes: 5 letters without look-alikes (no I, L, O, 0, 1). */

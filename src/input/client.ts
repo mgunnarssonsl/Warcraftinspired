@@ -17,6 +17,8 @@ export interface ClientState {
   placing: BuildingType | null;
   debug: boolean;
   paused: boolean;
+  /** An online match: no pausing (the other player's game runs on). */
+  online: boolean;
   /** A full-screen panel is open: world input is ignored. */
   modalOpen: boolean;
   /** Lift the fog for this viewer (after the match, or ?fog=0 for debugging). */
@@ -34,6 +36,7 @@ export function createClientState(player: number): ClientState {
     placing: null,
     debug: false,
     paused: false,
+    online: false,
     modalOpen: false,
     revealAll: false,
     groups: {},

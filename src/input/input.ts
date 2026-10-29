@@ -725,7 +725,7 @@ export class InputController {
     }
     if (k === 'pause' || k === 'f3') {
       e.preventDefault();
-      if (k === 'pause') this.client.paused = !this.client.paused;
+      if (k === 'pause') this.togglePause();
       else this.client.debug = !this.client.debug;
       return;
     }
@@ -761,9 +761,14 @@ export class InputController {
         this.client.debug = !this.client.debug;
         break;
       case 'pause':
-        this.client.paused = !this.client.paused;
+        this.togglePause();
         break;
     }
+  }
+
+  private togglePause(): void {
+    if (this.client.online) this.onMessage('An online match cannot be paused: the other player plays on.');
+    else this.client.paused = !this.client.paused;
   }
 
   private controlGroup(n: number, assign: boolean, add: boolean): void {

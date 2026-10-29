@@ -1084,3 +1084,30 @@ table.stats td:first-child {
 }
 .fatal h1 { margin: 0 0 0.5rem; color: #f0d68a; }
 .fatal button { margin-top: 1rem; padding: 0.4rem 1.2rem; }
+
+/* Online play */
+.res.net { font-size: 12px; opacity: 0.8; }
+#netbanner {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 0.8rem 1.4rem;
+  background: rgba(20, 16, 10, 0.88);
+  border: 1px solid #8a6a3a;
+  border-radius: 8px;
+  color: #f0d68a;
+  font-weight: 600;
+  pointer-events: none;
+  z-index: 20;
+}
+.modal-card .field { display: block; margin: 0.6rem 0; }
+.modal-card .field input, .join-row input { margin-left: 0.5rem; padding: 0.35rem 0.5rem; font: inherit; }
+.join-row { display: flex; gap: 0.5rem; align-items: center; }
+.join-row input { width: 7rem; text-transform: uppercase; letter-spacing: 0.15em; margin-left: 0; }
+.modal-card .code { font-size: 1.5em; letter-spacing: 0.2em; color: #f0d68a; }
+.modal-card .seats { list-style: none; padding: 0; }
+.modal-card .seats li { padding: 0.4rem 0; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.modal-card .seats li.open { opacity: 0.6; font-style: italic; }
+.modal-card .seats .ready { color: #7dff8a; float: right; }
+.modal-card .seats .not-ready { opacity: 0.6; float: right; }

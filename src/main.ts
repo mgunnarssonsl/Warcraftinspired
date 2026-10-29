@@ -1,7 +1,10 @@
 // Entry point: checks that this browser can run the game, then loads it
 // (app.ts). A browser without WebGL 2, or a start that fails, gets a plain
-// explanation instead of an empty page.
+// explanation instead of an empty page. For an online match (?online=CODE)
+// it first takes this browser's seat on the game server, so the game starts
+// from the match's setup and command log (the same path as a rejoin).
 
+import { rejoinOnline, storedSeat } from './net/session';
 import './style.css';
 
 function supportProblem(): string | null {
@@ -15,20 +18,35 @@ function supportProblem(): string | null {
 }
 
 /** Replace the game with a short message (nothing else on the page works anyway). */
-export function showProblem(text: string): void {
+export function showProblem(text: string, home = false): void {
   const app = document.getElementById('app');
   const box = document.createElement('div');
   box.className = 'fatal';
-  box.innerHTML = '<h1>Ironvale</h1><p></p><button>Reload</button>';
+  box.innerHTML = `<h1>Ironvale</h1><p></p><button id="retry">Try again</button>${home ? ' <button id="home">Back to the start screen</button>' : ''}`;
   box.querySelector('p')!.textContent = text;
-  box.querySelector('button')!.addEventListener('click', () => location.reload());
+  box.querySelector('#retry')!.addEventListener('click', () => location.reload());
+  box.querySelector('#home')?.addEventListener('click', () => (location.search = ''));
   (app ?? document.body).replaceChildren(box);
 }
 
-const problem = supportProblem();
-if (problem) showProblem(problem);
-else
+function loadGame(): void {
   import('./app').catch((e: unknown) => {
     showProblem(`The game failed to start: ${e instanceof Error ? e.message : String(e)}. Reloading usually helps; a saved match is kept.`);
     throw e;
   });
+}
+
+const problem = supportProblem();
+const onlineCode = new URLSearchParams(location.search).get('online');
+if (problem) showProblem(problem);
+else if (onlineCode) {
+  const seat = storedSeat(onlineCode);
+  if (!seat) showProblem('This browser has no seat in that online match. Join it from the start screen with its code.', true);
+  else
+    rejoinOnline(seat)
+      .then((start) => {
+        (window as unknown as { __ironvaleOnline?: unknown }).__ironvaleOnline = start;
+        loadGame();
+      })
+      .catch((e: unknown) => showProblem(`Could not rejoin the online match: ${e instanceof Error ? e.message : String(e)}`, true));
+} else loadGame();

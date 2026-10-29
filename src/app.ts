@@ -26,6 +26,7 @@ import { newSeed, opponentLabel, Screens, type MatchSettings, type ScreenHost } 
 import { browserStorage, loadSettings, saveSettings, type Settings } from './ui/settings';
 import { TUTORIAL, TutorialPanel } from './ui/tutorial';
 import { view } from './ui/view';
+import { OnlineSession, type OnlineStart } from './net/session';
 
 
 const params = new URLSearchParams(location.search);
@@ -33,6 +34,8 @@ const storage = browserStorage();
 const store = new SaveStore(storage ?? { getItem: () => null, setItem: () => {}, removeItem: () => {} });
 const LOAD_KEY = 'ironvale.load';
 const tutorial = params.get('tutorial') === '1';
+/** Set by main.ts when this page is an online match it has already rejoined. */
+const online = (window as unknown as { __ironvaleOnline?: OnlineStart }).__ironvaleOnline ?? null;
 
 // ---- what to play -----------------------------------------------------------------
 
@@ -66,7 +69,18 @@ const fromUrl: MatchSettings = {
   faction: factionParam && FACTIONS.includes(factionParam) ? factionParam : 'crown',
   opponentFaction: vsParam && (vsParam === 'random' || FACTIONS.includes(vsParam)) ? vsParam : 'crown',
 };
-const match: MatchSettings = saved
+const onlineSeat = online?.resume.seat ?? 0;
+const match: MatchSettings = online
+  ? {
+      seed: online.resume.setup.seed,
+      difficulty: 'normal',
+      mapId: online.resume.setup.mapId,
+      style: 'balanced',
+      advantage: 'none',
+      faction: online.resume.setup.factions[onlineSeat],
+      opponentFaction: online.resume.setup.factions[1 - onlineSeat],
+    }
+  : saved
   ? saved.match
   : tutorial
     ? { seed: TUTORIAL.seed, difficulty: TUTORIAL.difficulty, mapId: TUTORIAL.mapId, style: 'balanced', advantage: 'none', faction: 'crown', opponentFaction: 'crown' }
@@ -76,12 +90,22 @@ const playedStyle: StyleId = match.style === 'random' ? randomStyle(match.seed) 
 
 // A random opponent faction is fixed by the seed too, but shown from the start.
 const opponentFaction: FactionId = match.opponentFaction === 'random' ? randomFaction(match.seed) : match.opponentFaction;
-const game = saved ? Game.restore(saved.state, saved.pending, saved.visible) : Game.create(match.seed, match.mapId, [match.faction, opponentFaction]);
-const client = createClientState(saved?.view.player ?? 0);
-const computer = saved?.ai.find((a) => a.player !== client.player)
-  ? ComputerPlayer.restore(saved.ai.find((a) => a.player !== client.player)!)
-  : new ComputerPlayer(1, match.difficulty as Difficulty, playedStyle, tutorial ? TUTORIAL.overrides : {});
-if (!saved) {
+const game = online
+  ? Game.create(online.resume.setup.seed, online.resume.setup.mapId, online.resume.setup.factions)
+  : saved
+    ? Game.restore(saved.state, saved.pending, saved.visible)
+    : Game.create(match.seed, match.mapId, [match.faction, opponentFaction]);
+const client = createClientState(online ? onlineSeat : (saved?.view.player ?? 0));
+client.online = !!online;
+// Online: the lockstep runner applies every player's commands, on the same tick everywhere.
+const session = online ? new OnlineSession(online, game, game.issue.bind(game)) : null;
+if (online) online.resume.setup.names.forEach((n, i) => (game.player(i).name = n));
+const computer = online
+  ? null
+  : saved?.ai.find((a) => a.player !== client.player)
+    ? ComputerPlayer.restore(saved.ai.find((a) => a.player !== client.player)!)
+    : new ComputerPlayer(1, match.difficulty as Difficulty, playedStyle, tutorial ? TUTORIAL.overrides : {});
+if (!saved && !online) {
   game.player(1).name = `Computer (${match.difficulty})`;
   // The only advantage a computer can have: chosen up front, shown as a cheat.
   game.player(1).incomeBonus = CONFIG.ai.advantages[match.advantage].income;
@@ -114,8 +138,9 @@ hud.onSighting = (x, y) => {
 document.addEventListener('click', (e) => {
   if ((e.target as HTMLElement).closest('button')) sound.play('click');
 });
-// Acknowledge the player's own orders and selections.
-const issue = game.issue.bind(game);
+// Acknowledge the player's own orders and selections. Online, orders go to
+// the lockstep runner, which sends them ahead to everyone.
+const issue = session ? (c: Parameters<Game['issue']>[0]) => session.issue(c) : game.issue.bind(game);
 game.issue = (c) => {
   if (c.player === client.player) {
     const cue = orderCue(c.type);
@@ -164,13 +189,13 @@ function currentSave(): SaveFile {
     state: game.state,
     pending: game.pendingCommands(),
     visible: game.vision.snapshot(),
-    ai: [computer.snapshot()],
+    ai: computer ? [computer.snapshot()] : [],
     view: { player: client.player, camera: { x: world.rig.tx, y: world.rig.ty, distance: world.rig.distance }, groups: client.groups },
   });
 }
 let lastAutosaveTick = game.state.tick;
 function autosave(): void {
-  if (tutorial || game.state.outcome || screens.current === 'start') return;
+  if (tutorial || session || game.state.outcome || screens.current === 'start') return;
   store.write('auto', currentSave());
   lastAutosaveTick = game.state.tick;
 }
@@ -206,12 +231,13 @@ const host: ScreenHost = {
   },
   loadError,
   tutorial,
+  online: session ? { names: session.setup.names, leave: () => session.leave(), diagnostics: () => session.diagnostics() } : null,
 };
 
 // ---- screens -----------------------------------------------------------------------
 
 const screens = new Screens(game, match, client.player, host);
-screens.opponent = { style: playedStyle, journal: computer.journal };
+screens.opponent = { style: playedStyle, journal: computer?.journal ?? [] };
 screens.onClose = () => {
   client.modalOpen = false;
   // After the match, "Keep watching" lifts the fog so the whole map can be seen.
@@ -219,7 +245,9 @@ screens.onClose = () => {
 };
 screens.onSurrender = () => game.issue({ type: 'surrender', player: client.player });
 const subtitle = document.getElementById('subtitle')!;
-subtitle.textContent = tutorial
+subtitle.textContent = session
+  ? `${FACTION[game.player(client.player).faction].name} vs ${FACTION[game.player(1 - client.player).faction].name} · online against ${session.setup.names[1 - client.player]}`
+  : tutorial
   ? 'tutorial'
   : `${FACTION[game.player(client.player).faction].name} vs ${FACTION[game.player(1 - client.player).faction].name} (${opponentLabel(match, playedStyle, false)} computer)`;
 if (match.advantage !== 'none') {
@@ -241,7 +269,7 @@ window.addEventListener('keydown', (e) => {
     else openMenu();
   }
 });
-if (!saved && !tutorial && params.get('start') !== '1') {
+if (!saved && !tutorial && !session && params.get('start') !== '1') {
   screens.showStart();
   client.modalOpen = true;
 }
@@ -297,7 +325,7 @@ minimapCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
 // Pause when the window loses focus (a setting), resume when it comes back.
 let autoPaused = false;
 window.addEventListener('blur', () => {
-  if (settings.interface.pauseOnBlur && !client.paused && !game.state.outcome) {
+  if (settings.interface.pauseOnBlur && !session && !client.paused && !game.state.outcome) {
     client.paused = true;
     autoPaused = true;
   }
@@ -311,12 +339,12 @@ window.addEventListener('focus', () => {
 let contextPaused = false;
 canvas.addEventListener('webglcontextlost', (e) => {
   e.preventDefault(); // lets the browser restore it
-  if (!client.paused) {
+  if (!client.paused && !session) {
     client.paused = true;
     contextPaused = true;
   }
   autosave();
-  hud.notify('The graphics were reset by the browser: paused until they come back.', 'alert');
+  hud.notify(session ? 'The graphics were reset by the browser; they should come back in a moment.' : 'The graphics were reset by the browser: paused until they come back.', 'alert');
 });
 canvas.addEventListener('webglcontextrestored', () => {
   if (contextPaused) client.paused = false;
@@ -345,6 +373,23 @@ function workSounds(see: (x: number, y: number) => boolean) {
   return { building, mining };
 }
 
+// Online status: ping and delay in the top bar, and a banner over the game
+// while waiting for the other player or reconnecting.
+const netStatus = document.getElementById('net')!;
+const netBannerEl = document.getElementById('netbanner')!;
+netStatus.classList.toggle('hidden', !session);
+function netBanner(text: string | null): void {
+  netBannerEl.classList.toggle('hidden', !text);
+  if (text && netBannerEl.textContent !== text) netBannerEl.textContent = text;
+}
+if (session) {
+  session.onNotice = (text, cls) => hud.notify(text, cls);
+  session.onDesync = () => {
+    screens.showDesync(session.lock.status().desyncTurn ?? 0);
+    client.modalOpen = true;
+  };
+}
+
 let acc = 0;
 let last = performance.now();
 const MAX_STEPS_PER_FRAME = 8;
@@ -356,15 +401,22 @@ function frame(t: number): void {
   last = t;
   // The start screen and the menus pause the match; the end screen does not.
   const running = !client.paused && screens.current !== 'start' && screens.current !== 'menu' && screens.current !== 'settings' && screens.current !== 'saves';
-  if (running) acc += dt;
-  let steps = 0;
-  while (acc >= TICK_SECONDS && steps < MAX_STEPS_PER_FRAME) {
-    game.step();
-    computer.update(game);
-    acc -= TICK_SECONDS;
-    steps++;
+  if (session) {
+    // Online: lockstep decides; the match never pauses for one player.
+    const { replaying } = session.frame(dt * 1000);
+    netBanner(replaying ? 'Catching up with the match…' : session.banner());
+    netStatus.textContent = session.statusLine();
+  } else {
+    if (running) acc += dt;
+    let steps = 0;
+    while (acc >= TICK_SECONDS && steps < MAX_STEPS_PER_FRAME) {
+      game.step();
+      computer?.update(game);
+      acc -= TICK_SECONDS;
+      steps++;
+    }
+    if (steps === MAX_STEPS_PER_FRAME) acc = 0;
   }
-  if (steps === MAX_STEPS_PER_FRAME) acc = 0;
   if (game.state.tick - lastAutosaveTick >= AUTOSAVE_TICKS) autosave();
   const events = game.drainEvents();
   const secs = t / 1000;
@@ -386,7 +438,9 @@ function frame(t: number): void {
   sound.tick(workSounds(seeTile));
   for (const e of events) {
     if (e.type === 'playerDefeated' && e.player === client.player) screens.defeatReason = e.reason;
+    else if (e.type === 'playerDefeated' && !game.state.players[e.player]?.neutral) screens.foeDefeatReason = e.reason;
     if (e.type === 'matchOver') {
+      session?.over(game.state.outcome?.winner ?? null);
       screens.showEnd();
       client.modalOpen = true;
     }
@@ -404,4 +458,4 @@ function frame(t: number): void {
 requestAnimationFrame(frame);
 
 // Debug/testing handle (used by automated browser checks).
-(window as unknown as { __rts: unknown }).__rts = { game, client, world, input, computer, screens, store, sound, host, get settings() { return settings; } };
+(window as unknown as { __rts: unknown }).__rts = { game, client, world, input, computer, screens, store, sound, host, session, get settings() { return settings; } };

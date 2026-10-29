@@ -90,6 +90,20 @@ describe('online match over the network', () => {
     expect(b.messages.some((m) => m.t === 'error' && /forfeited/.test(m.reason))).toBe(true);
   }, 120_000);
 
+  it('both players leaving does not hang the server; the room is closed later', () => {
+    const w = new NetWorld(9);
+    const a = w.add('A', { latency: 20, jitter: 10 });
+    const b = w.add('B', { latency: 20, jitter: 10 });
+    w.startMatch();
+    w.run(10_000);
+    a.drop();
+    b.drop();
+    w.run(RECONNECT_GRACE_MS + 5_000); // both forfeit: a hang here would never return
+    expect(w.log.filter((l) => l.includes('forfeited'))).toHaveLength(2);
+    w.run(RECONNECT_GRACE_MS * 2 + 5_000);
+    expect(w.server.rooms.size).toBe(0);
+  }, 60_000);
+
   it('a desync is caught at the next hash comparison and reported to both players', () => {
     const w = new NetWorld(5);
     const a = w.add('A', { latency: 20, jitter: 10 });

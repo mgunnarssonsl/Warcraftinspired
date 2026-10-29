@@ -12,8 +12,9 @@ import { mapById, MAPS } from '../sim/maps';
 import type { Settings } from './settings';
 import { settingsHtml, wireSettings, type SettingsTab } from './settingsPanel';
 import { summaryHtml } from './summary';
+import { Lobby } from './lobby';
 
-export type Modal = 'start' | 'menu' | 'end' | 'settings' | 'saves' | null;
+export type Modal = 'start' | 'menu' | 'end' | 'settings' | 'saves' | 'lobby' | 'desync' | null;
 
 export interface MatchSettings {
   seed: number;
@@ -43,6 +44,8 @@ export interface ScreenHost {
   loadError: string | null;
   /** True while playing the tutorial (no saving needed, different end). */
   tutorial: boolean;
+  /** Set during an online match: the players, and how to leave it (forfeiting if it is on). */
+  online: { names: string[]; leave(): void; diagnostics(): string } | null;
 }
 
 /** Difficulty is how well it plays; the style (below) is what it plans. */
@@ -91,6 +94,8 @@ export class Screens {
   onSurrender: () => void = () => {};
   /** How the viewer was defeated, recorded from simulation events. */
   defeatReason: 'eliminated' | 'surrendered' | null = null;
+  /** How the (last) opponent was defeated. */
+  foeDefeatReason: 'eliminated' | 'surrendered' | null = null;
   /** The style the computer actually plays, and its decision journal. */
   opponent: { style: StyleId; journal: ReadonlyArray<{ tick: number; text: string }> } = { style: 'balanced', journal: [] };
 
@@ -146,6 +151,7 @@ export class Screens {
       <div class="start-actions">
         <button id="tutorial"><b>Tutorial</b><span>New here? Learn the basics in about ten minutes.</span></button>
         ${latestInfo ? `<button id="continue"><b>Continue</b><span>${this.slotLine(latest!)}</span></button>` : ''}
+        <button id="online"><b>Play online…</b><span>A private match against a friend, with a code.</span></button>
         <button id="load"><b>Load a saved game…</b><span>From a slot or a file.</span></button>
         <button id="settings"><b>Settings</b><span>Sound, graphics, camera, interface, controls.</span></button>
       </div>
@@ -209,12 +215,53 @@ export class Screens {
     this.on('#tutorial', () => this.host.startTutorial());
     this.on('#continue', () => latest && this.host.load({ slot: latest }));
     this.on('#load', () => this.showSaves('load', 'start'));
+    this.on('#online', () => this.showLobby());
     this.on('#settings', () => this.showSettings('start'));
+  }
+
+  private lobby: Lobby | null = null;
+
+  showLobby(): void {
+    this.lobby ??= new Lobby(
+      (html) => {
+        this.open('lobby', html);
+        return this.root;
+      },
+      () => this.showStart(),
+    );
+    this.lobby.show();
+  }
+
+  /** The players' games disagree: stop and say so, with a file to report it. */
+  showDesync(turn: number): void {
+    this.open(
+      'desync',
+      `<h2>The match went out of sync</h2>
+      <p class="lead">Your game and your opponent's stopped agreeing at ${fmtTime(turn * 2)}, so the match cannot go on: you would be playing two different games. This is a bug in the game, not something either of you did.</p>
+      <p class="fine">Download the diagnostics and attach them to a bug report (both players' files help most). They contain the match state, nothing personal beyond your browser's name.</p>
+      <div class="actions">
+        <button id="diag">Download diagnostics</button>
+        <button class="primary" id="leave">Leave the match</button>
+      </div>`,
+    );
+    this.on('#diag', () => {
+      const blob = new Blob([this.host.online!.diagnostics()], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `ironvale-desync-${turn}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    });
+    this.on('#leave', () => {
+      this.host.online!.leave();
+      location.search = '';
+    });
   }
 
   showMenu(): void {
     if (this.current === 'start') return;
     const over = !!this.game.state.outcome;
+    if (this.host.online) return this.showOnlineMenu(over);
     this.open(
       'menu',
       `<h2>Paused</h2>
@@ -247,6 +294,31 @@ export class Screens {
   private opponentFaction(): string {
     const foe = this.game.state.players.find((p) => !p.neutral && p.id !== this.viewer);
     return foe ? FACTION[foe.faction].name : '';
+  }
+
+  private showOnlineMenu(over: boolean): void {
+    const foe = this.host.online!.names.filter((_, i) => i !== this.viewer).join(', ');
+    this.open(
+      'menu',
+      `<h2>Menu</h2>
+      <p class="fine">Online match against ${escapeHtml(foe)} · map ${mapById(this.settings.mapId).name} · match time ${fmtTime(this.game.state.tick)}. The match keeps running while this menu is open.</p>
+      <div class="stack">
+        <button class="primary" id="resume">Back to the match</button>
+        <button id="settings">Settings…</button>
+        ${over ? '' : '<button class="danger" id="surrender">Surrender</button>'}
+        <button id="quit">${over ? 'Leave' : 'Leave (counts as a surrender)'}</button>
+      </div>`,
+    );
+    this.on('#resume', () => this.close());
+    this.on('#settings', () => this.showSettings('menu'));
+    this.on('#surrender', () => {
+      this.onSurrender();
+      this.close();
+    });
+    this.on('#quit', () => {
+      this.host.online!.leave();
+      location.search = '';
+    });
   }
 
   private slotLine(slot: SlotId): string {
@@ -322,12 +394,34 @@ export class Screens {
       o.winner === null
         ? 'Both sides lost their last building at the same moment.'
         : o.winner === this.viewer
-          ? 'Every enemy building has been destroyed.'
+          ? this.foeDefeatReason === 'surrendered'
+            ? this.host.online
+              ? 'Your opponent surrendered or left the match.'
+              : 'Your opponent surrendered.'
+            : 'Every enemy building has been destroyed.'
           : this.defeatReason === 'surrendered'
             ? 'You surrendered.'
             : 'All of your buildings were destroyed.';
     const names: Record<number, string> = { [this.viewer]: 'You' };
-    for (const p of this.game.state.players) if (!p.neutral && p.id !== this.viewer) names[p.id] = 'Computer';
+    for (const p of this.game.state.players) if (!p.neutral && p.id !== this.viewer) names[p.id] = this.host.online ? escapeHtml(this.host.online.names[p.id] ?? 'Opponent') : 'Computer';
+    if (this.host.online) {
+      this.open(
+        'end',
+        `<h1 class="${title.toLowerCase()}">${title}</h1>
+        <p class="lead">${reason} Match time ${fmtTime(o.tick)}.</p>
+        ${summaryHtml(this.game, this.viewer, names)}
+        <div class="actions">
+          <button class="primary" id="home">Back to the start screen</button>
+          <button id="watch">Keep watching</button>
+        </div>`,
+      );
+      this.on('#home', () => {
+        this.host.online!.leave();
+        location.search = '';
+      });
+      this.on('#watch', () => this.close());
+      return;
+    }
     this.open(
       'end',
       `<h1 class="${title.toLowerCase()}">${title}</h1>

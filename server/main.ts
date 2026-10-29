@@ -70,11 +70,28 @@ export function startServer(port: number, staticDir: string | null = resolve('di
       } catch {
         return;
       }
-      session.receive(msg);
+      // One bad message must never take the server (and every match on it) down.
+      try {
+        session.receive(msg);
+      } catch (e) {
+        log(`error handling a message: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}`);
+      }
     });
-    ws.on('close', () => session.closed());
+    ws.on('close', () => {
+      try {
+        session.closed();
+      } catch (e) {
+        log(`error on close: ${String(e)}`);
+      }
+    });
   });
-  const timer = setInterval(() => match.tick(), 100);
+  const timer = setInterval(() => {
+    try {
+      match.tick();
+    } catch (e) {
+      log(`error in the server timer: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}`);
+    }
+  }, 100);
   return new Promise((ok) =>
     http.listen(port, () => {
       const addr = http.address();
