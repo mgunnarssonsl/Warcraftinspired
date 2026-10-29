@@ -1871,6 +1871,9 @@ which are never shipped to players.
     Normal with the Warden style (11–7, previously 7–11).
   - Normal vs Easy 82–7 (1 draw).
   - Crown vs Thornwild 27–30 (3 draws).
+  - Styles, won–lost: Expander 68–27, Raider 49–46, Balanced 48–48,
+    Warlord 44–51, Warden 29–66. The Expander's lead narrowed (from 75–21);
+    the Warden still trails.
 - **Not yet done:** human playtesting of feel and pacing, and frame-rate
   measurement on real GPUs. Software WebGL only manages ~2–3 fps, which says
   nothing about real hardware.
@@ -2012,7 +2015,7 @@ Still open from Phase E:
 - **Hard vs Normal:** since Phase I a clearer edge (58–31, every style),
   but in computer games only. Human playtests should decide whether Hard
   feels harder.
-- **Style balance:** the Expander is ahead (75–21 since repair) and the Warden behind.
+- **Style balance:** the Expander is ahead (68–27 after Phase I) and the Warden behind (29–66).
   Expansions decide too much, and a raid that punishes greed better is the
   likely fix.
 
