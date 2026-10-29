@@ -12,5 +12,5 @@
     "isolatedModules": true,
     "noEmit": true
   },
-  "include": ["src", "tests", "playtest", "scripts"]
+  "include": ["src", "tests", "playtest", "scripts", "server"]
 }

@@ -10,15 +10,19 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "playtest": "vitest run -c vitest.playtest.config.ts",
-    "bench": "vite-node scripts/bench.ts --"
+    "bench": "vite-node scripts/bench.ts --",
+    "server": "vite-node server/main.ts -- --serve"
   },
   "devDependencies": {
+    "@types/node": "^22.20.5",
     "@types/three": "0.179.0",
+    "@types/ws": "^8.18.2",
     "typescript": "~5.8.3",
     "vite": "^6.3.5",
     "vitest": "^3.2.4"
   },
   "dependencies": {
-    "three": "0.179.1"
+    "three": "0.179.1",
+    "ws": "^8.22.0"
   }
 }
