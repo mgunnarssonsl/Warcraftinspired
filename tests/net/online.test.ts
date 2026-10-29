@@ -57,7 +57,7 @@ describe('online match over the network', () => {
     const b = w.add('Drop', { latency: 40, jitter: 20 }, 'normal');
     const code = w.startMatch('highland', ['wild', 'crown']);
     w.run(3 * 60_000);
-    const token = b.net.token;
+    const token = b.token;
     const turnBefore = a.lock!.turn;
     b.drop();
     w.run(15_000);
@@ -85,7 +85,7 @@ describe('online match over the network', () => {
     expect(a.messages.some((m) => m.t === 'peer' && m.state === 'forfeited')).toBe(true);
     expect(a.game!.state.outcome?.winner).toBe(0);
     // The seat is gone for good.
-    b.rejoin(w.server.rooms.keys().next().value!, b.net.token);
+    b.rejoin(w.server.rooms.keys().next().value!, b.token);
     w.run(1000);
     expect(b.messages.some((m) => m.t === 'error' && /forfeited/.test(m.reason))).toBe(true);
   }, 120_000);

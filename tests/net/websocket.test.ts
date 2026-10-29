@@ -67,3 +67,40 @@ describe('over real WebSockets', () => {
     }
   }, 30_000);
 });
+
+describe('the server process survives hostile requests', () => {
+  it('bad paths, malformed escapes and junk messages do not take it down or leak files', async () => {
+    const { mkdtempSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = mkdtempSync(join(tmpdir(), 'ironvale-'));
+    writeFileSync(join(dir, 'index.html'), '<p>game</p>');
+    const server = await startServer(0, dir, () => {});
+    const base = `http://localhost:${server.port}`;
+    try {
+      const raw = (path: string) =>
+        new Promise<number>((ok) => {
+          // Raw HTTP, so the path is sent exactly as written.
+          import('node:net').then(({ connect }) => {
+            const s = connect(server.port, 'localhost', () => s.write(`GET ${path} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n`));
+            let text = '';
+            s.on('data', (d) => (text += d));
+            s.on('end', () => ok(Number(text.split(' ')[1])));
+          });
+        });
+      expect(await raw('/')).toBe(200);
+      expect(await raw('/%E0%A4%A')).toBe(400);
+      expect(await raw('/../package.json')).toBe(404);
+      expect(await raw('/%2e%2e/%2e%2e/etc/passwd')).toBe(404);
+      // Junk over the socket: ignored or answered with an error, never a crash.
+      const ws = new WebSocket(`ws://localhost:${server.port}/ws`);
+      await new Promise((ok) => (ws.onopen = ok));
+      for (const junk of ['not json', '{}', '{"t":"cmds","turn":"x"}', '[1,2]', 'null', '{"t":"join","code":{"a":1}}']) ws.send(junk);
+      await wait(300);
+      ws.close();
+      expect((await fetch(`${base}/`)).status).toBe(200);
+    } finally {
+      await server.close();
+    }
+  });
+});

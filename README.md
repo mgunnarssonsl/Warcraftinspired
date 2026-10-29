@@ -63,6 +63,14 @@ computer opponents. No campaign or story.
   - a documented supported scope.
 
   This is **release 1.0.0**: see [Release](#release-100).
+- Phase J: online play. Two players meet in a private match by code and
+  play over the internet in deterministic lockstep, with:
+  - rejoining after a reload or a dropped connection;
+  - a forfeit after a minute away;
+  - desync detection;
+  - a server that checks every command.
+
+  See [Play online](#play-online).
 
 See [Roadmap](#roadmap).
 
@@ -81,7 +89,54 @@ npm run dev        # http://localhost:5173
 npm test           # simulation tests (vitest)
 npm run build      # typecheck + production bundle in dist/
 npm run bench      # simulation performance scenarios (see Release)
+npm run server     # the online game server on http://localhost:8787 (see Play online)
 ```
+
+## Play online
+
+Online play is for two players in a private match: one creates it and
+shares a 5-letter code, the other joins with it.
+
+**Try it on one machine:**
+
+```sh
+npm run build
+npm run server     # serves the game and the match server: http://localhost:8787
+```
+
+Open http://localhost:8787 in two browser windows (or two browsers).
+- In each: **Play online…**, type a name.
+- One window: **Create a match**. The other: type the code, **Join**.
+- The host picks the map; each player picks a faction; both press
+  **Ready**.
+
+During development, run `npm run server` and `npm run dev` side by side;
+the dev server forwards `/ws` to the game server.
+
+**To play over the internet,** run `npm run server` on a machine both
+players can reach. Open its port (`PORT=…` to choose one, default 8787), or
+better, put it behind a reverse proxy with HTTPS: a page served over HTTPS
+may only open `wss://` connections. Both players open that address. The
+game finds the server at the page's own host, or at `?server=host:port`
+if given.
+
+**In an online match:**
+
+- **No pausing and no saving.** The other player's game runs on. The menu
+  offers surrender and leave; leaving counts as a surrender.
+- **Orders take effect after a short input delay,** sent ahead so both
+  games apply them on the same tick. It is 200 ms by default and rises
+  with the slower player's connection; the top bar shows your ping and
+  the delay.
+- **Losing the connection** (or reloading, or closing the tab) is not
+  the end. Open the match again (reload, or the same address in a new
+  tab) and the game rejoins and replays the match to the present: about 4
+  seconds for 15 minutes of play. The other player sees *Waiting for … to
+  reconnect* with a countdown. **After 60 seconds away, a player
+  forfeits.**
+- **If the two games ever disagree** (a desync, which would be a bug),
+  the match stops and says so, and offers a diagnostics file for a bug
+  report.
 
 ## Release 1.0.0
 
@@ -140,8 +195,9 @@ and reduce effects.
 
 ### Known limitations
 
-- **Single player only:** one computer opponent. Free-for-all, teams and
-  other modes are not built yet.
+- **Two players at most:** a single-player match against one computer,
+  or a private online match between two people. Free-for-all, teams,
+  public matchmaking, rankings and spectators are not built yet.
 - **Human playtesting:** balance and difficulty come from
   computer-vs-computer playtests. People have not yet judged feel, pacing
   and whether Hard feels hard.
@@ -1163,7 +1219,84 @@ painted ground, and synthesized sound. There are no asset files.
 ## Architecture
 
 TypeScript and Vite, with three.js for 3D rendering. three.js is the only
-runtime dependency.
+runtime dependency of the game; the online server adds `ws`.
+
+### Online play: deterministic lockstep
+
+**Why lockstep.** The simulation was built from the start to be
+deterministic: commands are its only input, it steps on a fixed tick,
+its randomness is seeded and its state is plain data. That makes
+**lockstep** the natural model, the one classic RTS games use:
+
+- every player runs the whole simulation, and only commands travel;
+- bandwidth is tiny, a few hundred bytes a second;
+- the state itself, about 360 KB, never needs sending.
+
+A server-authoritative model would have to stream that state, or the
+parts of it each player may see, every tick.
+
+**How it works.**
+
+- **Turns:** time is cut into 100 ms turns of two ticks.
+- **Submitting:** a client sends its orders for the turn `delay` turns
+  ahead, sending an empty submission when there are none.
+- **Relaying:** the server waits for every player's submission for a
+  turn, then sends the combined turn, in seat order, to everyone.
+- **Running:** a client runs a turn only once it has it, so every copy
+  applies the same commands on the same tick. If a turn is late, the
+  client waits, and catches up a little faster afterwards.
+- **Input delay:** the server measures each player's round trip and sets
+  the delay to cover the slower one plus margin. It rises at once, and
+  falls only after staying comfortably lower for a while.
+
+**Keeping copies identical.**
+
+- **Maths:** JavaScript guarantees the same bits everywhere for `+ − × ÷`
+  and `Math.sqrt`, but not for `Math.hypot`, `sin`, `cos` or `atan2`. The
+  simulation and the computer opponent use `sim/dmath.ts`, built only
+  from the guaranteed operations. A test keeps the engine functions out.
+- **Desync check:** every 20 turns each client sends a hash of its whole
+  state (FNV-1a over its JSON, which is itself exact in every engine). The
+  server compares them, and on a mismatch stops the match and tells both
+  players, with a diagnostics file for each.
+
+**Authority and validation.** The server never simulates.
+
+- It decides the order of everything.
+- It drops any command that is malformed or given in another seat's name,
+  and logs it.
+- It caps a turn at 32 commands, a message at 64 KB and a connection at
+  200 messages a second, cutting off a connection that exceeds the rate.
+- What a well-formed command may *do* is decided by the simulation, which
+  is identical everywhere: orders to someone else's units, unaffordable
+  training and the like are ignored on every copy alike.
+
+**What lockstep cannot hide.** Every client holds the whole match, so a
+modified client could reveal the fog of war (a "map hack"). That is
+inherent to the model and true of the classic games built on it. The fog
+is enforced only in the honest client's display.
+
+**Disconnects.**
+
+- A dropped player's seat is kept for 60 seconds. Lockstep simply waits,
+  and the other player sees a countdown.
+- Rejoining sends the match setup and the log of turns that held
+  commands; the client replays it to the present, so starting a match
+  and coming back are the same path.
+- After 60 seconds the server submits a surrender in the missing
+  player's name, a command like any other, and the match ends the same
+  way on every copy.
+
+```
+src/net/      online play (shared by the game and the server)
+  protocol.ts   messages, turn timing, command validation
+  lockstep.ts   the client's lockstep runner (pure logic)
+  client.ts     connection wrapper, browser WebSocket, server address
+  session.ts    an online match as the game page sees it (status, rejoin)
+server/       the match server (Node)
+  match.ts      rooms, seats, the lockstep relay, hashes, timeouts (transport-free)
+  main.ts       WebSocket server on /ws that also serves the built game
+```
 
 ```
 src/sim/      deterministic simulation (no DOM access)
@@ -1874,8 +2007,69 @@ which are never shipped to players.
   - Styles, won–lost: Expander 68–27, Raider 49–46, Balanced 48–48,
     Warlord 44–51, Warden 29–66. The Expander's lead narrowed (from 75–21);
     the Warden still trails.
+- **Phase J tests:**
+  - `tests/determinism.test.ts` (3):
+    - the deterministic maths match the engine's to within 1e-14;
+    - no engine-dependent maths appears in the simulation or the computer
+      opponent;
+    - state hashes agree run to run, and show the smallest change.
+  - `tests/net/online.test.ts` (9), on a simulated network (virtual
+    clock, latency, jitter, ordered delivery):
+    - a full match on a good connection ends identically for both
+      players;
+    - a 250 ms ± 200 ms player on a slow machine stays in sync, and the
+      delay rises to cover it;
+    - a dropped player rejoins, replays and plays on in sync, while the
+      other waits;
+    - staying away past the grace period forfeits;
+    - both players leaving neither hangs nor leaks the server;
+    - an injected drift is caught at the next hash and stops both games;
+    - a tampered client's orders in the other player's name, unknown unit
+      types and non-finite coordinates are rejected; its own orders to
+      enemy units are ignored by the simulation;
+    - lobby rules: codes, a full room, host-only map choice, readiness,
+      no joining a started match, version check, a closed tab freeing the
+      seat.
+  - `tests/net/websocket.test.ts` (2):
+    - the real server process, a lobby and six seconds of lockstep over
+      real WebSockets;
+    - hostile requests: path traversal, malformed escapes and junk socket
+      messages are refused, and the server stays up. Writing this test
+      found that a single malformed URL crashed the server process, and
+      with it every match. Fixed.
+  - `playtest/online.playtest.ts` (not in `npm test`):
+    - **Soak:** 12 full computer-vs-computer matches, each with its own
+      links (11–148 ms one-way, up to ±115 ms jitter), some on slow
+      frames, and 19 drops and rejoins in all. All 12 ended, each with
+      the same outcome for both players, and all of about 5,500 hash
+      checks agreed.
+    - **Real sockets:** a minute through a TCP proxy adding
+      150 ms ± 80 ms to every packet. It ran at real-time speed (596 of
+      600 turns), the delay settled at 500–600 ms, and 29 hash checks
+      agreed.
+- **Phase J in the browser:** two separate browser profiles played
+  through the real lobby, against the real server and the dev server's
+  `/ws` forwarding:
+  - create, join by code, map and faction choice, ready, then both pages
+    rejoined into the match;
+  - an order reached both games, and the hashes agreed;
+  - a reload mid-match rejoined and replayed, with hashes agreeing;
+  - closing a tab showed *Waiting for Bo to reconnect (56 s, then they
+    forfeit)*;
+  - the same match opened in a new tab rejoined the seat;
+  - surrendering from the menu gave the other player *Victory: your
+    opponent surrendered or left the match*;
+  - no console errors.
+
+  The browser test found a real server bug: with both players gone, the
+  turn flush looped forever and froze the whole server. It is fixed and
+  has its own test, and one bad message or timer error can no longer
+  bring the server down.
 - **Not yet done:** human playtesting of feel and pacing, and frame-rate
-  measurement on real GPUs. Software WebGL only manages ~2–3 fps, which says
+  measurement on real GPUs. For online play: a match between *different*
+  browser engines, such as Chrome against Firefox or Safari. Only Chromium
+  is available on the build machine. The simulation is engine-independent
+  by construction, but that has not been tried. Software WebGL only manages ~2–3 fps, which says
   nothing about real hardware.
 
 ## Roadmap
@@ -1973,6 +2167,30 @@ Phase I (done): performance and release readiness.
 - GPU memory freed as units die.
 - A clear failure without WebGL, and recovery from a graphics reset.
 - A documented supported scope and release notes (1.0.0).
+
+Phase J (done): online play.
+
+- Deterministic lockstep with a relay server.
+- Engine-independent simulation maths and state hashes.
+- Private matches by code with seats, factions and readiness.
+- Command validation, adaptive input delay, rejoin with replay, a
+  forfeit after 60 seconds away, and desync detection with diagnostics.
+- Tests on simulated and real networks.
+
+Still open from Phase J:
+
+- **Cross-engine matches** (Chrome against Firefox or Safari) need trying
+  on real machines.
+- **Map hacks:** lockstep gives every client the whole state, so a
+  modified client can see through the fog. Only a server-authoritative
+  model would fix that.
+- **Matchmaking and beyond:** public matchmaking, rankings, accounts and
+  spectators come only once private matches have proven reliable with
+  real players. So do more than two players (FFA and teams).
+- **Hosting:** the server runs anywhere Node does, but this project ships
+  no ready-made deployment (TLS, domain).
+- **No pause or save online,** by design for now. A limited pause both
+  players see could come later.
 
 Still open from Phase I:
 

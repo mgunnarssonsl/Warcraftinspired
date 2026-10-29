@@ -34,12 +34,21 @@ export interface Running {
 export function startServer(port: number, staticDir: string | null = resolve('dist'), log: (l: string) => void = console.log): Promise<Running> {
   const match = new MatchServer({ log });
   const http: Server = createServer((req, res) => {
+    // Nothing a request carries may take the server down (a malformed %-escape throws).
+    try {
+      serveFile(req.url ?? '/', res);
+    } catch {
+      if (!res.headersSent) res.writeHead(400);
+      res.end('Bad request');
+    }
+  });
+  const serveFile = (url: string, res: import('node:http').ServerResponse) => {
     if (!staticDir || !existsSync(staticDir)) {
       res.writeHead(200, { 'content-type': 'text/plain' });
       res.end('Ironvale game server. Build the game (npm run build) to serve it from here too.');
       return;
     }
-    const path = decodeURIComponent((req.url ?? '/').split('?')[0]);
+    const path = decodeURIComponent(url.split('?')[0]);
     const file = normalize(join(staticDir, path === '/' ? 'index.html' : path));
     if (!file.startsWith(staticDir) || !existsSync(file) || !statSync(file).isFile()) {
       res.writeHead(404).end('Not found');
@@ -47,7 +56,7 @@ export function startServer(port: number, staticDir: string | null = resolve('di
     }
     res.writeHead(200, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream' });
     createReadStream(file).pipe(res);
-  });
+  };
   const wss = new WebSocketServer({ server: http, path: '/ws', maxPayload: 64 * 1024 });
   wss.on('connection', (ws) => {
     const session = match.connect({ send: (m) => ws.readyState === ws.OPEN && ws.send(JSON.stringify(m)), close: () => ws.close() });

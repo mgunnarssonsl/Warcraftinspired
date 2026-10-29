@@ -65,6 +65,8 @@ export class Player {
   ai: ComputerPlayer | null = null;
   setup: MatchSetup | null = null;
   messages: ServerMsg[] = [];
+  /** The seat token, kept across rejoins (a real client keeps it in browser storage). */
+  token = '';
   /** Every state hash this player reported, by turn. */
   readonly hashes = new Map<number, string>();
   connected = false;
@@ -124,6 +126,7 @@ export class Player {
 
   private onMessage(m: ServerMsg): void {
     this.messages.push(m);
+    if (m.t === 'room') this.token = m.token;
     if (m.t === 'resume') {
       this.setup = m.setup;
       const game = Game.create(m.setup.seed, m.setup.mapId, m.setup.factions);
