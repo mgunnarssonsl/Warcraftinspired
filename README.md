@@ -55,6 +55,14 @@ computer opponents. No campaign or story.
   roster, three heroes and a tech tree. Pick either faction for yourself
   and for the computer (or a random one). See
   [The Thornwild](#the-second-faction-thornwild).
+- Phase I: performance and release readiness. It covers:
+  - measured bottlenecks, fixed;
+  - no GPU memory leaks in long matches;
+  - clear failure without WebGL, and recovery when the browser resets the
+    graphics;
+  - a documented supported scope.
+
+  This is **release 1.0.0**: see [Release](#release-100).
 
 See [Roadmap](#roadmap).
 
@@ -72,7 +80,83 @@ npm run dev        # http://localhost:5173
                    #   &start=1 (skip the start screen) · ?tutorial=1 (the tutorial)
 npm test           # simulation tests (vitest)
 npm run build      # typecheck + production bundle in dist/
+npm run bench      # simulation performance scenarios (see Release)
 ```
+
+## Release 1.0.0
+
+### Play it
+
+- **Locally:** run `npm install`, then `npm run build`, then
+  `npm run preview`, and open the address it prints (by default
+  http://localhost:4173).
+- **Hosted:** copy the `dist/` folder to any static web host. It works
+  from a subfolder too (paths are relative), and needs no server code.
+  About 230 KB to download (gzipped).
+- **Saves and settings** stay in that browser's storage, per site
+  address. Export a save to a file (Menu › Save game › Export) to keep it
+  or move it.
+
+### What it needs
+
+- A desktop browser with **WebGL 2**: current Chrome, Edge, Firefox or
+  Safari. Without it, the page says so instead of starting.
+- A **mouse and keyboard**. Touch screens are not supported.
+- Interface scaling (Settings › Interface) uses CSS `zoom`: Firefox needs
+  version 126 or later; older versions show the interface at 100%.
+
+### Supported scope
+
+| | Supported | Verified |
+| --- | --- | --- |
+| Map size | 96 × 72 tiles (all three maps) | yes |
+| Players | you and one computer opponent | yes |
+| Units | 100 population each, about 150 units with the neutral camps | battle scenario: 128 units |
+| Headroom | | 272 units fighting at once |
+| Match length | any | 90 minutes: memory and save size flat |
+
+Simulation time per tick, measured with `npm run bench` (Node, one core of
+this build machine; a tick has 50 ms at 20 ticks a second):
+
+| Scenario | Units | Mean | 99th percentile | Worst (after warm-up) |
+| --- | --- | --- | --- | --- |
+| Hard vs Hard match, Twin Vales | up to 62 | 0.16 ms | 0.97 ms | 6 ms |
+| Max-population battle with economies | 128 | 0.26 ms | 1.3 ms | 5 ms |
+| 60 soldiers re-ordered across Rivercross | 100 | 0.39 ms | 3.3 ms | 7 ms |
+| Headroom: 2 × 120 soldiers | 272 | 0.78 ms | 4.1 ms | 11 ms |
+
+The first ticks of a match run cold, while the JavaScript engine compiles,
+and take up to about 50 ms once. `tests/performance.test.ts` guards the
+battle scenario with generous limits (mean under 5 ms, 99th percentile
+under 25 ms).
+
+Rendering a full battle in view takes about 230 draw calls and 160,000
+triangles, with shadows on. That is modest for any graphics card or
+integrated GPU made in the last decade. **The frame rate on real hardware
+is not measured:** this project's build machine renders in software at 1–3
+frames a second, which says nothing about a GPU. If a machine struggles,
+Settings › Graphics can turn shadows off, lower the rendering resolution
+and reduce effects.
+
+### Known limitations
+
+- **Single player only:** one computer opponent. Free-for-all, teams and
+  other modes are not built yet.
+- **Human playtesting:** balance and difficulty come from
+  computer-vs-computer playtests. People have not yet judged feel, pacing
+  and whether Hard feels hard.
+- **Style balance:** among the computer's styles, the Expander leads and
+  the Warden trails.
+- **The tutorial teaches the Crown only**; the objectives checklist follows
+  your faction.
+- **Saves live in browser storage** (about 360 KB each, so a handful fit).
+  Clearing site data removes them; export a save to keep it.
+- **Sound is synthesized**, and the Thornwild uses the Crown's sounds.
+- **Animation is posed from parts, not rigged:** it reads well at the game's
+  zoom, but looks stiff up close.
+- **While the tab is hidden the match does not run:** browsers stop
+  drawing hidden tabs, and the game steps with its frames. With *Pause
+  when the window loses focus* on (the default), it also pauses on blur.
 
 ## Controls
 
@@ -1741,6 +1825,52 @@ which are never shipped to players.
     The difficulty ladder holds. The Expander gains most from repair (its
     outlying Keeps survive raids), which widens the gap in style balance
     already listed as open.
+- **Phase I: measured, then fixed.** `npm run bench` and CPU profiles
+  found:
+  - **A group order to a blocked spot** (right-clicking the enemy Keep)
+    made every unit's A* search the whole walkable map: 3.3 ms per unit, so
+    45–66 ms ticks for 60 units. When no tile of the goal connects to the
+    start (checked with the map's connected regions), the search now aims
+    straight at the closest reachable tile, found in one pass over the
+    grid.
+  - **The A* inner loop** reallocated its heap and destructured each
+    neighbour. It now reuses typed arrays, with the same visiting order and
+    so the same paths: 0.9 ms → 0.27 ms per search.
+  - **Path smoothing** tested every point ahead one at a time, which was
+    quadratic in path length. It now gallops and bisects; every segment is
+    still checked clear.
+  - **A huge order still planned in one tick.** Each player now has a
+    search budget per tick (12,000 tiles); units over it plan a tick later.
+    It is per player, so no seat plans first.
+  - **Fog of war** was the largest steady cost. It now fills exact chord
+    spans per row, proved tile-for-tile identical to the old rule by a
+    test.
+  - **Faction role lookups** searched tables on every call; they are now
+    cached.
+
+  Steady-state worst ticks went from 50–85 ms to 6–20 ms, and a full Hard
+  match from 0.31 to 0.16 ms per tick.
+- **Phase I in the browser:**
+  - **Memory:** spawning and removing 50 units four times left 550 more GPU
+    geometries each round before the fix, and none after. An accelerated
+    Hard-vs-Hard match kept the JS heap between 23 and 29 MB and geometry
+    counts following the unit count. A 90-minute simulation kept a flat
+    heap (25 MB) and save size (about 360 KB).
+  - **Graphics reset:** a context lost and restored through
+    `WEBGL_lose_context` paused the match, said so, and resumed with the
+    scene intact.
+  - **No WebGL:** started with 3D disabled, the page explains what is
+    needed.
+  - **Hosting:** the production build loads from a subfolder on a plain
+    static server.
+  - **Frame cost:** a CPU profile of a full battle in the browser is 96%
+    native software rasterization; the game's own JavaScript is a small
+    part of each frame.
+- **Balance after Phase I** (the path changes alter play a little), re-run:
+  - Hard vs Normal 58–31 (1 draw), up from 50–36; Hard now also beats
+    Normal with the Warden style (11–7, previously 7–11).
+  - Normal vs Easy 82–7 (1 draw).
+  - Crown vs Thornwild 27–30 (3 draws).
 - **Not yet done:** human playtesting of feel and pacing, and frame-rate
   measurement on real GPUs. Software WebGL only manages ~2–3 fps, which says
   nothing about real hardware.
@@ -1832,6 +1962,21 @@ Phase H (done): a second faction, the Thornwild.
 - A computer that plays either faction.
 - A faction balance harness.
 
+Phase I (done): performance and release readiness.
+
+- A benchmark of representative scenarios.
+- Pathfinding fixes for large groups and unreachable goals.
+- Faster fog of war.
+- GPU memory freed as units die.
+- A clear failure without WebGL, and recovery from a graphics reset.
+- A documented supported scope and release notes (1.0.0).
+
+Still open from Phase I:
+
+- **Frame rate on real GPUs** has not been measured; only draw calls and
+  triangle counts have.
+- **Touch input** is not supported.
+
 Still open from Phase H:
 
 - **Free-for-all, team skirmishes and a wave-defence mode** are the other
@@ -1864,8 +2009,9 @@ Still open from Phase F:
 
 Still open from Phase E:
 
-- **Hard vs Normal** is a small edge in computer games, and Hard loses with
-  the Warden. Human playtests should decide whether Hard feels harder.
+- **Hard vs Normal:** since Phase I a clearer edge (58–31, every style),
+  but in computer games only. Human playtests should decide whether Hard
+  feels harder.
 - **Style balance:** the Expander is ahead (75–21 since repair) and the Warden behind.
   Expansions decide too much, and a raid that punishes greed better is the
   likely fix.

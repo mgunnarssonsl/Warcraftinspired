@@ -181,7 +181,7 @@ export class Screens {
           </div>
         </div>
       </div>
-      <p class="fine">Without an advantage the computer plays by exactly your rules: the same costs, the same fog of war, no hidden information. An advantage is a cheat and is always shown as one. F1 in a match lists every control.</p>
+      <p class="fine">Without an advantage the computer plays by exactly your rules: the same costs, the same fog of war, no hidden information. An advantage is a cheat and is always shown as one. F1 in a match lists every control. Version ${__VERSION__}.</p>
       <div class="actions"><button class="primary" id="go">Start match</button></div>`,
     );
     const pick = (attr: string, fn: (v: string) => void) =>
