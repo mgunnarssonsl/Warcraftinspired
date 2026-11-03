@@ -132,7 +132,7 @@ export class Player {
     if (m.t === 'room') this.token = m.token;
     if (m.t === 'resume') {
       this.setup = m.setup;
-      const game = createMatch({ seed: m.setup.seed, mapId: m.setup.mapId, factions: m.setup.factions, names: m.setup.names, incomeBonus: [] });
+      const game = createMatch({ seed: m.setup.seed, mapId: m.setup.mapId, factions: m.setup.factions, names: m.setup.names, incomeBonus: [], rules: m.setup.rules });
       const apply = game.issue.bind(game);
       const send = (msg: Parameters<NetClient['send']>[0]) => {
         if (msg.t === 'hash') this.hashes.set(msg.turn, msg.hash);

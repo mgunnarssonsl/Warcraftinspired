@@ -14,6 +14,7 @@ import { CONFIG } from '../sim/config';
 import type { Command } from '../sim/commands';
 import { FACTIONS, type FactionId } from '../sim/factions';
 import { MAPS } from '../sim/maps';
+import type { MatchRules } from '../sim/rules';
 
 export const PROTOCOL_VERSION = 1;
 /** Simulation ticks per lockstep turn (2 ticks = 100 ms). */
@@ -39,6 +40,7 @@ export interface Seat {
 export interface RoomState {
   code: string;
   mapId: string;
+  rules: MatchRules;
   /** One entry per seat; null = open. Seat 0 is the host. */
   seats: Array<Seat | null>;
   started: boolean;
@@ -50,6 +52,8 @@ export interface MatchSetup {
   mapId: string;
   factions: FactionId[];
   names: string[];
+  /** Custom match rules chosen by the host (absent = standard). */
+  rules?: MatchRules;
 }
 
 export interface Turn {
@@ -64,6 +68,7 @@ export type ClientMsg =
   | { t: 'rejoin'; code: string; token: string; v: number }
   | { t: 'leave' }
   | { t: 'setMap'; mapId: string }
+  | { t: 'setRules'; rules: MatchRules }
   | { t: 'pick'; faction: FactionId }
   | { t: 'ready'; ready: boolean }
   | { t: 'cmds'; turn: number; cmds: Command[] }

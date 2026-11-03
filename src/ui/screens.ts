@@ -8,6 +8,7 @@ import { SLOTS, type SaveStore, type SlotId } from '../save/save';
 import { CONFIG, TICK_RATE } from '../sim/config';
 import type { Game } from '../sim/game';
 import { FACTION, FACTIONS, type FactionId } from '../sim/factions';
+import { DEFAULT_RULES, describeRules, isDefaultRules, RULE_CHOICES, type MatchRules } from '../sim/rules';
 import { mapById, MAPS } from '../sim/maps';
 import type { Settings } from './settings';
 import { settingsHtml, wireSettings, type SettingsTab } from './settingsPanel';
@@ -28,7 +29,19 @@ export interface MatchSettings {
   /** The viewer's faction, and the computer's: 'random' is fixed by the seed and shown from the start. */
   faction: FactionId;
   opponentFaction: FactionId | 'random';
+  /** Custom match rules (sim/rules.ts). */
+  rules: MatchRules;
 }
+
+/** How each rule's choices read on the start screen. */
+const RULE_LABELS: { [K in keyof MatchRules]: { title: string; label: (v: MatchRules[K]) => string } } = {
+  startGold: { title: 'Starting gold', label: (v) => String(v) },
+  startWood: { title: 'Starting wood', label: (v) => String(v) },
+  startWorkers: { title: 'Starting workers', label: (v) => String(v) },
+  maxPop: { title: 'Population limit', label: (v) => String(v) },
+  fog: { title: 'Map knowledge', label: (v) => (v === 'normal' ? 'Fog of war' : v === 'explored' ? 'Map explored' : 'No fog') },
+  camps: { title: 'Neutral camps', label: (v) => (v ? 'On' : 'Off') },
+};
 
 /** What the screens need from the running game (main.ts provides it). */
 export interface ScreenHost {
@@ -79,7 +92,11 @@ export function opponentLabel(s: MatchSettings, resolved: StyleId, reveal: boole
 }
 
 function matchParams(s: MatchSettings): Record<string, string> {
-  return { seed: String(s.seed), difficulty: s.difficulty, map: s.mapId, style: s.style, adv: s.advantage, faction: s.faction, vs: s.opponentFaction };
+  const r = s.rules ?? DEFAULT_RULES;
+  const custom: Record<string, string> = isDefaultRules(r)
+    ? {}
+    : { gold: String(r.startGold), wood: String(r.startWood), workers: String(r.startWorkers), pop: String(r.maxPop), fog: r.fog, camps: r.camps ? '1' : '0' };
+  return { seed: String(s.seed), difficulty: s.difficulty, map: s.mapId, style: s.style, adv: s.advantage, faction: s.faction, vs: s.opponentFaction, ...custom };
 }
 
 export function newSeed(): number {
@@ -146,6 +163,17 @@ export class Screens {
     let pickedAdv: AdvantageId = this.settings.advantage;
     let pickedFaction: FactionId = this.settings.faction;
     let pickedVs: FactionId | 'random' = this.settings.opponentFaction;
+    const pickedRules: MatchRules = { ...(this.settings.rules ?? DEFAULT_RULES) };
+    const ruleKeys = Object.keys(RULE_LABELS) as Array<keyof MatchRules>;
+    const rulesHtml = ruleKeys
+      .map((k) => {
+        const def = RULE_LABELS[k] as { title: string; label: (v: unknown) => string };
+        const chips = (RULE_CHOICES[k] as readonly unknown[])
+          .map((v, i) => `<button data-rule="${k}" data-ri="${i}" class="${v === pickedRules[k] ? 'picked' : ''}">${def.label(v)}${v === DEFAULT_RULES[k] ? '*' : ''}</button>`)
+          .join('');
+        return `<div class="rule"><span>${def.title}</span><div class="chips">${chips}</div></div>`;
+      })
+      .join('');
     const styles: Array<{ id: StyleId | 'random'; name: string; blurb: string }> = [
       { id: 'random', name: 'Random', blurb: 'One of the styles below, kept secret until the end of the match.' },
       ...(Object.entries(CONFIG.ai.styles) as Array<[StyleId, (typeof CONFIG.ai.styles)[StyleId]]>).map(([id, st]) => ({ id, name: st.name, blurb: st.blurb })),
@@ -198,6 +226,11 @@ export class Screens {
           </div>
         </div>
       </div>
+      <details class="rules" ${isDefaultRules(pickedRules) ? '' : 'open'}>
+        <summary>Match rules <span id="rules-summary">${escapeHtml(describeRules(pickedRules) || 'standard')}</span></summary>
+        ${rulesHtml}
+        <p class="fine">* the standard rules. The computer plays by the same rules as you.</p>
+      </details>
       <p class="fine">Without an advantage the computer plays by exactly your rules: the same costs, the same fog of war, no hidden information. An advantage is a cheat and is always shown as one. F1 in a match lists every control. Version ${__VERSION__}.</p>
       <div class="actions"><button class="primary" id="go">Start match</button></div>`,
     );
@@ -217,9 +250,19 @@ export class Screens {
     pick('a', (v) => (pickedAdv = v as AdvantageId));
     pick('f', (v) => (pickedFaction = v as FactionId));
     pick('v', (v) => (pickedVs = v as FactionId | 'random'));
+    this.root.querySelectorAll<HTMLButtonElement>('button[data-rule]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const k = b.dataset.rule as keyof MatchRules;
+        (pickedRules as unknown as Record<string, unknown>)[k] = (RULE_CHOICES[k] as readonly unknown[])[Number(b.dataset.ri)];
+        this.root.querySelectorAll<HTMLButtonElement>(`button[data-rule="${k}"]`).forEach((x) => x.classList.toggle('picked', x === b));
+        this.root.querySelector('#rules-summary')!.textContent = describeRules(pickedRules) || 'standard';
+      }),
+    );
     this.on('#go', () => {
-      const next: MatchSettings = { seed: this.settings.seed, difficulty: picked, mapId: pickedMap, style: pickedStyle, advantage: pickedAdv, faction: pickedFaction, opponentFaction: pickedVs };
-      const same = !this.host.tutorial && (Object.keys(next) as Array<keyof MatchSettings>).every((k) => next[k] === this.settings[k]);
+      const next: MatchSettings = { seed: this.settings.seed, difficulty: picked, mapId: pickedMap, style: pickedStyle, advantage: pickedAdv, faction: pickedFaction, opponentFaction: pickedVs, rules: { ...pickedRules } };
+      const same =
+        !this.host.tutorial &&
+        (Object.keys(next) as Array<keyof MatchSettings>).every((k) => (k === 'rules' ? JSON.stringify(next.rules) === JSON.stringify(this.settings.rules ?? DEFAULT_RULES) : next[k] === this.settings[k]));
       if (!same) startMatch(next);
       else this.close();
     });

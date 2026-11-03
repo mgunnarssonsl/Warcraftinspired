@@ -34,6 +34,7 @@ import type { Building, Entity, ResourceNode, Unit } from '../sim/types';
 import { findSite } from './placement';
 import { flareProblem } from '../sim/commands';
 import { buildingRole, FACTION, isWorker, unitFaction, unitRole, type BuildingRole, type Faction, type UnitRole } from '../sim/factions';
+import { rulesOf } from '../sim/rules';
 import { composeProfile, type Difficulty, type Profile, type ProfileOverrides, type StyleId } from './profile';
 import { len } from '../sim/dmath';
 
@@ -509,7 +510,7 @@ export class ComputerPlayer {
     const spare = game.popCap(P) - game.popUsed(P) - pending;
     const farmsBuilding = buildings.some((b) => isRole(b.type, 'farm') && b.progress < 1) || workers.some((w) => w.order?.type === 'build' && isRole(w.order.buildingType, 'farm'));
     const buffer = CONFIG.ai.popBuffer + 2 * count('barracks');
-    if (spare < buffer && game.popCap(P) < CONFIG.match.maxPop && !farmsBuilding) return 'farm';
+    if (spare < buffer && game.popCap(P) < rulesOf(game.state).maxPop && !farmsBuilding) return 'farm';
     // A hero-first style raises its Hall before the Barracks.
     if (this.profile.heroesEarly && count('altar') === 0 && workers.length >= this.profile.barracksAtWorkers) return 'altar';
     if (count('barracks') === 0 && workers.length >= this.profile.barracksAtWorkers) return 'barracks';

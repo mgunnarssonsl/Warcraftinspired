@@ -30,6 +30,7 @@ import {
   type Turn,
 } from '../src/net/protocol';
 import type { FactionId } from '../src/sim/factions';
+import { cleanRules, DEFAULT_RULES, isDefaultRules, type MatchRules } from '../src/sim/rules';
 
 export interface Conn {
   send(msg: ServerMsg): void;
@@ -53,6 +54,7 @@ interface SeatState {
 interface Room {
   code: string;
   mapId: string;
+  rules: MatchRules;
   seats: Array<SeatState | null>;
   setup: MatchSetup | null;
   /** Submissions waiting for the other seats: turn -> commands per seat. */
@@ -151,6 +153,7 @@ export class MatchServer {
     const room: Room = {
       code: this.code(),
       mapId: 'vales',
+      rules: DEFAULT_RULES,
       seats: [this.newSeat(conn, name), null],
       setup: null,
       pending: new Map(),
@@ -205,6 +208,7 @@ export class MatchServer {
     return {
       code: room.code,
       mapId: room.mapId,
+      rules: room.rules,
       seats: room.seats.map((s) => (s ? { name: s.name, faction: s.faction, ready: s.ready, connected: !!s.conn } : null)),
       started: !!room.setup,
     };
@@ -235,6 +239,12 @@ export class MatchServer {
         if (room.setup || seat !== 0) return reject('Only the host chooses the map, before the start.');
         if (!validMap(m.mapId)) return reject('Unknown map.');
         room.mapId = m.mapId;
+        for (const s of room.seats) if (s) s.ready = false;
+        return this.sendRoom(room);
+      case 'setRules':
+        if (room.setup || seat !== 0) return reject('Only the host sets the rules, before the start.');
+        // Only the values on offer are accepted (cleanRules falls back to the standard ones).
+        room.rules = cleanRules(m.rules);
         for (const s of room.seats) if (s) s.ready = false;
         return this.sendRoom(room);
       case 'pick':
@@ -275,6 +285,7 @@ export class MatchServer {
       mapId: room.mapId,
       factions: seats.map((s) => s.faction),
       names: seats.map((s) => s.name),
+      ...(isDefaultRules(room.rules) ? {} : { rules: room.rules }),
     };
     this.log(`room ${room.code}: started, ${JSON.stringify(room.setup)}`);
     seats.forEach((s, i) =>

@@ -26,6 +26,7 @@ import { newSeed, opponentLabel, Screens, type MatchSettings, type ScreenHost } 
 import { browserStorage, loadSettings, saveSettings, type Settings } from './ui/settings';
 import { TUTORIAL, TutorialPanel } from './ui/tutorial';
 import { view } from './ui/view';
+import { cleanRules, DEFAULT_RULES, describeRules, isDefaultRules } from './sim/rules';
 import { OnlineSession, type OnlineStart } from './net/session';
 import { createMatch, parseReplay, Recorder, ReplayPlayer, type MatchSpec, type ReplayFile } from './replay/replay';
 import { downloadReplay, PLAY_KEY, ReplayStore } from './replay/store';
@@ -86,6 +87,15 @@ const fromUrl: MatchSettings = {
   advantage: advParam && advParam in CONFIG.ai.advantages ? (advParam as AdvantageId) : 'none',
   faction: factionParam && FACTIONS.includes(factionParam) ? factionParam : 'crown',
   opponentFaction: vsParam && (vsParam === 'random' || FACTIONS.includes(vsParam)) ? vsParam : 'crown',
+  // Custom rules from the link; anything not on offer falls back to the standard value.
+  rules: cleanRules({
+    startGold: Number(params.get('gold') ?? DEFAULT_RULES.startGold),
+    startWood: Number(params.get('wood') ?? DEFAULT_RULES.startWood),
+    startWorkers: Number(params.get('workers') ?? DEFAULT_RULES.startWorkers),
+    maxPop: Number(params.get('pop') ?? DEFAULT_RULES.maxPop),
+    fog: params.get('fog') === 'explored' || params.get('fog') === 'revealed' ? params.get('fog') : 'normal',
+    camps: params.get('camps') !== '0',
+  }),
 };
 const onlineSeat = online?.resume.seat ?? 0;
 const specMatch = (spec: MatchSpec, seat: number): MatchSettings => ({
@@ -96,6 +106,7 @@ const specMatch = (spec: MatchSpec, seat: number): MatchSettings => ({
   advantage: 'none',
   faction: spec.factions[seat],
   opponentFaction: spec.factions[1 - seat],
+  rules: cleanRules(spec.rules ?? DEFAULT_RULES),
 });
 const match: MatchSettings = replayFile
   ? specMatch(replayFile.spec, replayFile.viewer)
@@ -108,11 +119,12 @@ const match: MatchSettings = replayFile
       advantage: 'none',
       faction: online.resume.setup.factions[onlineSeat],
       opponentFaction: online.resume.setup.factions[1 - onlineSeat],
+      rules: cleanRules(online.resume.setup.rules ?? DEFAULT_RULES),
     }
   : saved
-  ? saved.match
+  ? { ...saved.match, rules: cleanRules(saved.state.rules ?? DEFAULT_RULES) }
   : tutorial
-    ? { seed: TUTORIAL.seed, difficulty: TUTORIAL.difficulty, mapId: TUTORIAL.mapId, style: 'balanced', advantage: 'none', faction: 'crown', opponentFaction: 'crown' }
+    ? { seed: TUTORIAL.seed, difficulty: TUTORIAL.difficulty, mapId: TUTORIAL.mapId, style: 'balanced', advantage: 'none', faction: 'crown', opponentFaction: 'crown', rules: DEFAULT_RULES }
     : fromUrl;
 // A random style is fixed by the seed: the same match plays the same opponent.
 const playedStyle: StyleId = match.style === 'random' ? randomStyle(match.seed) : match.style;
@@ -123,7 +135,7 @@ const opponentFaction: FactionId = match.opponentFaction === 'random' ? randomFa
 const spec: MatchSpec | null = replayFile
   ? replayFile.spec
   : online
-    ? { seed: online.resume.setup.seed, mapId: online.resume.setup.mapId, factions: online.resume.setup.factions, names: online.resume.setup.names, incomeBonus: [] }
+    ? { seed: online.resume.setup.seed, mapId: online.resume.setup.mapId, factions: online.resume.setup.factions, names: online.resume.setup.names, incomeBonus: [], rules: online.resume.setup.rules }
     : saved
       ? (saved.replay?.spec ?? null)
       : {
@@ -133,6 +145,7 @@ const spec: MatchSpec | null = replayFile
           names: ['You', `Computer (${match.difficulty})`],
           // The only advantage a computer can have: chosen up front, shown as a cheat.
           incomeBonus: [0, CONFIG.ai.advantages[match.advantage].income],
+          ...(isDefaultRules(match.rules) ? {} : { rules: match.rules }),
         };
 const game = replayPlayer
   ? replayPlayer.game
@@ -318,6 +331,7 @@ subtitle.textContent = replayFile
   : tutorial
   ? 'tutorial'
   : `${FACTION[game.player(client.player).faction].name} vs ${FACTION[game.player(1 - client.player).faction].name} (${opponentLabel(match, playedStyle, false)} computer)`;
+if (describeRules(match.rules)) subtitle.append(` · ${describeRules(match.rules)}`);
 if (match.advantage !== 'none' && !replayFile) {
   const cheat = document.createElement('span');
   cheat.className = 'cheat';

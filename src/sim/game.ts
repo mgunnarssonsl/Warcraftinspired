@@ -2,6 +2,7 @@
 // and advances the simulation one fixed tick at a time. Rendering, input and
 // AI never mutate state directly; they submit Commands.
 
+import { DEFAULT_RULES, isDefaultRules, rulesOf, type MatchRules } from './rules';
 import { FACTION, isHealer, isWorker, type FactionId } from './factions';
 import { updateRegrowth } from './regrowth';
 import { updateGrowth } from './construction';
@@ -55,8 +56,9 @@ export class Game {
   }
 
   /** Build the skirmish starting state for a map and seed. */
-  static create(seed: number, mapId?: string, factions: FactionId[] = []): Game {
+  static create(seed: number, mapId?: string, factions: FactionId[] = [], customRules?: MatchRules): Game {
     const layout = generateMap(seed, mapId);
+    const rules = customRules ?? DEFAULT_RULES;
     const state: GameState = {
       seed,
       mapId: layout.def.id,
@@ -70,8 +72,8 @@ export class Game {
           id: i,
           name: i === 0 ? 'You' : 'Rival',
           color: PLAYER_COLORS[i],
-          gold: CONFIG.match.startGold,
-          wood: CONFIG.match.startWood,
+          gold: rules.startGold,
+          wood: rules.startWood,
           goldGathered: 0,
           woodGathered: 0,
           neutral: false,
@@ -89,6 +91,7 @@ export class Game {
       projectiles: [],
       outcome: null,
       victoryRules: true,
+      ...(customRules && !isDefaultRules(customRules) ? { rules: customRules } : {}),
       explored: [],
       starts: layout.starts.map((s) => ({ x: s.hq.tx + CONFIG.buildings.hq.size / 2, y: s.hq.ty + CONFIG.buildings.hq.size / 2 })),
       items: [],
@@ -110,7 +113,7 @@ export class Game {
     layout.starts.forEach((s, p) => {
       const f = FACTION[game.player(p).faction];
       const hq = game.addBuilding(f.buildings.hq, p, s.hq.tx, s.hq.ty);
-      game.spawnUnitsNear(f.units.worker, p, hq, CONFIG.match.startWorkers);
+      game.spawnUnitsNear(f.units.worker, p, hq, rules.startWorkers);
     });
     // Hostile camps guard the contested mines. Mines come in mirrored pairs;
     // the second camp of each pair is the exact mirror of the first.
@@ -156,13 +159,13 @@ export class Game {
       });
     };
     const size = CONFIG.resources.goldmine.size;
-    for (let i = 0; i < layout.mines.length; i += 2) {
+    for (let i = 0; i < (rules.camps ? layout.mines.length : 0); i += 2) {
       const m = layout.mines[i];
       if (!m.camp) continue;
       const level = m.camp as 1 | 2 | 3;
       addCampPair(level, m.tx + size / 2, m.ty + size / 2, CONFIG.campLevels[level], { tx: m.tx, ty: m.ty, w: size, h: size }, pickDrop(level));
     }
-    for (let i = 0; i < layout.lairs.length; i += 2) {
+    for (let i = 0; i < (rules.camps ? layout.lairs.length : 0); i += 2) {
       const l = layout.lairs[i];
       // A lair's treasure is one tier better than its guards' level.
       const tier = Math.min(3, l.level + 1) as 2 | 3;
@@ -172,6 +175,12 @@ export class Game {
       // Map-authored objectives; public map knowledge, like the mines.
       for (const o of layout.objectives) game.addBuilding(o.type, neutral, o.tx, o.ty).seenBy = (1 << state.players.length) - 1;
     } else game.placeObjectives(neutral);
+    // Custom rule: the map is known from the start (terrain, mines, camps' places).
+    if (rules.fog !== 'normal') {
+      game.vision.recompute();
+      for (const exp of state.explored) exp.fill(1);
+      game.vision.recompute();
+    }
     return game;
   }
 
@@ -318,7 +327,7 @@ export class Game {
     let n = 0;
     for (const b of this.buildings())
       if (b.owner === player && b.progress >= 1) n += CONFIG.buildings[b.type].popProvided;
-    return Math.min(n, CONFIG.match.maxPop);
+    return Math.min(n, rulesOf(this.state).maxPop);
   }
 
   idleWorkers(player: number): Unit[] {

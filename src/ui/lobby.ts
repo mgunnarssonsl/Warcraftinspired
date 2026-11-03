@@ -9,8 +9,24 @@ import type { RoomState, ServerMsg } from '../net/protocol';
 import { storeSeat } from '../net/session';
 import { FACTION, FACTIONS, type FactionId } from '../sim/factions';
 import { MAPS, mapById } from '../sim/maps';
+import { describeRules, RULE_CHOICES, type MatchRules } from '../sim/rules';
 
 const NAME_KEY = 'ironvale.name';
+
+const RULE_TITLES: Record<keyof MatchRules, string> = {
+  startGold: 'Starting gold',
+  startWood: 'Starting wood',
+  startWorkers: 'Starting workers',
+  maxPop: 'Population limit',
+  fog: 'Map knowledge',
+  camps: 'Neutral camps',
+};
+
+function ruleValue(k: keyof MatchRules, v: unknown): string {
+  if (k === 'fog') return v === 'normal' ? 'Fog of war' : v === 'explored' ? 'Map explored' : 'No fog';
+  if (k === 'camps') return v ? 'On' : 'Off';
+  return String(v);
+}
 
 function esc(t: string): string {
   return t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -144,6 +160,19 @@ export class Lobby {
           <p class="fine">${me ? esc(FACTION[me.faction].blurb) : ''}</p>
         </div>
       </div>
+      <h3>Match rules${host ? '' : ' (the host chooses)'}</h3>
+      ${
+        host
+          ? (Object.keys(RULE_CHOICES) as Array<keyof MatchRules>)
+              .map(
+                (k) =>
+                  `<div class="rule"><span>${RULE_TITLES[k]}</span><div class="chips">${(RULE_CHOICES[k] as readonly unknown[])
+                    .map((v, i) => `<button data-rk="${k}" data-ri="${i}" class="${room.rules[k] === v ? 'picked' : ''}">${ruleValue(k, v)}</button>`)
+                    .join('')}</div></div>`,
+              )
+              .join('')
+          : `<p class="fine">${esc(describeRules(room.rules) || 'Standard rules.')}</p>`
+      }
       <p class="fine" id="lobby-msg">${esc(this.message)}</p>
       <div class="actions">
         <button id="lobby-leave">Leave</button>
@@ -153,6 +182,13 @@ export class Lobby {
     root.querySelectorAll<HTMLButtonElement>('[data-map]').forEach((b) => b.addEventListener('click', () => this.net?.send({ t: 'setMap', mapId: b.dataset.map! })));
     root.querySelectorAll<HTMLButtonElement>('[data-faction]').forEach((b) =>
       b.addEventListener('click', () => this.net?.send({ t: 'pick', faction: b.dataset.faction as FactionId })),
+    );
+    root.querySelectorAll<HTMLButtonElement>('[data-rk]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const k = b.dataset.rk as keyof MatchRules;
+        const rules = { ...room.rules, [k]: (RULE_CHOICES[k] as readonly unknown[])[Number(b.dataset.ri)] } as MatchRules;
+        this.net?.send({ t: 'setRules', rules });
+      }),
     );
     root.querySelector('#lobby-ready')!.addEventListener('click', () => this.net?.send({ t: 'ready', ready: !me?.ready }));
     root.querySelector('#lobby-leave')!.addEventListener('click', () => {

@@ -10,6 +10,7 @@ import type { Command } from '../sim/commands';
 import type { FactionId } from '../sim/factions';
 import { Game } from '../sim/game';
 import { stateHash } from '../sim/hash';
+import { cleanRules, type MatchRules } from '../sim/rules';
 
 export const REPLAY_FORMAT = 'ironvale-replay';
 export const REPLAY_VERSION = 1;
@@ -24,11 +25,13 @@ export interface MatchSpec {
   names: string[];
   /** The computer's labelled income advantage, per player (0 = none). */
   incomeBonus: number[];
+  /** Custom match rules (absent = the standard ones). */
+  rules?: MatchRules;
 }
 
 /** Build a match from its spec: the one way matches are made, so a replay rebuilds the same one. */
 export function createMatch(spec: MatchSpec): Game {
-  const game = Game.create(spec.seed, spec.mapId, spec.factions);
+  const game = Game.create(spec.seed, spec.mapId, spec.factions, spec.rules ? cleanRules(spec.rules) : undefined);
   spec.names.forEach((n, i) => {
     if (game.state.players[i]) game.player(i).name = n;
   });

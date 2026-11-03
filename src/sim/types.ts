@@ -438,6 +438,8 @@ export interface GameState {
   outcome: Outcome | null;
   /** Elimination rules active (skirmishes); off in rule-test sandboxes. */
   victoryRules: boolean;
+  /** Custom match rules (sim/rules.ts); absent = the standard ones. */
+  rules?: import('./rules').MatchRules;
   /** Per player, per tile: 1 once ever seen (fog of war). */
   explored: number[][];
   /** Starting Keep centre per player: public map knowledge, like any 1v1 map. */

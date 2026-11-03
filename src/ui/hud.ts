@@ -2,6 +2,7 @@
 // button, notifications and the controls overlay. Reads state; issues actions
 // through the InputController.
 
+import { rulesOf } from '../sim/rules';
 import { buildableFor, buildingFaction, buildingRole, FACTION, isHall, isHealer, isWorker } from '../sim/factions';
 import { hpColor, teamColor } from './view';
 import { UNIT_ICONS } from './icons';
@@ -90,7 +91,7 @@ interface ActionDef {
 
 const BUILD_TIPS: Record<BuildingType, string> = {
   hq: 'Keep: accepts gold and wood, +10 population. Build one near a distant mine to expand.',
-  farm: `Farm: +6 population (up to the maximum of ${CONFIG.match.maxPop}).`,
+  farm: 'Farm: +6 population (up to the match maximum).',
   lumbermill: 'Lumber Mill: accepts wood. Build it beside a forest to shorten wood trips. Enables Archers.',
   barracks: 'Barracks: trains Guards and Archers, and Lancers from tier II.',
   tower: 'Watch Tower: shoots enemies within 7 tiles.',
@@ -101,7 +102,7 @@ const BUILD_TIPS: Record<BuildingType, string> = {
   shop: 'Trading Post (neutral): a hero standing next to it can buy items.',
   fountain: 'Healing Fountain (neutral): heals every unit nearby, friend or foe.',
   heartwood: 'Heartwood: accepts gold and wood, +10 population. Plant one near a distant mine to expand. Grows on its own.',
-  grove: `Grove: +7 population (up to the maximum of ${CONFIG.match.maxPop}). Grows on its own.`,
+  grove: 'Grove: +7 population (up to the match maximum). Grows on its own.',
   saplodge: 'Sap Lodge: accepts wood. Plant it beside a forest. Enables Briar Slingers.',
   den: 'Thicket Den: trains Thornguards, Briar Slingers and Fox Scouts, and Stag Riders from tier II.',
   spire: 'Thorn Spire: shoots enemies within 7 tiles.',
@@ -411,10 +412,10 @@ export class Hud {
         this.notify('Construction cancelled; resources partly refunded.');
       } else if (e.type === 'popBlocked' && e.player === this.client.player) {
         // At the maximum, more Farms add nothing: say so instead of sending the player to build them.
-        const max = this.game.popCap(e.player) >= CONFIG.match.maxPop;
+        const max = this.game.popCap(e.player) >= rulesOf(this.game.state).maxPop;
         this.notify(
           max
-            ? `Population maximum reached (${CONFIG.match.maxPop}). More Farms won't add more; lose or replace units to make room.`
+            ? `Population maximum reached (${rulesOf(this.game.state).maxPop}). More Farms won't add more; lose or replace units to make room.`
             : 'Not enough population: build more Farms.',
           'alert',
         );
@@ -450,7 +451,7 @@ export class Hud {
     setText(this.wood, String(p.wood));
     const used = this.game.popUsed(p.id);
     const cap = this.game.popCap(p.id);
-    const atMax = cap >= CONFIG.match.maxPop;
+    const atMax = cap >= rulesOf(this.game.state).maxPop;
     setText(this.pop, atMax ? `${used}/${cap} max` : `${used}/${cap}`);
     this.pop.classList.toggle('full', used >= cap);
     if (atMax !== this.popAtMax) {
@@ -458,8 +459,8 @@ export class Hud {
       setTip(
         this.pop.parentElement!,
         atMax
-          ? `You have the maximum population of ${CONFIG.match.maxPop}. More ${this.myBuilding('farm')}s won't raise it further.`
-          : `Population used / available. ${this.myBuilding('hq')}s and ${this.myBuilding('farm')}s raise it, up to ${CONFIG.match.maxPop}.`,
+          ? `You have the maximum population of ${rulesOf(this.game.state).maxPop}. More ${this.myBuilding('farm')}s won't raise it further.`
+          : `Population used / available. ${this.myBuilding('hq')}s and ${this.myBuilding('farm')}s raise it, up to ${rulesOf(this.game.state).maxPop}.`,
         null,
         'Population',
       );
@@ -755,8 +756,8 @@ export class Hud {
     if (head) {
       const name = nameOf(head);
       const verb = head.research ? 'Researching' : head.revive ? 'Reviving' : 'Training';
-      const maxed = this.game.popCap(this.client.player) >= CONFIG.match.maxPop;
-      status = head.started ? `${verb} ${name} ${Math.floor(head.progress * 100)}%` : `${name} waiting for population (${maxed ? `at the maximum of ${CONFIG.match.maxPop}` : 'build Farms'})`;
+      const maxed = this.game.popCap(this.client.player) >= rulesOf(this.game.state).maxPop;
+      status = head.started ? `${verb} ${name} ${Math.floor(head.progress * 100)}%` : `${name} waiting for population (${maxed ? `at the maximum of ${rulesOf(this.game.state).maxPop}` : 'build Farms'})`;
     }
     row('Production', status);
     if (trainableAt(b.type).length) row('Rally point', b.rally ? 'set (right-click to move it)' : 'none (right-click to set)');

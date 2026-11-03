@@ -9,6 +9,7 @@
 // buildings, has seen).
 
 import { CONFIG } from './config';
+import { rulesOf } from './rules';
 import type { Game } from './game';
 import type { Building, Entity, RememberedBuilding, Unit } from './types';
 
@@ -102,7 +103,9 @@ export class Vision {
     const state = game.state;
     while (this.visible.length < state.players.length) this.visible.push(new Uint8Array(w * h));
     while (state.explored.length < state.players.length) state.explored.push(new Array(w * h).fill(0));
-    for (const v of this.visible) v.fill(0);
+    // No fog (a custom rule): every player sees the whole map, always.
+    const fog = rulesOf(state).fog;
+    for (const v of this.visible) v.fill(fog === 'revealed' ? 1 : 0);
     const reveal = (p: number, x: number, y: number, r: number) => {
       const vis = this.visible[p];
       if (!vis) return;
