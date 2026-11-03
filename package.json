@@ -11,7 +11,8 @@
     "test": "vitest run",
     "playtest": "vitest run -c vitest.playtest.config.ts",
     "bench": "vite-node scripts/bench.ts --",
-    "server": "vite-node server/main.ts -- --serve"
+    "server": "vite-node server/main.ts -- --serve",
+    "analytics": "vite-node scripts/analytics.ts --"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
