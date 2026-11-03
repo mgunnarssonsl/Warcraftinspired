@@ -438,6 +438,8 @@ export interface GameState {
   outcome: Outcome | null;
   /** Elimination rules active (skirmishes); off in rule-test sandboxes. */
   victoryRules: boolean;
+  /** A challenge being played (sim/scenarios.ts). */
+  scenario?: import('./scenarios').ScenarioState;
   /** Custom match rules (sim/rules.ts); absent = the standard ones. */
   rules?: import('./rules').MatchRules;
   /** Per player, per tile: 1 once ever seen (fog of war). */
@@ -473,6 +475,7 @@ export type GameEvent =
   | { type: 'chop'; x: number; y: number }
   | { type: 'buildingComplete'; player: number; id: number; x: number; y: number }
   | { type: 'cantBuild'; player: number; reason: string; x: number; y: number }
+  | { type: 'waveIncoming'; wave: number; of: number }
   | { type: 'constructionCancelled'; player: number; x: number; y: number }
   | { type: 'unitTrained'; player: number; id: number; x: number; y: number }
   | { type: 'popBlocked'; player: number; buildingId: number }

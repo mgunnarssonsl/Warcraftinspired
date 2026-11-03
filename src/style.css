@@ -1145,3 +1145,6 @@ details.rules summary { cursor: pointer; font-weight: 600; }
 details.rules summary span { font-weight: 400; opacity: 0.75; margin-left: 0.5rem; }
 .rule { display: flex; align-items: center; gap: 0.6rem; margin: 0.25rem 0; flex-wrap: wrap; }
 .rule > span { min-width: 9rem; font-size: 13px; opacity: 0.85; }
+.slot.challenge span { display: block; }
+.slot.challenge .goal { color: #f0d68a; }
+.slot.challenge .best { opacity: 0.8; font-style: italic; }

@@ -2,6 +2,7 @@
 // and advances the simulation one fixed tick at a time. Rendering, input and
 // AI never mutate state directly; they submit Commands.
 
+import { updateScenario } from './scenarios';
 import { DEFAULT_RULES, isDefaultRules, rulesOf, type MatchRules } from './rules';
 import { FACTION, isHealer, isWorker, type FactionId } from './factions';
 import { updateRegrowth } from './regrowth';
@@ -553,6 +554,7 @@ export class Game {
     const alive = units.filter((u) => this.state.entities[u.id]);
     updateMovement(this, alive);
     updateCombat(this, alive);
+    if (this.state.scenario) updateScenario(this);
     checkOutcome(this);
     if (this.state.tick % secondsToTicks(CONFIG.match.historySeconds) === 0) this.sampleHistory();
     this.state.tick++;

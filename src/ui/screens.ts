@@ -16,8 +16,10 @@ import { summaryHtml } from './summary';
 import { Lobby } from './lobby';
 import { parseReplay, type ReplayFile } from '../replay/replay';
 import type { ReplayStore } from '../replay/store';
+import { SCENARIO_IDS, SCENARIOS, scenarioMedal, type ScenarioId } from '../sim/scenarios';
+import { MEDAL_ICON, type ChallengeBest } from './challenge';
 
-export type Modal = 'start' | 'menu' | 'end' | 'settings' | 'saves' | 'lobby' | 'desync' | 'replays' | null;
+export type Modal = 'start' | 'menu' | 'end' | 'settings' | 'saves' | 'lobby' | 'desync' | 'replays' | 'challenges' | null;
 
 export interface MatchSettings {
   seed: number;
@@ -67,6 +69,9 @@ export interface ScreenHost {
   downloadReplay(file: ReplayFile): void;
   /** True while watching a replay. */
   watching: boolean;
+  /** Set while playing a challenge. */
+  challenge: { id: ScenarioId; faction: FactionId } | null;
+  challengeBests(): Partial<Record<ScenarioId, ChallengeBest>>;
   /** Set during an online match: the players, and how to leave it (forfeiting if it is on). */
   online: { names: string[]; leave(): void; diagnostics(): string } | null;
 }
@@ -121,6 +126,8 @@ export class Screens {
   onSurrender: () => void = () => {};
   /** How the viewer was defeated, recorded from simulation events. */
   defeatReason: 'eliminated' | 'surrendered' | null = null;
+  /** Set when a challenge result just beat the best so far. */
+  challengeBest = false;
   /** How the (last) opponent was defeated. */
   foeDefeatReason: 'eliminated' | 'surrendered' | null = null;
   /** The style the computer actually plays, and its decision journal. */
@@ -190,6 +197,7 @@ export class Screens {
         <button id="tutorial"><b>Tutorial</b><span>New here? Learn the basics in about ten minutes.</span></button>
         ${latestInfo ? `<button id="continue"><b>Continue</b><span>${this.slotLine(latest!)}</span></button>` : ''}
         <button id="online"><b>Play online…</b><span>A private match against a friend, with a code.</span></button>
+        <button id="challenges"><b>Challenges…</b><span>Hold the Line, Gold Rush, Hero Trial: fixed goals, medals to earn.</span></button>
         <button id="replays"><b>Replays…</b><span>Watch a recent match again, or a replay file.</span></button>
         <button id="load"><b>Load a saved game…</b><span>From a slot or a file.</span></button>
         <button id="settings"><b>Settings</b><span>Sound, graphics, camera, interface, controls.</span></button>
@@ -271,7 +279,39 @@ export class Screens {
     this.on('#load', () => this.showSaves('load', 'start'));
     this.on('#online', () => this.showLobby());
     this.on('#replays', () => this.showReplays());
+    this.on('#challenges', () => this.showChallenges());
     this.on('#settings', () => this.showSettings('start'));
+  }
+
+  /** The challenges, with each one's best result here. */
+  showChallenges(): void {
+    const bests = this.host.challengeBests();
+    let faction: FactionId = 'crown';
+    this.open(
+      'challenges',
+      `<h2>Challenges</h2>
+      <p class="fine">Fixed scenarios with a goal of their own. Everyone plays the same map and start, so results compare. Win for a medal; better play earns a better one.</p>
+      <h3>Play as</h3>
+      <div class="chips">${FACTIONS.map((f) => `<button data-cf="${f}" class="${f === faction ? 'picked' : ''}">${FACTION[f].name}</button>`).join('')}</div>
+      <div class="slots">${SCENARIO_IDS.map((id) => {
+        const d = SCENARIOS[id];
+        const b = bests[id];
+        const best = b ? `Best: ${MEDAL_ICON[b.medal]} ${b.medal}, ${id === 'holdTheLine' ? `${b.losses} units lost` : fmtTime(b.ticks)} (${FACTION[b.faction as FactionId]?.name ?? b.faction})` : 'Not won yet';
+        return `<div class="slot challenge"><div><b>${d.name}</b><span>${escapeHtml(d.blurb)}</span><span class="goal">${escapeHtml(d.goal)}</span><span>${escapeHtml(d.medals)}</span><span class="best">${escapeHtml(best)}</span></div>
+          <div class="slot-actions"><button class="primary" data-challenge="${id}">Play</button></div></div>`;
+      }).join('')}</div>
+      <div class="actions"><button class="primary" id="back">Back</button></div>`,
+    );
+    this.root.querySelectorAll<HTMLButtonElement>('[data-cf]').forEach((b) =>
+      b.addEventListener('click', () => {
+        faction = b.dataset.cf as FactionId;
+        this.root.querySelectorAll('[data-cf]').forEach((x) => x.classList.toggle('picked', x === b));
+      }),
+    );
+    this.root.querySelectorAll<HTMLButtonElement>('[data-challenge]').forEach((b) =>
+      b.addEventListener('click', () => (location.search = new URLSearchParams({ challenge: b.dataset.challenge!, faction }).toString())),
+    );
+    this.on('#back', () => this.showStart());
   }
 
   /** Recent replays, and opening one from a file. */
@@ -404,7 +444,12 @@ export class Screens {
     this.on('#save', () => this.showSaves('save', 'menu'));
     this.on('#load', () => this.showSaves('load', 'menu'));
     this.on('#settings', () => this.showSettings('menu'));
-    this.on('#restart', () => (this.host.tutorial ? this.host.startTutorial() : startMatch(this.settings)));
+    this.on('#restart', () => {
+      const c = this.host.challenge;
+      if (c) location.search = new URLSearchParams({ challenge: c.id, faction: c.faction }).toString();
+      else if (this.host.tutorial) this.host.startTutorial();
+      else startMatch(this.settings);
+    });
     this.on('#new', () => {
       const q = new URLSearchParams(matchParams({ ...this.settings, seed: newSeed() }));
       location.search = q.toString();
@@ -528,6 +573,33 @@ export class Screens {
             : 'All of your buildings were destroyed.';
     const names: Record<number, string> = { [this.viewer]: 'You' };
     for (const p of this.game.state.players) if (!p.neutral && p.id !== this.viewer) names[p.id] = this.host.online ? escapeHtml(this.host.online.names[p.id] ?? 'Opponent') : 'Computer';
+    const c = this.host.challenge;
+    if (c) {
+      const def = SCENARIOS[c.id];
+      const medal = scenarioMedal(this.game);
+      const lost = this.game.player(this.viewer).stats.unitsLost;
+      const result = medal
+        ? `${MEDAL_ICON[medal]} ${medal[0].toUpperCase()}${medal.slice(1)} medal: ${c.id === 'holdTheLine' ? `${lost} units lost` : `done in ${fmtTime(o.tick)}`}.${this.challengeBest ? ' A new best!' : ''}`
+        : `${def.goal} Not this time: try again.`;
+      this.open(
+        'end',
+        `<h1 class="${medal ? 'victory' : 'defeat'}">${medal ? 'Challenge complete' : 'Challenge failed'}</h1>
+        <p class="lead">${escapeHtml(def.name)}: ${escapeHtml(result)}</p>
+        <p class="fine">${escapeHtml(def.medals)}</p>
+        ${summaryHtml(this.game, this.viewer, names)}
+        <div class="actions">
+          ${this.replayButtons()}
+          <button class="primary" id="again">Try again</button>
+          <button id="list">Challenges</button>
+          <button id="watch">Keep watching</button>
+        </div>`,
+      );
+      this.wireReplayButtons();
+      this.on('#again', () => (location.search = new URLSearchParams({ challenge: c.id, faction: c.faction }).toString()));
+      this.on('#list', () => this.showChallenges());
+      this.on('#watch', () => this.close());
+      return;
+    }
     if (this.host.online) {
       this.open(
         'end',

@@ -10,7 +10,8 @@ import type { Command } from '../sim/commands';
 import type { FactionId } from '../sim/factions';
 import { Game } from '../sim/game';
 import { stateHash } from '../sim/hash';
-import { cleanRules, type MatchRules } from '../sim/rules';
+import { cleanRules, DEFAULT_RULES, type MatchRules } from '../sim/rules';
+import { isScenario, SCENARIOS, setupScenario, type ScenarioId } from '../sim/scenarios';
 
 export const REPLAY_FORMAT = 'ironvale-replay';
 export const REPLAY_VERSION = 1;
@@ -27,11 +28,15 @@ export interface MatchSpec {
   incomeBonus: number[];
   /** Custom match rules (absent = the standard ones). */
   rules?: MatchRules;
+  /** A challenge (its own rules and script). */
+  scenario?: ScenarioId;
 }
 
 /** Build a match from its spec: the one way matches are made, so a replay rebuilds the same one. */
 export function createMatch(spec: MatchSpec): Game {
-  const game = Game.create(spec.seed, spec.mapId, spec.factions, spec.rules ? cleanRules(spec.rules) : undefined);
+  const rules = spec.scenario && isScenario(spec.scenario) ? cleanRules({ ...DEFAULT_RULES, ...SCENARIOS[spec.scenario].rules }) : spec.rules ? cleanRules(spec.rules) : undefined;
+  const game = Game.create(spec.seed, spec.mapId, spec.factions, rules);
+  if (spec.scenario && isScenario(spec.scenario)) setupScenario(game, spec.scenario);
   spec.names.forEach((n, i) => {
     if (game.state.players[i]) game.player(i).name = n;
   });
