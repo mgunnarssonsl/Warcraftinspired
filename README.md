@@ -71,6 +71,14 @@ computer opponents. No campaign or story.
   - a server that checks every command.
 
   See [Play online](#play-online).
+- Phase K: advanced tools, chosen for a clear purpose each:
+  - replays with an observer view;
+  - custom match rules;
+  - three challenge scenarios with medals;
+  - a map editor whose maps work in every mode;
+  - a balance analytics report.
+
+  See [Tools](#tools-replays-rules-challenges-map-editor-analytics).
 
 See [Roadmap](#roadmap).
 
@@ -90,7 +98,12 @@ npm test           # simulation tests (vitest)
 npm run build      # typecheck + production bundle in dist/
 npm run bench      # simulation performance scenarios (see Release)
 npm run server     # the online game server on http://localhost:8787 (see Play online)
+npm run analytics  # balance report from computer matches (see Tools)
 ```
+
+Pages: `?editor=1` the map editor · `?challenge=holdTheLine|goldRush|heroTrial&faction=crown|wild`
+a challenge · `?replay=1` plays the replay chosen from the start screen.
+Custom rules in a link: `&gold=1000&wood=500&workers=10&pop=150&fog=normal|explored|revealed&camps=0`.
 
 ## Play online
 
@@ -137,6 +150,133 @@ if given.
 - **If the two games ever disagree** (a desync, which would be a bug),
   the match stops and says so, and offers a diagnostics file for a bug
   report.
+
+## Tools: replays, rules, challenges, map editor, analytics
+
+Phase K's brief was to build these only if each serves a clear purpose.
+Five did; two were left out (see the roadmap).
+
+### Replays
+
+*Purpose:* review a match, learn from one, share one, and reproduce a bug
+exactly.
+
+- **What a replay is:** a match is its setup plus its commands, so a
+  replay is those: usually a few hundred kilobytes.
+- **What gets recorded:** every match but the tutorial, from every source
+  of commands (you, the computer, an online opponent).
+- **Saving and finding them:** the end screen offers *Watch the replay*
+  and *Save replay file*. The start screen's **Replays…** lists the last
+  five kept in this browser and opens replay files.
+- **Watching:**
+  - play and pause, at 0.5× to 16×;
+  - a timeline: forward fast-forwards, back replays from the start up to
+    the spot;
+  - whose view: either player's fog, or everything, and the camera goes
+    to them;
+  - an **observer panel** comparing both players: resources, gathering,
+    population, workers and army, army value, tier, upgrades, heroes,
+    what is in production, kills and losses.
+- **Version check:** state-hash checkpoints every minute flag a replay
+  that plays out differently. That means another game version recorded
+  it.
+- **Saves:** saves carry the log (save format 3), so a loaded match still
+  replays from its start.
+
+### Custom match rules
+
+*Purpose:* practice and variety, such as a rich start or no fog to learn
+a build.
+
+- **The rules:** starting gold and wood, starting workers, the population
+  limit (60–200), map knowledge (fog of war, map explored, or no fog) and
+  neutral camps on or off.
+- **Where:** in **Match rules** on the start screen, and in the online
+  lobby, where the host chooses.
+- **Carried everywhere:** they live in the game state, so saves, replays
+  and online play carry them.
+- **Safe values only:** only the values on offer are accepted, from a
+  link, a lobby or a file. The computer respects the population limit.
+
+### Challenges
+
+*Purpose:* teach particular skills, with something to aim for and replay
+value. Everyone plays the same map and start, so results compare.
+**Challenges…** on the start screen lists them with your best medals.
+
+| Challenge | Goal | Medals | Calibration |
+| --- | --- | --- | --- |
+| **Hold the Line** (wave defence) | Survive 10 growing waves of brigands marching on your base | Units lost: ≤ 8 gold, ≤ 20 silver | Easy fails or barely survives; Normal and Hard survive with about 30 lost (bronze) |
+| **Gold Rush** (economy) | Gather 5000 gold before 15:00 (no enemies) | Under 6:30 gold, 7:30 silver | A focused economy bot needs 6:28 (Crown) to 6:43 (Thornwild) |
+| **Hero Trial** (micro) | Clear every camp with a hero and a small warband, no economy, before 20:00 | Under 8:00 gold, 12:00 silver | A plain camp-clearing bot takes 6–11 minutes |
+
+How they run:
+
+- **Inside the simulation:** challenges run there, deterministic like
+  everything else, so replays and saves work. The rival seat is emptied
+  and the scenario decides the outcome itself.
+- **Scripted orders are set directly:** orders to scripted units are not
+  issued as commands, so replays do not repeat them.
+
+### Map editor
+
+*Purpose:* new maps, and with them new strategies, without touching
+code.
+
+- **Opening it:** **Map editor…** on the start screen, or `?editor=1`.
+- **What it edits:** a map is the same data the built-in maps are made
+  of, and the generator mirrors every feature, so an edited map is fair
+  by construction.
+- **The features:**
+  - the start;
+  - mines, with their kind and guard camp;
+  - lairs, Trading Posts and Fountains;
+  - lakes, groves and outcrops;
+  - forests;
+  - ridges with a gap, and rivers with fords;
+  - plateaus with ramps.
+
+  Start from a built-in map or from blank.
+- **Checked on every change:** the map is regenerated and checked
+  (`sim/mapdef.ts`):
+  - the bases are connected and far enough apart;
+  - the start mine is close;
+  - nothing sits on top of anything;
+  - every mine, camp and objective can be reached.
+
+  Problems show in plain words, and only a playable map can be played.
+- **Keeping and sharing:** maps are kept in the browser and exported or
+  imported as files. Saved maps appear on the start screen next to the
+  built-in ones.
+- **Works in every mode:** a map travels inside the game state, the match
+  spec and the online setup, so saves, replays and online matches work on
+  any machine. Online, the server checks a host's map before accepting
+  it.
+
+### Balance analytics
+
+*Purpose:* tuning with evidence. `npm run analytics -- --matches 60`
+plays computer-vs-computer matches and writes
+[`docs/balance-report.md`](docs/balance-report.md), with the raw numbers
+in JSON beside it:
+
+- win rates by faction, style, seat and map, and match lengths;
+- per unit type: trained, lost in battle, kills, damage dealt and taken,
+  healing, and damage or healing per 100 resources spent;
+- tier and expansion timings and gold by minute, per faction.
+
+**The committed 60-match run (Normal and Hard) shows:**
+
+- the Expander style's lead (84% of its non-mirror matches);
+- Thornwild ahead in this mixed sample (16–9);
+- ranged units and casters as the most cost-efficient damage (Archer,
+  Slinger, Mangonel about 400–420 per 100; melee about 220–270);
+- healers earning their place through healing (about 250–290 per 100)
+  rather than damage.
+
+Player 2 won 32 of 55. That is not significant at this sample size, about
+1.2 standard deviations from even, but it is worth watching in larger
+runs.
 
 ## Release 1.0.0
 
@@ -2065,6 +2205,49 @@ which are never shipped to players.
   turn flush looped forever and froze the whole server. It is fixed and
   has its own test, and one bad message or timer error can no longer
   bring the server down.
+- **Phase K tests:**
+  - `tests/replay.test.ts` (5):
+    - a whole computer match replays to the identical final state;
+    - so does a match saved, loaded and finished;
+    - so does an online match recorded by one player;
+    - a tampered replay is caught at the next checkpoint;
+    - non-replays are refused.
+  - `tests/rules.test.ts` (7):
+    - the standard rules leave matches byte-identical;
+    - starting resources, workers and no camps take effect;
+    - the computer stops farming at a 60 population limit;
+    - map explored and no fog take effect;
+    - odd values are refused;
+    - rules survive saves and replays;
+    - online, the host's rules are used, and only the host can set them.
+  - `tests/scenarios.test.ts` (5):
+    - Hold the Line loses when undefended;
+    - a Normal computer survives Hold the Line;
+    - Gold Rush wins and loses as it should;
+    - the Hero Trial bot clears the camps, and losing the hero loses;
+    - a challenge replays exactly.
+  - `tests/mapedit.test.ts` (5):
+    - copies of the built-in maps pass the check;
+    - malformed maps are refused;
+    - a walled-in base, bases in the middle, overlapping mines and an
+      unreachable mine are caught;
+    - a custom-map match is mirrored, saves, loads and replays;
+    - online, a custom map works, and an unplayable one is refused.
+- **Phase K in the browser:**
+  - **Replays:** a match surrendered, then *Watch the replay*. 16× ran
+    it, switching to the computer's view moved the camera there, the
+    observer panel filled in, and a jump back to 0:30 reloaded at the
+    right spot with view and speed kept. It ended with the same result.
+  - **Rules:** chosen on the start screen, they were applied (2500 gold,
+    no fog, no camps) and named in the subtitle.
+  - **Challenges:** Hold the Line, played as the Thornwild, showed the
+    goal and progress panel and wave alerts, then the failed-challenge
+    screen.
+  - **Map editor:** a lake was added. Dragging the base to the middle
+    gave three errors in plain words; putting it back gave *Playable and
+    fair · bases 84 tiles apart*. *Save and play* led to a match on the
+    new map.
+  - No console errors.
 - **Not yet done:** human playtesting of feel and pacing, and frame-rate
   measurement on real GPUs. For online play: a match between *different*
   browser engines, such as Chrome against Firefox or Safari. Only Chromium
@@ -2176,6 +2359,36 @@ Phase J (done): online play.
 - Command validation, adaptive input delay, rejoin with replay, a
   forfeit after 60 seconds away, and desync detection with diagnostics.
 - Tests on simulated and real networks.
+
+Phase K (done): advanced tools, each with a clear purpose.
+
+- Replays with an observer view.
+- Custom match rules.
+- Three challenges (wave defence, an economy race, a hero trial) with
+  medals.
+- A map editor whose maps work in every mode.
+- A balance analytics report.
+
+Left out on purpose:
+
+- **Mod support** (loading changed rules or content). The rules are
+  already data (`sim/config.ts`), so modding by editing that file and
+  building works today. A runtime mod loader would split players into
+  incompatible rule sets online, where both sides must run identical
+  rules. It would also widen what a file can do to the game, for no
+  player-facing gain yet.
+- **Live spectating of online matches.** Replays with the observer panel
+  cover reviewing and sharing matches. Live spectating means a third seat
+  in lockstep, and a delay so it cannot be used to scout for a player.
+  That is worth building only once online matches have regular players.
+
+Still open from Phase K:
+
+- **Challenge medals** are calibrated with computer players and bots;
+  people may find them easier or harder.
+- **The editor** edits feature data, not single tiles. That is enough for
+  fair mirrored maps, and it keeps them small enough to send online.
+  Custom maps are 96 × 72, the supported size.
 
 Still open from Phase J:
 
