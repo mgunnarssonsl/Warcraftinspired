@@ -12,7 +12,8 @@ import type { AiSnapshot } from '../ai/computer';
 import type { AdvantageId, Difficulty, StyleId } from '../ai/profile';
 import type { Command } from '../sim/commands';
 import type { FactionId } from '../sim/factions';
-import { mapById } from '../sim/maps';
+import { mapById, registerMap } from '../sim/maps';
+import { cleanMapDef } from '../sim/mapdef';
 import type { GameState } from '../sim/types';
 import type { ReplayLog } from '../replay/replay';
 
@@ -114,6 +115,11 @@ function shapeProblem(s: Record<string, unknown>): string | null {
   if (!Array.isArray(state.players) || state.players.length < 2) return 'no players';
   if (!state.map || !Array.isArray(state.map.terrain) || state.map.terrain.length !== state.map.width * state.map.height) return 'a broken map';
   if (!Array.isArray(state.explored) || !Array.isArray(state.memory) || !Array.isArray(state.history)) return 'no fog of war data';
+  if (state.mapDef) {
+    const clean = cleanMapDef(state.mapDef);
+    if (!clean.ok || clean.def.id !== state.mapId) return 'a damaged custom map';
+    registerMap(clean.def);
+  }
   if (mapById(state.mapId).id !== state.mapId) return `an unknown map "${String(state.mapId)}"`;
   const match = s.match as Partial<SavedMatch> | undefined;
   if (!match || typeof match.seed !== 'number') return 'no match settings';

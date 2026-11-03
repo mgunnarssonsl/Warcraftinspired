@@ -3,6 +3,7 @@
 // AI never mutate state directly; they submit Commands.
 
 import { updateScenario } from './scenarios';
+import { isCustomMap, registerMap, type MapDef } from './maps';
 import { DEFAULT_RULES, isDefaultRules, rulesOf, type MatchRules } from './rules';
 import { FACTION, isHealer, isWorker, type FactionId } from './factions';
 import { updateRegrowth } from './regrowth';
@@ -51,6 +52,8 @@ export class Game {
   onApply: ((tick: number, c: Command) => void) | null = null;
 
   constructor(state: GameState, visible?: string[]) {
+    // A custom map travels with its match (saves, replays): make it known here.
+    if (state.mapDef) registerMap(state.mapDef);
     this.state = state;
     this.nav = new NavGrid(state);
     this.vision = new Vision(this, visible);
@@ -92,6 +95,7 @@ export class Game {
       projectiles: [],
       outcome: null,
       victoryRules: true,
+      ...(isCustomMap(layout.def.id) ? { mapDef: JSON.parse(JSON.stringify(layout.def)) as MapDef } : {}),
       ...(customRules && !isDefaultRules(customRules) ? { rules: customRules } : {}),
       explored: [],
       starts: layout.starts.map((s) => ({ x: s.hq.tx + CONFIG.buildings.hq.size / 2, y: s.hq.ty + CONFIG.buildings.hq.size / 2 })),

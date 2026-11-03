@@ -1148,3 +1148,20 @@ details.rules summary span { font-weight: 400; opacity: 0.75; margin-left: 0.5re
 .slot.challenge span { display: block; }
 .slot.challenge .goal { color: #f0d68a; }
 .slot.challenge .best { opacity: 0.8; font-style: italic; }
+
+/* Map editor */
+#editor { display: flex; flex-direction: column; height: 100vh; background: #17130d; color: #eadcc0; }
+.ed-top { display: flex; align-items: center; gap: 1rem; padding: 0.5rem 1rem; border-bottom: 1px solid #3a2f20; }
+.ed-top .ed-back { margin-left: auto; color: #f0d68a; }
+.ed-body { display: flex; gap: 1rem; padding: 0.75rem 1rem; overflow: auto; flex: 1; }
+.ed-left { flex: none; }
+.ed-tools { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 0.5rem; max-width: 768px; }
+.ed-tools button.picked, .ed-panel button.picked { background: #f0d68a; color: #221c14; }
+#ed-canvas { width: 768px; height: 576px; border: 1px solid #3a2f20; cursor: crosshair; image-rendering: pixelated; }
+.ed-panel { width: 340px; flex: none; }
+.ed-panel input:not([type]), .ed-panel textarea { width: 100%; box-sizing: border-box; font: inherit; }
+.ed-panel .stack { display: flex; flex-direction: column; gap: 6px; margin: 0.5rem 0; }
+.ed-error { color: #ff8a7a; margin: 0.2rem 0; }
+.ed-warn { color: #f0c86a; margin: 0.2rem 0; }
+.ed-ok { color: #8fe88a; margin: 0.2rem 0; }
+.ed-maps > div { display: flex; gap: 4px; margin: 2px 0; }

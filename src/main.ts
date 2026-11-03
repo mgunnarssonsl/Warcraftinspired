@@ -38,7 +38,10 @@ function loadGame(): void {
 
 const problem = supportProblem();
 const onlineCode = new URLSearchParams(location.search).get('online');
-if (problem) showProblem(problem);
+if (new URLSearchParams(location.search).get('editor') === '1') {
+  // The map editor draws in 2D: it needs no WebGL.
+  import('./editor/editor').catch((e: unknown) => showProblem(`The map editor failed to start: ${e instanceof Error ? e.message : String(e)}`, true));
+} else if (problem) showProblem(problem);
 else if (onlineCode) {
   const seat = storedSeat(onlineCode);
   if (!seat) showProblem('This browser has no seat in that online match. Join it from the start screen with its code.', true);

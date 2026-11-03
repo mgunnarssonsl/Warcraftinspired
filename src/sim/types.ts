@@ -438,6 +438,8 @@ export interface GameState {
   outcome: Outcome | null;
   /** Elimination rules active (skirmishes); off in rule-test sandboxes. */
   victoryRules: boolean;
+  /** A custom map's definition, kept with the match so it can be rebuilt anywhere (absent for built-in maps). */
+  mapDef?: import('./maps').MapDef;
   /** A challenge being played (sim/scenarios.ts). */
   scenario?: import('./scenarios').ScenarioState;
   /** Custom match rules (sim/rules.ts); absent = the standard ones. */

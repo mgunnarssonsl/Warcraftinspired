@@ -9,7 +9,7 @@ import { CONFIG, TICK_RATE } from '../sim/config';
 import type { Game } from '../sim/game';
 import { FACTION, FACTIONS, type FactionId } from '../sim/factions';
 import { DEFAULT_RULES, describeRules, isDefaultRules, RULE_CHOICES, type MatchRules } from '../sim/rules';
-import { mapById, MAPS } from '../sim/maps';
+import { customMapList, isCustomMap, mapById, MAPS } from '../sim/maps';
 import type { Settings } from './settings';
 import { settingsHtml, wireSettings, type SettingsTab } from './settingsPanel';
 import { summaryHtml } from './summary';
@@ -211,7 +211,8 @@ export class Screens {
           </div>
           <h3>Map</h3>
           <div class="difficulty">
-            ${MAPS.map((m) => `<button data-m="${m.id}" class="${m.id === pickedMap ? 'picked' : ''}"><b>${m.name}</b><span>${m.blurb}</span></button>`).join('')}
+            ${[...MAPS, ...customMapList()].map((m) => `<button data-m="${m.id}" class="${m.id === pickedMap ? 'picked' : ''}"><b>${escapeHtml(m.name)}${isCustomMap(m.id) ? ' <small>(your map)</small>' : ''}</b><span>${escapeHtml(m.blurb)}</span></button>`).join('')}
+            <button id="editor"><b>Map editor…</b><span>Make your own map, or change one of these.</span></button>
           </div>
         </div>
         <div>
@@ -280,6 +281,7 @@ export class Screens {
     this.on('#online', () => this.showLobby());
     this.on('#replays', () => this.showReplays());
     this.on('#challenges', () => this.showChallenges());
+    this.on('#editor', () => (location.search = 'editor=1'));
     this.on('#settings', () => this.showSettings('start'));
   }
 

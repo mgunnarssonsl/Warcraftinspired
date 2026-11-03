@@ -193,6 +193,24 @@ export const MAPS: MapDef[] = [
   },
 ];
 
+/** Maps made in the editor, known to this page (registered from storage, a save, a replay or a lobby). */
+const customMaps = new Map<string, MapDef>();
+
+/** Custom maps' ids start with this, so they never clash with the built-in ones. */
+export const CUSTOM_PREFIX = 'custom-';
+
+export function isCustomMap(id: string): boolean {
+  return id.startsWith(CUSTOM_PREFIX);
+}
+
+export function registerMap(def: MapDef): void {
+  if (isCustomMap(def.id)) customMaps.set(def.id, def);
+}
+
+export function customMapList(): MapDef[] {
+  return [...customMaps.values()];
+}
+
 export function mapById(id: string | undefined): MapDef {
-  return MAPS.find((m) => m.id === id) ?? MAPS[0];
+  return (id ? customMaps.get(id) : undefined) ?? MAPS.find((m) => m.id === id) ?? MAPS[0];
 }

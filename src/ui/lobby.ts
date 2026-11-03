@@ -8,7 +8,7 @@ import { NetClient, serverUrl, websocketTransport } from '../net/client';
 import type { RoomState, ServerMsg } from '../net/protocol';
 import { storeSeat } from '../net/session';
 import { FACTION, FACTIONS, type FactionId } from '../sim/factions';
-import { MAPS, mapById } from '../sim/maps';
+import { customMapList, isCustomMap, MAPS, mapById } from '../sim/maps';
 import { describeRules, RULE_CHOICES, type MatchRules } from '../sim/rules';
 
 const NAME_KEY = 'ironvale.name';
@@ -151,8 +151,10 @@ export class Lobby {
       <div class="choices">
         <div>
           <h3>Map${host ? '' : ' (the host chooses)'}</h3>
-          <div class="chips">${MAPS.map((m) => `<button data-map="${m.id}" class="${m.id === room.mapId ? 'picked' : ''}" ${host ? '' : 'disabled'}>${m.name}</button>`).join('')}</div>
-          <p class="fine">${esc(mapById(room.mapId).blurb)}</p>
+          <div class="chips">${(host ? [...MAPS, ...customMapList()] : room.map ? [...MAPS, room.map] : MAPS)
+            .map((m) => `<button data-map="${m.id}" class="${m.id === room.mapId ? 'picked' : ''}" ${host ? '' : 'disabled'}>${esc(m.name)}${isCustomMap(m.id) ? ' (custom)' : ''}</button>`)
+            .join('')}</div>
+          <p class="fine">${esc((room.map ?? mapById(room.mapId)).blurb)}</p>
         </div>
         <div>
           <h3>Your faction</h3>
@@ -179,7 +181,13 @@ export class Lobby {
         <button class="primary" id="lobby-ready">${me?.ready ? 'Not ready' : 'Ready'}</button>
       </div>`,
     );
-    root.querySelectorAll<HTMLButtonElement>('[data-map]').forEach((b) => b.addEventListener('click', () => this.net?.send({ t: 'setMap', mapId: b.dataset.map! })));
+    root.querySelectorAll<HTMLButtonElement>('[data-map]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const id = b.dataset.map!;
+        // A custom map travels with the choice; the server checks it before accepting.
+        this.net?.send(isCustomMap(id) ? { t: 'setMap', mapId: id, map: mapById(id) } : { t: 'setMap', mapId: id });
+      }),
+    );
     root.querySelectorAll<HTMLButtonElement>('[data-faction]').forEach((b) =>
       b.addEventListener('click', () => this.net?.send({ t: 'pick', faction: b.dataset.faction as FactionId })),
     );

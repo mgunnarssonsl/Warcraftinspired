@@ -31,6 +31,8 @@ import {
 } from '../src/net/protocol';
 import type { FactionId } from '../src/sim/factions';
 import { cleanRules, DEFAULT_RULES, isDefaultRules, type MatchRules } from '../src/sim/rules';
+import { checkMap, cleanMapDef } from '../src/sim/mapdef';
+import type { MapDef } from '../src/sim/maps';
 
 export interface Conn {
   send(msg: ServerMsg): void;
@@ -54,6 +56,8 @@ interface SeatState {
 interface Room {
   code: string;
   mapId: string;
+  /** A custom map (checked), when the host chose one. */
+  map?: MapDef;
   rules: MatchRules;
   seats: Array<SeatState | null>;
   setup: MatchSetup | null;
@@ -209,6 +213,7 @@ export class MatchServer {
       code: room.code,
       mapId: room.mapId,
       rules: room.rules,
+      ...(room.map ? { map: room.map } : {}),
       seats: room.seats.map((s) => (s ? { name: s.name, faction: s.faction, ready: s.ready, connected: !!s.conn } : null)),
       started: !!room.setup,
     };
@@ -237,8 +242,19 @@ export class MatchServer {
         return;
       case 'setMap':
         if (room.setup || seat !== 0) return reject('Only the host chooses the map, before the start.');
-        if (!validMap(m.mapId)) return reject('Unknown map.');
-        room.mapId = m.mapId;
+        if (m.map !== undefined) {
+          // A custom map: only a well-formed, playable one.
+          const clean = cleanMapDef(m.map);
+          if (!clean.ok) return reject(`That map cannot be used: ${clean.reason}`);
+          const check = checkMap(clean.def);
+          if (check.errors.length) return reject(`That map is not playable: ${check.errors[0]}`);
+          room.map = clean.def;
+          room.mapId = clean.def.id;
+        } else {
+          if (!validMap(m.mapId)) return reject('Unknown map.');
+          room.map = undefined;
+          room.mapId = m.mapId;
+        }
         for (const s of room.seats) if (s) s.ready = false;
         return this.sendRoom(room);
       case 'setRules':
@@ -286,6 +302,7 @@ export class MatchServer {
       factions: seats.map((s) => s.faction),
       names: seats.map((s) => s.name),
       ...(isDefaultRules(room.rules) ? {} : { rules: room.rules }),
+      ...(room.map ? { map: room.map } : {}),
     };
     this.log(`room ${room.code}: started, ${JSON.stringify(room.setup)}`);
     seats.forEach((s, i) =>

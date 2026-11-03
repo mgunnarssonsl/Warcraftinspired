@@ -13,7 +13,7 @@
 import { CONFIG } from '../sim/config';
 import type { Command } from '../sim/commands';
 import { FACTIONS, type FactionId } from '../sim/factions';
-import { MAPS } from '../sim/maps';
+import { MAPS, type MapDef } from '../sim/maps';
 import type { MatchRules } from '../sim/rules';
 
 export const PROTOCOL_VERSION = 1;
@@ -40,6 +40,8 @@ export interface Seat {
 export interface RoomState {
   code: string;
   mapId: string;
+  /** The host's custom map, if one is chosen (so guests can see it before the start). */
+  map?: MapDef;
   rules: MatchRules;
   /** One entry per seat; null = open. Seat 0 is the host. */
   seats: Array<Seat | null>;
@@ -54,6 +56,8 @@ export interface MatchSetup {
   names: string[];
   /** Custom match rules chosen by the host (absent = standard). */
   rules?: MatchRules;
+  /** A custom map's definition (built-in maps are known by id). */
+  map?: MapDef;
 }
 
 export interface Turn {
@@ -67,7 +71,8 @@ export type ClientMsg =
   | { t: 'join'; code: string; name: string; v: number }
   | { t: 'rejoin'; code: string; token: string; v: number }
   | { t: 'leave' }
-  | { t: 'setMap'; mapId: string }
+  /** A built-in map by id, or a custom one with its definition. */
+  | { t: 'setMap'; mapId: string; map?: MapDef }
   | { t: 'setRules'; rules: MatchRules }
   | { t: 'pick'; faction: FactionId }
   | { t: 'ready'; ready: boolean }

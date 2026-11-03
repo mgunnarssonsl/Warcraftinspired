@@ -27,6 +27,8 @@ import { browserStorage, loadSettings, saveSettings, type Settings } from './ui/
 import { TUTORIAL, TutorialPanel } from './ui/tutorial';
 import { view } from './ui/view';
 import { cleanRules, DEFAULT_RULES, describeRules, isDefaultRules } from './sim/rules';
+import { registerStoredMaps } from './editor/mapStore';
+import { isCustomMap } from './sim/maps';
 import { isScenario, scenarioMedal, SCENARIOS, type ScenarioId } from './sim/scenarios';
 import { ChallengePanel, challengeBests, recordChallenge } from './ui/challenge';
 import { OnlineSession, type OnlineStart } from './net/session';
@@ -37,6 +39,8 @@ import { ReplayBar, type Vision } from './ui/replayBar';
 
 const params = new URLSearchParams(location.search);
 const storage = browserStorage();
+// Maps made in the editor (kept in this browser) are playable like the built-in ones.
+registerStoredMaps(storage);
 const store = new SaveStore(storage ?? { getItem: () => null, setItem: () => {}, removeItem: () => {} });
 const LOAD_KEY = 'ironvale.load';
 const tutorial = params.get('tutorial') === '1';
@@ -148,7 +152,7 @@ const spec: MatchSpec | null = replayFile
   : challengeSpec && !saved
   ? challengeSpec
   : online
-    ? { seed: online.resume.setup.seed, mapId: online.resume.setup.mapId, factions: online.resume.setup.factions, names: online.resume.setup.names, incomeBonus: [], rules: online.resume.setup.rules }
+    ? { seed: online.resume.setup.seed, mapId: online.resume.setup.mapId, factions: online.resume.setup.factions, names: online.resume.setup.names, incomeBonus: [], rules: online.resume.setup.rules, map: online.resume.setup.map }
     : saved
       ? (saved.replay?.spec ?? null)
       : {
@@ -159,6 +163,8 @@ const spec: MatchSpec | null = replayFile
           // The only advantage a computer can have: chosen up front, shown as a cheat.
           incomeBonus: [0, CONFIG.ai.advantages[match.advantage].income],
           ...(isDefaultRules(match.rules) ? {} : { rules: match.rules }),
+          // A custom map goes with the match, so its replay plays anywhere.
+          ...(isCustomMap(match.mapId) ? { map: mapById(match.mapId) } : {}),
         };
 const game = replayPlayer
   ? replayPlayer.game

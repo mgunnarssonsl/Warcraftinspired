@@ -10,6 +10,8 @@ import type { Command } from '../sim/commands';
 import type { FactionId } from '../sim/factions';
 import { Game } from '../sim/game';
 import { stateHash } from '../sim/hash';
+import { cleanMapDef } from '../sim/mapdef';
+import { registerMap, type MapDef } from '../sim/maps';
 import { cleanRules, DEFAULT_RULES, type MatchRules } from '../sim/rules';
 import { isScenario, SCENARIOS, setupScenario, type ScenarioId } from '../sim/scenarios';
 
@@ -30,10 +32,16 @@ export interface MatchSpec {
   rules?: MatchRules;
   /** A challenge (its own rules and script). */
   scenario?: ScenarioId;
+  /** A custom map's definition (built-in maps are known by id). */
+  map?: MapDef;
 }
 
 /** Build a match from its spec: the one way matches are made, so a replay rebuilds the same one. */
 export function createMatch(spec: MatchSpec): Game {
+  if (spec.map) {
+    const clean = cleanMapDef(spec.map);
+    if (clean.ok) registerMap(clean.def);
+  }
   const rules = spec.scenario && isScenario(spec.scenario) ? cleanRules({ ...DEFAULT_RULES, ...SCENARIOS[spec.scenario].rules }) : spec.rules ? cleanRules(spec.rules) : undefined;
   const game = Game.create(spec.seed, spec.mapId, spec.factions, rules);
   if (spec.scenario && isScenario(spec.scenario)) setupScenario(game, spec.scenario);
