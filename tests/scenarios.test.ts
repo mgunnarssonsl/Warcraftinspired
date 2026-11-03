@@ -89,7 +89,7 @@ describe('challenges', () => {
     // And without the hero it is over.
     const h = createMatch(spec('heroTrial'));
     const hero = h.units().find((u) => u.owner === 0 && u.hero)!;
-    kill(h, hero);
+    kill(h, hero, 1);
     for (let t = 0; t < 40 && !h.state.outcome; t++) h.step();
     expect(h.state.outcome?.winner).toBe(1);
   }, 120_000);
