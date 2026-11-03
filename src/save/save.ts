@@ -14,9 +14,10 @@ import type { Command } from '../sim/commands';
 import type { FactionId } from '../sim/factions';
 import { mapById } from '../sim/maps';
 import type { GameState } from '../sim/types';
+import type { ReplayLog } from '../replay/replay';
 
 export const SAVE_FORMAT = 'ironvale-save';
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 /** The match settings a save was started with (same shape as the start screen's). */
 export interface SavedMatch {
@@ -43,6 +44,8 @@ export interface SaveFile {
   ai: AiSnapshot[];
   /** The viewer's camera and control groups. */
   view: { player: number; camera: { x: number; y: number; distance: number }; groups: Record<number, number[]> };
+  /** The match's command log from its start, so it can still be replayed after loading (absent before version 3). */
+  replay?: ReplayLog;
 }
 
 export type ParseResult = { ok: true; save: SaveFile } | { ok: false; reason: string };
@@ -65,6 +68,9 @@ const MIGRATIONS: Record<number, (save: Record<string, unknown>) => Record<strin
     }
     return save;
   },
+  // 2 -> 3: the replay log joins the save. Older saves have none: they load
+  // and play as before, but cannot be replayed from their start.
+  2: (save) => save,
 };
 
 export function makeSave(parts: Omit<SaveFile, 'format' | 'version' | 'savedAt'>, now = new Date()): SaveFile {

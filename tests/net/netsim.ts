@@ -8,7 +8,8 @@ import { ComputerPlayer } from '../../src/ai/computer';
 import { NetClient, type Transport } from '../../src/net/client';
 import { Lockstep } from '../../src/net/lockstep';
 import type { MatchSetup, ServerMsg } from '../../src/net/protocol';
-import { Game } from '../../src/sim/game';
+import type { Game } from '../../src/sim/game';
+import { createMatch } from '../../src/replay/replay';
 import { stateHash } from '../../src/sim/hash';
 
 export class Clock {
@@ -71,6 +72,8 @@ export class Player {
   readonly hashes = new Map<number, string>();
   connected = false;
   private dropLink: () => void = () => {};
+  /** Called when this player's game is created (before it runs a tick). */
+  onGame: (game: Game, setup: MatchSetup) => void = () => {};
   /** Frame length for this player's machine (ms). */
   frameMs = 16;
   sinceFrame = 0;
@@ -129,7 +132,7 @@ export class Player {
     if (m.t === 'room') this.token = m.token;
     if (m.t === 'resume') {
       this.setup = m.setup;
-      const game = Game.create(m.setup.seed, m.setup.mapId, m.setup.factions);
+      const game = createMatch({ seed: m.setup.seed, mapId: m.setup.mapId, factions: m.setup.factions, names: m.setup.names, incomeBonus: [] });
       const apply = game.issue.bind(game);
       const send = (msg: Parameters<NetClient['send']>[0]) => {
         if (msg.t === 'hash') this.hashes.set(msg.turn, msg.hash);
@@ -139,6 +142,7 @@ export class Player {
       game.issue = (c) => lock.issue(c);
       lock.receiveLog(m.log, m.completed);
       this.game = game;
+      this.onGame(game, m.setup);
       this.lock = lock;
       // The computer playing this seat starts once caught up (a person would be waiting for the replay too).
       const ai = new ComputerPlayer(m.seat, this.difficulty);

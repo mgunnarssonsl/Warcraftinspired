@@ -13,8 +13,10 @@ import type { Settings } from './settings';
 import { settingsHtml, wireSettings, type SettingsTab } from './settingsPanel';
 import { summaryHtml } from './summary';
 import { Lobby } from './lobby';
+import { parseReplay, type ReplayFile } from '../replay/replay';
+import type { ReplayStore } from '../replay/store';
 
-export type Modal = 'start' | 'menu' | 'end' | 'settings' | 'saves' | 'lobby' | 'desync' | null;
+export type Modal = 'start' | 'menu' | 'end' | 'settings' | 'saves' | 'lobby' | 'desync' | 'replays' | null;
 
 export interface MatchSettings {
   seed: number;
@@ -44,6 +46,14 @@ export interface ScreenHost {
   loadError: string | null;
   /** True while playing the tutorial (no saving needed, different end). */
   tutorial: boolean;
+  /** Recent replays kept in this browser. */
+  replays: ReplayStore;
+  /** The replay of the match just finished, if it was recorded. */
+  lastReplay(): ReplayFile | null;
+  watchReplay(file: ReplayFile | string): void;
+  downloadReplay(file: ReplayFile): void;
+  /** True while watching a replay. */
+  watching: boolean;
   /** Set during an online match: the players, and how to leave it (forfeiting if it is on). */
   online: { names: string[]; leave(): void; diagnostics(): string } | null;
 }
@@ -152,6 +162,7 @@ export class Screens {
         <button id="tutorial"><b>Tutorial</b><span>New here? Learn the basics in about ten minutes.</span></button>
         ${latestInfo ? `<button id="continue"><b>Continue</b><span>${this.slotLine(latest!)}</span></button>` : ''}
         <button id="online"><b>Play online…</b><span>A private match against a friend, with a code.</span></button>
+        <button id="replays"><b>Replays…</b><span>Watch a recent match again, or a replay file.</span></button>
         <button id="load"><b>Load a saved game…</b><span>From a slot or a file.</span></button>
         <button id="settings"><b>Settings</b><span>Sound, graphics, camera, interface, controls.</span></button>
       </div>
@@ -216,7 +227,62 @@ export class Screens {
     this.on('#continue', () => latest && this.host.load({ slot: latest }));
     this.on('#load', () => this.showSaves('load', 'start'));
     this.on('#online', () => this.showLobby());
+    this.on('#replays', () => this.showReplays());
     this.on('#settings', () => this.showSettings('start'));
+  }
+
+  /** Recent replays, and opening one from a file. */
+  showReplays(message = ''): void {
+    const list = this.host.replays.list();
+    this.open(
+      'replays',
+      `<h2>Replays</h2>
+      <p class="fine">Every match you finish is recorded (the tutorial aside); the last five stay in this browser. Save one as a file to keep it or share it.</p>
+      <div class="slots">${
+        list.length
+          ? list
+              .map(
+                (r) => `<div class="slot"><div><b>${escapeHtml(r.title)}</b><span>${mapById(r.mapId).name} · ${fmtTime(r.ticks)} · ${escapeHtml(r.result)} · ${r.kind} · ${new Date(r.savedAt).toLocaleDateString()}</span></div>
+                <div class="slot-actions"><button data-watch="${r.id}" class="primary">Watch</button><button data-file="${r.id}">Save file</button><button data-del="${r.id}" class="danger">Delete</button></div></div>`,
+              )
+              .join('')
+          : '<p class="fine">No replays yet: finish a match and it appears here.</p>'
+      }</div>
+      <p class="fine" id="replay-msg">${escapeHtml(message)}</p>
+      <div class="actions">
+        <label class="file-btn">Open a replay file…<input type="file" id="replay-file" accept=".json,application/json"></label>
+        <button class="primary" id="back">Back</button>
+      </div>`,
+    );
+    const read = (id: string) => this.host.replays.read(id);
+    this.root.querySelectorAll<HTMLButtonElement>('[data-watch]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const text = read(b.dataset.watch!);
+        if (text) this.host.watchReplay(text);
+        else this.showReplays('That replay is no longer stored.');
+      }),
+    );
+    this.root.querySelectorAll<HTMLButtonElement>('[data-file]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const r = parseReplay(read(b.dataset.file!) ?? '');
+        if (r.ok) this.host.downloadReplay(r.replay);
+      }),
+    );
+    this.root.querySelectorAll<HTMLButtonElement>('[data-del]').forEach((b) =>
+      b.addEventListener('click', () => {
+        this.host.replays.remove(b.dataset.del!);
+        this.showReplays();
+      }),
+    );
+    this.root.querySelector<HTMLInputElement>('#replay-file')?.addEventListener('change', async (e) => {
+      const f = (e.target as HTMLInputElement).files?.[0];
+      if (!f) return;
+      const text = await f.text();
+      const r = parseReplay(text);
+      if (!r.ok) return this.showReplays(r.reason);
+      this.host.watchReplay(text);
+    });
+    this.on('#back', () => this.showStart());
   }
 
   private lobby: Lobby | null = null;
@@ -262,6 +328,21 @@ export class Screens {
     if (this.current === 'start') return;
     const over = !!this.game.state.outcome;
     if (this.host.online) return this.showOnlineMenu(over);
+    if (this.host.watching) {
+      this.open(
+        'menu',
+        `<h2>Replay</h2>
+        <div class="stack">
+          <button class="primary" id="resume">Back to the replay</button>
+          <button id="settings">Settings…</button>
+          <button id="quit">Leave the replay</button>
+        </div>`,
+      );
+      this.on('#resume', () => this.close());
+      this.on('#settings', () => this.showSettings('menu'));
+      this.on('#quit', () => (location.search = ''));
+      return;
+    }
     this.open(
       'menu',
       `<h2>Paused</h2>
@@ -411,10 +492,12 @@ export class Screens {
         <p class="lead">${reason} Match time ${fmtTime(o.tick)}.</p>
         ${summaryHtml(this.game, this.viewer, names)}
         <div class="actions">
+          ${this.replayButtons()}
           <button class="primary" id="home">Back to the start screen</button>
           <button id="watch">Keep watching</button>
         </div>`,
       );
+      this.wireReplayButtons();
       this.on('#home', () => {
         this.host.online!.leave();
         location.search = '';
@@ -435,17 +518,33 @@ export class Screens {
       ${this.journalHtml()}`
       }
       <div class="actions">
+        ${this.replayButtons()}
         <button class="primary" id="again">Play again</button>
         <button id="change">Change opponent</button>
         <button id="watch">Keep watching</button>
       </div>`,
     );
+    this.wireReplayButtons();
     this.on('#again', () => startMatch({ ...this.settings, seed: newSeed() }));
     this.on('#change', () => {
       const q = new URLSearchParams(matchParams({ ...this.settings, seed: newSeed() }));
       location.search = q.toString();
     });
     this.on('#watch', () => this.close());
+  }
+
+  private replayButtons(): string {
+    return this.host.lastReplay() ? '<button id="replay-watch">Watch the replay</button><button id="replay-save">Save replay file</button>' : '';
+  }
+
+  private wireReplayButtons(): void {
+    const r = this.host.lastReplay();
+    if (!r) return;
+    this.on('#replay-watch', () => {
+      this.host.online?.leave();
+      this.host.watchReplay(r);
+    });
+    this.on('#replay-save', () => this.host.downloadReplay(r));
   }
 
   /** What the computer did and why, from its journal (shown only after the match). */

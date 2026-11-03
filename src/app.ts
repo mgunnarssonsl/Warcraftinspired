@@ -27,6 +27,9 @@ import { browserStorage, loadSettings, saveSettings, type Settings } from './ui/
 import { TUTORIAL, TutorialPanel } from './ui/tutorial';
 import { view } from './ui/view';
 import { OnlineSession, type OnlineStart } from './net/session';
+import { createMatch, parseReplay, Recorder, ReplayPlayer, type MatchSpec, type ReplayFile } from './replay/replay';
+import { downloadReplay, PLAY_KEY, ReplayStore } from './replay/store';
+import { ReplayBar, type Vision } from './ui/replayBar';
 
 
 const params = new URLSearchParams(location.search);
@@ -40,6 +43,21 @@ const online = (window as unknown as { __ironvaleOnline?: OnlineStart }).__ironv
 // ---- what to play -----------------------------------------------------------------
 
 let loadError: string | null = null;
+const replays = new ReplayStore(storage);
+// A replay to watch (?replay=1). The file waits in session storage, and stays
+// there: jumping back in time reloads the page and plays up to the new spot.
+let replayFile: ReplayFile | null = null;
+if (params.get('replay') === '1') {
+  try {
+    const text = sessionStorage.getItem(PLAY_KEY);
+    const r = text ? parseReplay(text) : null;
+    if (r?.ok) replayFile = r.replay;
+    else loadError = r ? `This replay can't be played. ${r.reason}` : 'The replay to play was not found.';
+  } catch {
+    loadError = 'The replay could not be read.';
+  }
+}
+const replayPlayer = replayFile ? new ReplayPlayer(replayFile) : null;
 let saved: SaveFile | null = null;
 try {
   const request = sessionStorage.getItem(LOAD_KEY);
@@ -70,7 +88,18 @@ const fromUrl: MatchSettings = {
   opponentFaction: vsParam && (vsParam === 'random' || FACTIONS.includes(vsParam)) ? vsParam : 'crown',
 };
 const onlineSeat = online?.resume.seat ?? 0;
-const match: MatchSettings = online
+const specMatch = (spec: MatchSpec, seat: number): MatchSettings => ({
+  seed: spec.seed,
+  difficulty: 'normal',
+  mapId: spec.mapId,
+  style: 'balanced',
+  advantage: 'none',
+  faction: spec.factions[seat],
+  opponentFaction: spec.factions[1 - seat],
+});
+const match: MatchSettings = replayFile
+  ? specMatch(replayFile.spec, replayFile.viewer)
+  : online
   ? {
       seed: online.resume.setup.seed,
       difficulty: 'normal',
@@ -90,27 +119,43 @@ const playedStyle: StyleId = match.style === 'random' ? randomStyle(match.seed) 
 
 // A random opponent faction is fixed by the seed too, but shown from the start.
 const opponentFaction: FactionId = match.opponentFaction === 'random' ? randomFaction(match.seed) : match.opponentFaction;
-const game = online
-  ? Game.create(online.resume.setup.seed, online.resume.setup.mapId, online.resume.setup.factions)
+// Every match is built from a spec, so its replay can build the same one.
+const spec: MatchSpec | null = replayFile
+  ? replayFile.spec
+  : online
+    ? { seed: online.resume.setup.seed, mapId: online.resume.setup.mapId, factions: online.resume.setup.factions, names: online.resume.setup.names, incomeBonus: [] }
+    : saved
+      ? (saved.replay?.spec ?? null)
+      : {
+          seed: match.seed,
+          mapId: match.mapId,
+          factions: [match.faction, opponentFaction],
+          names: ['You', `Computer (${match.difficulty})`],
+          // The only advantage a computer can have: chosen up front, shown as a cheat.
+          incomeBonus: [0, CONFIG.ai.advantages[match.advantage].income],
+        };
+const game = replayPlayer
+  ? replayPlayer.game
   : saved
     ? Game.restore(saved.state, saved.pending, saved.visible)
-    : Game.create(match.seed, match.mapId, [match.faction, opponentFaction]);
-const client = createClientState(online ? onlineSeat : (saved?.view.player ?? 0));
+    : createMatch(spec!);
+const replayVision: Vision = replayFile ? (params.get('v') === 'all' ? 'all' : Number(params.get('v') ?? replayFile.viewer)) : 0;
+const client = createClientState(replayFile ? (replayVision === 'all' ? replayFile.viewer : replayVision) : online ? onlineSeat : (saved?.view.player ?? 0));
+if (replayFile && replayVision === 'all') client.revealAll = true;
 client.online = !!online;
 // Online: the lockstep runner applies every player's commands, on the same tick everywhere.
 const session = online ? new OnlineSession(online, game, game.issue.bind(game)) : null;
-if (online) online.resume.setup.names.forEach((n, i) => (game.player(i).name = n));
-const computer = online
+const computer = online || replayPlayer
   ? null
   : saved?.ai.find((a) => a.player !== client.player)
     ? ComputerPlayer.restore(saved.ai.find((a) => a.player !== client.player)!)
     : new ComputerPlayer(1, match.difficulty as Difficulty, playedStyle, tutorial ? TUTORIAL.overrides : {});
-if (!saved && !online) {
-  game.player(1).name = `Computer (${match.difficulty})`;
-  // The only advantage a computer can have: chosen up front, shown as a cheat.
-  game.player(1).incomeBonus = CONFIG.ai.advantages[match.advantage].income;
-}
 if (saved) client.groups = saved.view.groups;
+// Record every match but the tutorial (a loaded save carries its log on, if it has one).
+const recorder = replayPlayer || tutorial || !spec ? null : new Recorder(game, spec, saved?.replay);
+if (session) session.lock.afterTick = () => recorder?.afterStep();
+let lastReplay: ReplayFile | null = null;
+const replayKind = online ? 'online' : 'single';
 
 // ---- the client -------------------------------------------------------------------
 
@@ -142,6 +187,10 @@ document.addEventListener('click', (e) => {
 // the lockstep runner, which sends them ahead to everyone.
 const issue = session ? (c: Parameters<Game['issue']>[0]) => session.issue(c) : game.issue.bind(game);
 game.issue = (c) => {
+  if (replayPlayer) {
+    hud.notify('You are watching a replay: orders cannot be given.');
+    return;
+  }
   if (c.player === client.player) {
     const cue = orderCue(c.type);
     if (cue) sound.play(cue);
@@ -190,6 +239,7 @@ function currentSave(): SaveFile {
     pending: game.pendingCommands(),
     visible: game.vision.snapshot(),
     ai: computer ? [computer.snapshot()] : [],
+    replay: recorder?.log,
     view: { player: client.player, camera: { x: world.rig.tx, y: world.rig.ty, distance: world.rig.distance }, groups: client.groups },
   });
 }
@@ -231,8 +281,24 @@ const host: ScreenHost = {
   },
   loadError,
   tutorial,
+  replays,
+  lastReplay: () => lastReplay,
+  watchReplay: (file) => watchReplay(file),
+  downloadReplay: (file) => downloadReplay(file),
+  watching: !!replayPlayer,
   online: session ? { names: session.setup.names, leave: () => session.leave(), diagnostics: () => session.diagnostics() } : null,
 };
+
+/** Open a replay in a fresh page (it waits in session storage for that page). */
+function watchReplay(file: ReplayFile | string): void {
+  try {
+    sessionStorage.setItem(PLAY_KEY, typeof file === 'string' ? file : JSON.stringify(file));
+  } catch {
+    hud.notify('The browser would not hold the replay for playing. Save it as a file and open that instead.', 'alert');
+    return;
+  }
+  location.search = 'replay=1';
+}
 
 // ---- screens -----------------------------------------------------------------------
 
@@ -245,12 +311,14 @@ screens.onClose = () => {
 };
 screens.onSurrender = () => game.issue({ type: 'surrender', player: client.player });
 const subtitle = document.getElementById('subtitle')!;
-subtitle.textContent = session
+subtitle.textContent = replayFile
+  ? `replay · ${replayFile.spec.names.join(' vs ')} · ${mapById(replayFile.spec.mapId).name}`
+  : session
   ? `${FACTION[game.player(client.player).faction].name} vs ${FACTION[game.player(1 - client.player).faction].name} · online against ${session.setup.names[1 - client.player]}`
   : tutorial
   ? 'tutorial'
   : `${FACTION[game.player(client.player).faction].name} vs ${FACTION[game.player(1 - client.player).faction].name} (${opponentLabel(match, playedStyle, false)} computer)`;
-if (match.advantage !== 'none') {
+if (match.advantage !== 'none' && !replayFile) {
   const cheat = document.createElement('span');
   cheat.className = 'cheat';
   cheat.textContent = ` · ${CONFIG.ai.advantages[match.advantage].name}`;
@@ -269,13 +337,13 @@ window.addEventListener('keydown', (e) => {
     else openMenu();
   }
 });
-if (!saved && !tutorial && !session && params.get('start') !== '1') {
+if (!saved && !tutorial && !session && !replayPlayer && params.get('start') !== '1') {
   screens.showStart();
   client.modalOpen = true;
 }
 
 // The objectives checklist, or the guided tutorial in its place.
-const objectives = tutorial ? null : new Objectives(game, client.player);
+const objectives = tutorial || replayPlayer ? null : new Objectives(game, client.player);
 if (objectives) objectives.onComplete = (text) => hud.notify(`Objective complete: ${text}`, 'good');
 const tutorialPanel = tutorial ? new TutorialPanel(() => ({ game, client, camera: { x: world.rig.tx, y: world.rig.ty } })) : null;
 if (tutorialPanel) {
@@ -390,6 +458,31 @@ if (session) {
   };
 }
 
+// Watching a replay: the bar, and a jump to ?t= seconds on arrival.
+const replayBar = replayFile ? new ReplayBar(game, client, replayFile, replayVision, Number(params.get('s') ?? 1) || 1) : null;
+let seekTo = replayFile ? Math.min(replayFile.ticks, Math.max(0, Math.round(Number(params.get('t') ?? 0) * 20))) : 0;
+let replayAcc = 0;
+if (replayBar && replayFile) {
+  replayBar.onSeek = (tick) => {
+    if (tick >= game.state.tick) seekTo = tick;
+    else {
+      // Back in time: the simulation only runs forwards, so start again and play up to there.
+      const q = new URLSearchParams({ replay: '1', t: String(Math.floor(tick / 20)), v: String(replayBar.vision), s: String(replayBar.speed) });
+      location.search = q.toString();
+    }
+  };
+  replayBar.onVision = (v) => {
+    client.revealAll = v === 'all';
+    if (v === 'all') return;
+    client.player = v;
+    // Look where that player is: their first Keep, or where they started.
+    const home = game.buildings().find((b) => b.owner === v) ?? game.state.starts[v];
+    if (home) world.rig.centerOn(home.x, home.y);
+  };
+  replayBar.onExit = () => (location.search = '');
+  if (replayFile.spec.mapId !== mapById(replayFile.spec.mapId).id) hud.notify('This replay was made on a map this version of the game does not have.', 'alert');
+}
+
 let acc = 0;
 let last = performance.now();
 const MAX_STEPS_PER_FRAME = 8;
@@ -401,7 +494,19 @@ function frame(t: number): void {
   last = t;
   // The start screen and the menus pause the match; the end screen does not.
   const running = !client.paused && screens.current !== 'start' && screens.current !== 'menu' && screens.current !== 'settings' && screens.current !== 'saves';
-  if (session) {
+  if (replayPlayer && replayBar) {
+    if (seekTo > game.state.tick) {
+      replayPlayer.run(Math.min(800, seekTo - game.state.tick));
+      netBanner(`Jumping to ${Math.floor(seekTo / 1200)}:${String(Math.floor(seekTo / 20) % 60).padStart(2, '0')}…`);
+    } else {
+      netBanner(null);
+      if (!client.paused) replayAcc += dt * replayBar.speed;
+      const n = Math.floor(replayAcc / TICK_SECONDS);
+      replayAcc -= n * TICK_SECONDS;
+      replayPlayer.run(Math.min(n, 400));
+    }
+    replayBar.update(t, replayPlayer.diverged !== null ? 'plays differently from the recording (a different game version)' : replayPlayer.done ? 'end' : null);
+  } else if (session) {
     // Online: lockstep decides; the match never pauses for one player.
     const { replaying } = session.frame(dt * 1000);
     netBanner(replaying ? 'Catching up with the match…' : session.banner());
@@ -411,6 +516,7 @@ function frame(t: number): void {
     let steps = 0;
     while (acc >= TICK_SECONDS && steps < MAX_STEPS_PER_FRAME) {
       game.step();
+      recorder?.afterStep();
       computer?.update(game);
       acc -= TICK_SECONDS;
       steps++;
@@ -439,8 +545,16 @@ function frame(t: number): void {
   for (const e of events) {
     if (e.type === 'playerDefeated' && e.player === client.player) screens.defeatReason = e.reason;
     else if (e.type === 'playerDefeated' && !game.state.players[e.player]?.neutral) screens.foeDefeatReason = e.reason;
+    if (e.type === 'matchOver' && replayPlayer) {
+      hud.notify(`Replay: ${game.state.outcome?.winner == null ? 'a draw' : `${game.player(game.state.outcome.winner).name} won`}.`, 'good');
+      continue;
+    }
     if (e.type === 'matchOver') {
       session?.over(game.state.outcome?.winner ?? null);
+      if (recorder) {
+        lastReplay = recorder.file(client.player, replayKind, __VERSION__);
+        replays.add(lastReplay);
+      }
       screens.showEnd();
       client.modalOpen = true;
     }

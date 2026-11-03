@@ -45,6 +45,9 @@ export class Game {
 
   vision: Vision;
 
+  /** Told about every command as it takes effect, whoever gave it (replay recording). Not game state. */
+  onApply: ((tick: number, c: Command) => void) | null = null;
+
   constructor(state: GameState, visible?: string[]) {
     this.state = state;
     this.nav = new NavGrid(state);
@@ -492,7 +495,10 @@ export class Game {
     if (this.state.tick % CONFIG.vision.updateTicks === 0) this.vision.recompute();
     const cmds = this.pending;
     this.pending = [];
-    for (const c of cmds) applyCommand(this, c);
+    for (const c of cmds) {
+      this.onApply?.(this.state.tick, c);
+      applyCommand(this, c);
+    }
     updateProduction(this);
 
     const units = this.units();

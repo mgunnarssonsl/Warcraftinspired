@@ -1111,3 +1111,32 @@ table.stats td:first-child {
 .modal-card .seats li.open { opacity: 0.6; font-style: italic; }
 .modal-card .seats .ready { color: #7dff8a; float: right; }
 .modal-card .seats .not-ready { opacity: 0.6; float: right; }
+
+/* Replays */
+#replaybar {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.7rem;
+  background: rgba(20, 16, 10, 0.9);
+  border: 1px solid #5a4a32;
+  border-radius: 8px;
+  z-index: 15;
+  font-size: 13px;
+  max-width: calc(100% - 24px);
+  flex-wrap: wrap;
+}
+#replaybar button { padding: 0.2rem 0.5rem; }
+#replaybar button.picked { background: #f0d68a; color: #221c14; }
+#replaybar #rp-slider { width: 220px; }
+#replaybar #rp-time { min-width: 7.5rem; font-variant-numeric: tabular-nums; }
+#replaybar .rp-group { display: flex; gap: 2px; }
+#objectives.observer { width: 360px; }
+.observer-table th { max-width: 9rem; overflow: hidden; text-overflow: ellipsis; }
+.observer-table { border-collapse: collapse; font-size: 12px; width: 100%; }
+.observer-table td, .observer-table th { padding: 2px 6px; text-align: right; white-space: nowrap; }
+.observer-table td:first-child { text-align: left; opacity: 0.75; }
