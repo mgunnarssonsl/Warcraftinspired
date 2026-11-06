@@ -516,8 +516,12 @@ export class ComputerPlayer {
     if (count('barracks') === 0 && workers.length >= this.profile.barracksAtWorkers) return 'barracks';
     if (count('barracks') > 0 && count('lumbermill') === 0) return 'lumbermill';
     if (count('barracks') > 0 && count('altar') === 0) return 'altar';
+    // An expansion-first style saves for its second Keep before any tower,
+    // unless it is under threat.
+    const expandNow = () => this.wantsExpansion(game, buildings) && this.expansionMine(game, buildings);
+    const towersWait = this.profile.expandsFirst && this.posture !== 'threatened' && count('hq') < 2;
     const towers = this.profile.towers + (this.posture === 'threatened' ? 1 : 0);
-    if (count('tower') < towers && hasCompleted(game, P, F.buildings.barracks)) return 'tower';
+    if (!towersWait && count('tower') < towers && hasCompleted(game, P, F.buildings.barracks)) return 'tower';
     if (this.profile.upgrades && count('smithy') === 0 && hasCompleted(game, P, F.buildings.lumbermill)) return 'smithy';
     // Tier II production, for the units its mix calls for.
     if (researched(game, P, F.tiers[0])) {
@@ -526,7 +530,7 @@ export class ComputerPlayer {
     }
     const me = game.player(P);
     if (count('barracks') < this.profile.maxBarracks && workers.length >= this.profile.extraBarracksAtWorkers && me.gold >= 300) return 'barracks';
-    if (this.wantsExpansion(game, buildings) && this.expansionMine(game, buildings)) return 'hq';
+    if (expandNow()) return 'hq';
     return null;
   }
 

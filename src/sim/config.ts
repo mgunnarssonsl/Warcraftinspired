@@ -34,6 +34,8 @@ export type StyleAdjust = {
   raids?: boolean;
   /** Builds its Hall of Valor before the Barracks and raises heroes first. */
   heroesEarly?: boolean;
+  /** Puts an expansion that is due ahead of its towers. */
+  expandsFirst?: boolean;
 };
 
 export const CONFIG = {
@@ -1644,8 +1646,10 @@ export const CONFIG = {
       },
       expander: {
         name: 'Expander',
-        blurb: 'Takes mines early, up to three Keeps, and attacks late with a large army.',
-        adjust: { attackTiming: 1.5, expandTiming: 0.4, waveSize: 2, workerTarget: 2, maxKeeps: 1, towers: -1 } as StyleAdjust,
+        blurb: 'Takes mines early, up to three Keeps, and attacks with larger waves.',
+        // It used to attack at 1.5x and skip a tower; waiting that long only let
+        // opponents break their waves on its base (68-27 in the Phase I round robin).
+        adjust: { expandTiming: 0.4, waveSize: 2, workerTarget: 2, maxKeeps: 1, expandsFirst: true } as StyleAdjust,
       },
       warden: {
         name: 'Warden',

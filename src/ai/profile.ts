@@ -20,6 +20,7 @@ export type Profile = DifficultyProfile & {
   creepParty: number;
   raids: boolean;
   heroesEarly: boolean;
+  expandsFirst: boolean;
 };
 /** Strategy tweaks on top of a profile (used by tests and balance playtests). */
 export type ProfileOverrides = Partial<Profile>;
@@ -45,6 +46,7 @@ export function composeProfile(difficulty: Difficulty, style: StyleId = 'balance
     creepParty: Math.max(3, CONFIG.ai.creepParty + (a.creepParty ?? 0)),
     raids: !!a.raids,
     heroesEarly: !!a.heroesEarly,
+    expandsFirst: !!a.expandsFirst,
   };
   p.firstAttackSeconds = time(base.firstAttackSeconds, a.attackTiming)!;
   p.expandSeconds = time(base.expandSeconds, a.expandTiming)!;
