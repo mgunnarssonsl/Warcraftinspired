@@ -267,8 +267,10 @@ in JSON beside it:
 
 **The committed 60-match run (Normal and Hard) shows:**
 
-- the Expander style's lead (84% of its non-mirror matches);
-- Thornwild ahead in this mixed sample (16–9);
+- the Expander still ahead in this small mixed sample (14 of 20 non-mirror
+  matches; it was 16 of 19 before its retune). The larger style round
+  robin has it even (49–47);
+- Thornwild ahead in this mixed sample (17–9);
 - ranged units and casters as the most cost-efficient damage (Archer,
   Slinger, Mangonel about 400–420 per 100; melee about 220–270);
 - healers earning their place through healing (about 250–290 per 100)
@@ -341,8 +343,8 @@ and reduce effects.
 - **Human playtesting:** balance and difficulty come from
   computer-vs-computer playtests. People have not yet judged feel, pacing
   and whether Hard feels hard.
-- **Style balance:** among the computer's styles, the Expander leads and
-  the Warden trails.
+- **Style balance:** the styles are close (41–57 wins of 96 each in the
+  round robin); the Warlord leads slightly and the Warden trails slightly.
 - **The tutorial teaches the Crown only**; the objectives checklist follows
   your faction.
 - **Saves live in browser storage** (about 360 KB each, so a handful fit).
@@ -523,7 +525,7 @@ Hard also expands as soon as it is safe, whatever the style.
 | --- | --- | --- |
 | **Balanced** | Expands on schedule and attacks when it judges itself stronger. | 6:40 / 10:00 |
 | **Raider** | Small groups of its fastest soldiers raid your Laborers before its first wave; smaller, earlier waves; Lancer-heavy; expands late. | 4:20 (raids from 3:15) / 16:00 |
-| **Expander** | Takes mines first, up to three Keeps (two more Laborers each), then attacks late with a large army. | 10:00 / 4:00 |
+| **Expander** | Takes mines first (towers wait for its second Keep), up to three Keeps (two more Laborers each), and attacks with larger waves. | 6:40 / 4:00 |
 | **Warden** | Three towers (the second and third guard its mines), an early Castle, Mangonels, and a later, heavier push. | 8:40 / 10:00 |
 | **Warlord** | Hall of Valor before the Barracks, heroes first, hunts camps with a smaller party for items and levels. | 7:20 / 10:00 |
 
@@ -2147,6 +2149,35 @@ which are never shipped to players.
   - Styles, won–lost: Expander 68–27, Raider 49–46, Balanced 48–48,
     Warlord 44–51, Warden 29–66. The Expander's lead narrowed (from 75–21);
     the Warden still trails.
+- **Expander retune (after Phase K):** it no longer waits 1.5× as long
+  to attack, and it keeps its tower but defers it until its second Keep
+  is started, so it still expands first. Its late attack had let opponents
+  break their armies on its base: on Hard it lost far fewer soldiers away
+  from home than the Balanced style (61 against 186 before 10:00).
+  Changes tried that hardly moved its record (37–11 over 48 matches):
+  - opponents preferring outlying Keeps as targets: 37–11;
+  - opponents attacking an enemy with more bases sooner: 35–13;
+  - judging attacks more cautiously (advantage 1.5, defender edge 1.6):
+    33–15.
+  - Style round robin, won–lost (same 240 matches):
+
+    | Style | Before | After |
+    | --- | --- | --- |
+    | Expander | 68–27 | 49–47 |
+    | Balanced | 48–48 | 47–49 |
+    | Raider | 49–46 | 46–50 |
+    | Warlord | 44–51 | 57–39 |
+    | Warden | 29–66 | 41–55 |
+
+  - On seeds the tuning never saw (7 and 8, 48 matches) the Expander went
+    34–13, against 39–9 with the old settings: better, but still ahead.
+  - Difficulty ladder, Hard vs Normal: 45–43 (2 draws), against 51–35
+    on the commit before the retune and 58–31 after Phase I. Balanced
+    (8–9) and Raider (7–11) were already about even before the retune, so
+    most of the slide predates it. The Expander mirror is the new loss:
+    12–4 before, 6–12 after (8–28 over 36 more matches). With both
+    attacking at 6:40, Hard's first wave breaks on Normal's defended base,
+    and its greedier third Keep then falls.
 - **Phase J tests:**
   - `tests/determinism.test.ts` (3):
     - the deterministic maths match the engine's to within 1e-14;
@@ -2443,12 +2474,14 @@ Still open from Phase F:
 
 Still open from Phase E:
 
-- **Hard vs Normal:** since Phase I a clearer edge (58–31, every style),
-  but in computer games only. Human playtests should decide whether Hard
-  feels harder.
-- **Style balance:** the Expander is ahead (68–27 after Phase I) and the Warden behind (29–66).
-  Expansions decide too much, and a raid that punishes greed better is the
-  likely fix.
+- **Hard vs Normal has slipped** to 45–43 (58–31 after Phase I). Hard
+  loses the Expander mirror (6–12) and only ties Balanced and Raider.
+  Defenders win most even fights, so whoever attacks first into a
+  defended base tends to lose. Hard's attack judgement, or the defender's
+  edge itself, is the next thing to tune. Human playtests should decide
+  whether Hard feels harder.
+- **Style balance:** close since the Expander retune (41–57 wins of 96 for
+  every style), though the Expander stays ahead on unseen seeds (34–13).
 
 Still open from Phase D: human playtests of each map's routes and timings,
 and long stalemates when both sides turtle on Rivercross.
