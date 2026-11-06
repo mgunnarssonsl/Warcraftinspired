@@ -1105,7 +1105,10 @@ export class ComputerPlayer {
       // A threatened computer holds the army home a little longer.
       const needed = this.waveSize + (this.posture === 'threatened' ? 2 : 0);
       const raidReady = this.profile.raids && seconds >= this.profile.firstAttackSeconds * 0.75 && now - this.lastRaid > secondsToTicks(90);
-      if (seconds >= this.profile.firstAttackSeconds && home.length >= needed && this.favourable(game, home, enemies)) {
+      // An enemy with more bases than this one is spread thin: hit it sooner.
+      const greedy = this.profile.readsIntel && this.knownEnemyHalls(game) > keeps.length;
+      const attackAt = this.profile.firstAttackSeconds * (greedy ? CONFIG.ai.greedAttackTiming : 1);
+      if (seconds >= attackAt && home.length >= needed && this.favourable(game, home, enemies)) {
         this.launch(game, home, 'attack');
       } else if (raidReady && home.length >= CONFIG.ai.raidSize && this.raidTarget(game)) {
         // The fastest few go for the enemy's Laborers while the rest stay home.
@@ -1209,6 +1212,11 @@ export class ComputerPlayer {
   }
 
   /** The enemy mine to raid: next to a Keep it knows of, or at the enemy start. */
+  /** Enemy main halls it knows of. */
+  private knownEnemyHalls(game: Game): number {
+    return this.knownEnemyBuildings(game).filter((m) => isRole(m.type, 'hq')).length;
+  }
+
   private raidTarget(game: Game): { x: number; y: number } | null {
     const keeps = this.knownEnemyBuildings(game).filter((m) => isRole(m.type, 'hq'));
     const anchors = keeps.length ? keeps : game.state.starts.filter((_, p) => p !== this.player && !game.player(p).neutral && !game.player(p).defeated);
@@ -1327,7 +1335,7 @@ export class ComputerPlayer {
       const starts = game.state.starts;
       const outlying = (m: { x: number; y: number; type: BuildingType }) => isRole(m.type, 'hq') && starts.every((s) => dist(s, m) > 6);
       const score = (m: (typeof known)[number]) =>
-        dist(m, from) + (this.profile.readsIntel ? 12 * towersNear(m) - (outlying(m) ? 10 : 0) : 0);
+        dist(m, from) + (this.profile.readsIntel ? 12 * towersNear(m) - (outlying(m) ? CONFIG.ai.outlyingBonus : 0) : 0);
       return known.reduce((a, b) => (score(b) < score(a) ? b : a));
     }
     const waveUnits = this.wave.map((id) => game.unit(id)).filter((u): u is Unit => !!u);

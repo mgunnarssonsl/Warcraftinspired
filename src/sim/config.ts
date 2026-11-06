@@ -1725,6 +1725,10 @@ export const CONFIG = {
     woodSurplus: 600,
     /** Assessing players attack only with this strength advantage... */
     attackAdvantage: 1.15,
+    /** Choosing a target: an outlying base counts as this many tiles nearer (it is defended less). */
+    outlyingBonus: 10,
+    /** Against an enemy known to have more bases, the first attack comes at this share of the usual time. */
+    greedAttackTiming: 1,
     /** Expanding when safe: not before this time (seconds), and with this many soldiers home. */
     safeExpandSeconds: 180,
     safeExpandArmy: 3,
