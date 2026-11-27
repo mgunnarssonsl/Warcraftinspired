@@ -5,7 +5,7 @@
 import { rulesOf } from '../sim/rules';
 import { buildableFor, buildingFaction, buildingRole, FACTION, isHall, isHealer, isWorker } from '../sim/factions';
 import { hpColor, teamColor } from './view';
-import { UNIT_ICONS } from './icons';
+import { COMMAND_GLYPHS, abilityArt, buildingArt, itemArt, researchArt, unitArt } from './art';
 import { keyLabel } from '../input/keymap';
 import type { ClientState } from '../input/client';
 import { ITEM_KEYS, type Action, type InputController } from '../input/input';
@@ -248,7 +248,8 @@ export class Hud {
   ) {
     this.idleBtn.addEventListener('click', () => input.selectIdleWorker());
     this.heroBtn?.addEventListener('click', () => input.selectHero());
-    this.cancelBtn.innerHTML = '<span class="cmd-label">Cancel</span><span class="cmd-key">X</span>';
+    this.cancelBtn.innerHTML = `<span class="cmd-glyph">${COMMAND_GLYPHS.cancel}</span><span class="cmd-label">Cancel</span><span class="cmd-key">X</span>`;
+    this.cancelBtn.classList.add('has-glyph');
     setTip(this.cancelBtn, `Cancel construction (${CONFIG.construction.cancelRefund * 100}% refund) or the last queued unit (${CONFIG.production.cancelRefund * 100}% refund).`);
     this.cancelBtn.addEventListener('click', () => input.action('cancel'));
     this.card.appendChild(this.cancelBtn);
@@ -270,6 +271,16 @@ export class Hud {
         `<span class="cmd-label">${a.label}</span><span class="cmd-key">${a.key}</span>` +
         (cost ? `<span class="cmd-cost"><i class="g">${cost.gold}</i> <i class="w">${cost.wood}</i></span>` : '');
       if (a.build || a.train || a.research) b.classList.add('build');
+      // Painted art for anything with a picture; a gold glyph for plain orders.
+      const art = a.build ? buildingArt(a.build) : a.train ? unitArt(a.train) : a.research ? researchArt(a.research) : a.ability ? abilityArt(a.ability) : a.buy ? itemArt(a.buy) : null;
+      const glyph = art ? null : (COMMAND_GLYPHS[a.flare ? 'flare' : a.id] ?? null);
+      if (art) {
+        b.classList.add('has-art');
+        b.style.setProperty('--art', `url("${art}")`);
+      } else if (glyph) {
+        b.classList.add('has-glyph');
+        b.insertAdjacentHTML('afterbegin', `<span class="cmd-glyph">${glyph}</span>`);
+      }
       if (a.ability) {
         b.classList.add('ability');
         b.innerHTML += `<span class="cmd-cost mana">${CONFIG.hero.abilities[a.ability].mana}</span><span class="cmd-cd"></span>`;
@@ -551,6 +562,9 @@ export class Hud {
         setText(btn.querySelector('.cmd-label')!, it ? CONFIG.items[it].name : '(empty)');
         btn.disabled = !it || !CONFIG.items[it].consumable;
         btn.classList.toggle('has-item', !!it);
+        btn.classList.toggle('has-art', !!it);
+        if (it) btn.style.setProperty('--art', `url("${itemArt(it)}")`);
+        else btn.style.removeProperty('--art');
         setTip(btn, it ? `${CONFIG.items[it].desc}${CONFIG.items[it].consumable ? ' Click or press the key to use.' : ' Always active.'} Right-click to drop.` : 'Empty inventory slot. Heroes pick up items by right-clicking them.');
         continue;
       }
@@ -642,10 +656,12 @@ export class Hud {
       const hp = el('div', 'hp');
       hp.style.width = `${(e.hp / e.maxHp) * 100}%`;
       hp.style.background = hpColor(e.hp / e.maxHp);
-      // A role glyph on the team colour; a corner mark for what a Laborer carries.
-      const glyph = el('span', 'portrait-glyph');
-      glyph.innerHTML = UNIT_ICONS[e.type] ?? '';
-      pt.appendChild(glyph);
+      // The unit's portrait, framed in its team colour; a corner mark for what a Laborer carries.
+      const img = el('img', 'portrait-art') as HTMLImageElement;
+      img.src = unitArt(e.type);
+      img.alt = '';
+      img.draggable = false;
+      pt.appendChild(img);
       const carry = isWorker(e.type) && e.carry.amount ? (e.carry.res === 'gold' ? '●' : '≡') : '';
       if (carry) pt.appendChild(el('span', 'portrait-icon', carry));
       pt.appendChild(hp);
@@ -745,7 +761,15 @@ export class Hud {
       row('Wood left', `${e.amount} / ${e.maxAmount}`);
     }
     if (box.querySelectorAll('.row').length > 6) box.classList.add('wide');
-    return box;
+    // The painted portrait beside the details, framed in the owner's colour.
+    const card = el('div', 'detail-card');
+    const img = el('img', 'detail-art') as HTMLImageElement;
+    img.src = e.kind === 'unit' ? unitArt(e.type) : e.kind === 'building' ? buildingArt(e.type, e.tier) : buildingArt(e.type);
+    img.alt = '';
+    img.draggable = false;
+    if (e.kind !== 'resource') img.style.setProperty('--team', teamColor(this.game, e.owner));
+    card.append(img, box);
+    return card;
   }
 
   /** Training status and queue slots; clicking a slot cancels it. */
