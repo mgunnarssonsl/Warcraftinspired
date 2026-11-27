@@ -31,7 +31,7 @@ MODELS = {
     'ranger': crown.pathfinder,
     'sage': crown.sage,
     'tender': wild.tender,
-    'thornguard': wild.thornguard,
+    'thornguard': lambda: __import__('woodguard').build('thornguard'),
     'slinger': wild.slinger,
     'fox': wild.fox,
     'stagrider': wild.stagrider,

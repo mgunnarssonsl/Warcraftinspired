@@ -204,43 +204,8 @@ def wolfrider():
 
 
 def barksentinel():
-    """A Thornguard grown into a living wall: a huge bark tower shield, moss and heavier plates."""
-    F = Figure(bulk=1.36)
-    cloth_legs(F, pants=WD.BARK_D, boots=WD.BARK_D, wraps=WD.BARK)
-    for s, sx in (('R', -1), ('L', 1)):
-        lump(f'kneeBark.{s}', 0.055, mat('matte', WD.BARK), F[f'shin.{s}'], at=(0.075 * F.bulk * sx, -0.025, KNEE), seed=13 + sx, rough=0.15)
-    torso(F, WD.BARK_D, belt=WD.BARK_D, buckle=AMBER)
-    WD.bark_plates(F, seed=6)
-    WD.sash(F, 0.07)
-    WD.leaf_skirt(F, 1.1)
-    cloth_arms(F, WD.BARK, skin=WD.BARK_L, glove=WD.BARK_D, bracer=WD.BARK_D)
-    for s in 'RL':
-        lump(f'pauldron.{s}', 0.1, mat('matte', WD.BARK), F[f'upperarm.{s}'], at=(arm_x(F, s) * 1.1, 0, SHOULDER + 0.02), scale=(1.15, 1.0, 0.85), seed=40 + (s == 'L'), rough=0.18)
-        lump(f'pauldronMoss.{s}', 0.07, mat('matte', MOSS), F[f'upperarm.{s}'], at=(arm_x(F, s) * 1.1, 0, SHOULDER + 0.07), scale=(1.2, 1.0, 0.45), seed=44 + (s == 'L'), rough=0.25)
-    h = F['head']
-    lathe('helm', [(0.0, -0.105), (0.095, -0.1), (0.104, -0.04), (0.103, 0.03), (0.09, 0.08), (0.05, 0.11), (0.0, 0.118)], mat('matte', WD.BARK_L), h, at=(0, 0, HEAD), segs=18, sub=1)
-    box('visor', (0.13, 0.02, 0.018), mat('matte', '#1e140c'), h, at=(0, -0.098, HEAD + 0.012))
-    for sx in (-1, 1):
-        sphere(f'glowEye{sx}', 0.009, mat('glow', AMBER), h, at=(sx * 0.03, -0.095, HEAD + 0.012))
-        curve_tube(f'antler{sx}', [(sx * 0.07, 0, HEAD + 0.07), (sx * 0.14, 0.0, HEAD + 0.15), (sx * 0.2, 0.02, HEAD + 0.24)], 0.016, mat('matte', WD.BARK_D), h, taper=[1.0, 0.7, 0.3])
-    lump('helmMoss', 0.06, mat('matte', MOSS), h, at=(0, 0.02, HEAD + 0.1), scale=(1.3, 1.1, 0.5), seed=50, rough=0.25)
-    # The tower shield: a slab of living bark, banded with the team colour, an amber heart.
-    fa = F['forearm.L']
-    sx = arm_x(F, 'L') * 1.05 + 0.05
-    sz = SHOULDER - WRIST_DROP + 0.02
-    yaw = -0.5
-    c, sn = math.cos(yaw), math.sin(yaw)
-    def on(dy, dz=0.0):
-        return (sx - dy * sn, -0.08 + dy * c, sz + dz)
-    lump('barkShield', 0.2, mat('matte', WD.BARK_L), fa, at=on(0.0), scale=(1.0, 0.25, 1.7), rot=(0, 0, yaw), seed=60, rough=0.12)
-    for i in range(4):
-        box(f'shieldRidge{i}', (0.025, 0.02, 0.5), mat('matte', WD.BARK_D), fa, at=on(-0.045, 0.0), rot=(0, 0, yaw), bevel=0.008)
-    box('shieldBand', (0.38, 0.02, 0.06), mat('team'), fa, at=on(-0.05, 0.12), rot=(0, 0, yaw), bevel=0.006)
-    sphere('shieldHeart', 0.04, mat('glow', AMBER), fa, at=on(-0.065, -0.02), sub=1)
-    lump('shieldMoss', 0.09, mat('matte', MOSS), fa, at=on(-0.02, 0.3), scale=(1.4, 0.6, 0.5), seed=61, rough=0.25)
-    WD.spiked_club(F)
-    F.animate(attack='slash')
-    return F
+    import woodguard
+    return woodguard.build('barksentinel')
 
 
 def shifter_warrior():
