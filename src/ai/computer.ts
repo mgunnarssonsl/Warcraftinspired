@@ -516,20 +516,10 @@ export class ComputerPlayer {
     if (count('barracks') === 0 && workers.length >= this.profile.barracksAtWorkers) return 'barracks';
     if (count('barracks') > 0 && count('lumbermill') === 0) return 'lumbermill';
     if (count('barracks') > 0 && count('altar') === 0) return 'altar';
-    // An expansion-first style saves for its second Keep before towers, a
-    // Blacksmith or more Barracks, unless it is under threat.
-    const expandNow = () => this.wantsExpansion(game, buildings) && this.expansionMine(game, buildings);
-    const saving = this.profile.expandsFirst && this.posture !== 'threatened' && count('hq') < 2;
-    const H: number = CONFIG.ai.expandsFirstHolds;
-    if (saving && H === 7) return expandNow() ? 'hq' : null;
     const towers = this.profile.towers + (this.posture === 'threatened' ? 1 : 0);
-    // Hard saves the wood for its second Keep (towers only for a style with
-    // just one, so the Warden keeps its early tower).
-    const hardSaves = this.profile.smithyAfterKeep && this.posture !== 'threatened' && count('hq') < 2;
-    const HT: number = CONFIG.ai.hardHoldsTowers;
-    const towerWaits = (saving && H & 1) || (hardSaves && HT > 0 && (HT === 1 || this.profile.towers < 2));
-    if (!towerWaits && count('tower') < towers && hasCompleted(game, P, F.buildings.barracks)) return 'tower';
-    const smithyWaits = (saving && H & 2) || (this.profile.smithyAfterKeep && this.posture !== 'threatened' && count('hq') < 2);
+    if (count('tower') < towers && hasCompleted(game, P, F.buildings.barracks)) return 'tower';
+    // Hard leaves the wood for its second Keep before it builds a Blacksmith.
+    const smithyWaits = this.profile.smithyAfterKeep && this.posture !== 'threatened' && count('hq') < 2;
     if (!smithyWaits && this.profile.upgrades && count('smithy') === 0 && hasCompleted(game, P, F.buildings.lumbermill)) return 'smithy';
     // Tier II production, for the units its mix calls for.
     if (researched(game, P, F.tiers[0])) {
@@ -537,8 +527,8 @@ export class ComputerPlayer {
       if (count('workshop') === 0 && this.profile.mix.mangonel > 0) return 'workshop';
     }
     const me = game.player(P);
-    if (!(saving && H & 4) && count('barracks') < this.profile.maxBarracks && workers.length >= this.profile.extraBarracksAtWorkers && me.gold >= 300) return 'barracks';
-    if (expandNow()) return 'hq';
+    if (count('barracks') < this.profile.maxBarracks && workers.length >= this.profile.extraBarracksAtWorkers && me.gold >= 300) return 'barracks';
+    if (this.wantsExpansion(game, buildings) && this.expansionMine(game, buildings)) return 'hq';
     return null;
   }
 

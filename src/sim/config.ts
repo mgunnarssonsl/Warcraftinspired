@@ -34,8 +34,6 @@ export type StyleAdjust = {
   raids?: boolean;
   /** Builds its Hall of Valor before the Barracks and raises heroes first. */
   heroesEarly?: boolean;
-  /** Saves for its second Keep before towers, a Blacksmith or more Barracks. */
-  expandsFirst?: boolean;
 };
 
 export const CONFIG = {
@@ -1653,7 +1651,8 @@ export const CONFIG = {
         blurb: 'Takes mines early, up to three Keeps, and attacks with larger waves.',
         // It used to attack at 1.5x and skip a tower; waiting that long only let
         // opponents break their waves on its base (68-27 in the Phase I round robin).
-        adjust: { expandTiming: 0.4, waveSize: 2, workerTarget: 2, maxKeeps: 1, expandsFirst: true } as StyleAdjust,
+        // Holding its tower for the second Keep instead still won 99-44 on Hard.
+        adjust: { expandTiming: 0.4, waveSize: 2, workerTarget: 2, maxKeeps: 1 } as StyleAdjust,
       },
       warden: {
         name: 'Warden',
@@ -1662,7 +1661,8 @@ export const CONFIG = {
           attackTiming: 1.3,
           castleTiming: 0.7,
           waveSize: 3,
-          towers: 2,
+          // Two towers on Hard, not three: the third cost more than it held (51-91).
+          towers: 1,
           mix: { guard: 3, archer: 2, lancer: 1, cleric: 1, mangonel: 1 },
         } as StyleAdjust,
       },
@@ -1750,10 +1750,6 @@ export const CONFIG = {
     /** Expanding when safe: not before this time (seconds), and with this many soldiers home. */
     safeExpandSeconds: 180,
     safeExpandArmy: 3,
-    /** What an expansion-first style holds until its second Keep: 1 towers, 2 Blacksmith, 4 more Barracks (7 = everything). */
-    expandsFirstHolds: 3,
-    /** Hard holds its early tower until its second Keep: 0 never, 1 always, 2 unless the style builds several towers. */
-    hardHoldsTowers: 0,
     /** Counting defences: a defender fights at home with this edge... */
     defenderEdge: 1.25,
     /** ...and each tower it has seen counts for this many Guards. */
