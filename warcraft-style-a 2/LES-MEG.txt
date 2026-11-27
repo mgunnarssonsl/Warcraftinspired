@@ -1,0 +1,33 @@
+WARCRAFTINSPIRED — STIL A
+
+15 konseptark laget med innebygd image_gen.
+Dette er visuelle designforslag, ikke ferdige 3D-modeller eller animasjoner.
+Spillet og GitHub-repoet er ikke endret.
+
+INNHOLD
+01 HEROES — 01-heroes.png
+02 IRONVALE ARMY — 02-ironvale-army.png
+03 THORNWILD ARMY — 03-thornwild-army.png
+04 NEUTRAL ENEMIES — 04-neutral-enemies.png
+05 IRONVALE BUILDINGS — 05-ironvale-buildings.png
+06 THORNWILD BUILDINGS — 06-thornwild-buildings.png
+07 MINES AND LANDMARKS — 07-mines-and-landmarks.png
+08 TREES AND FOREST — 08-trees-and-forest.png
+09 TERRAIN AND SMALL PROPS — 09-terrain-and-small-props.png
+10 ITEMS AND LOOT — 10-items-and-loot.png
+11 CROWN SPELLS — 11-crown-spells.png
+12 THORNWILD SPELLS — 12-thornwild-spells.png
+13 CROWN UPGRADES — 13-crown-upgrades.png
+14 THORNWILD UPGRADES — 14-thornwild-upgrades.png
+15 STATES AND FEEDBACK — 15-states-and-feedback.png
+
+DEKNING
+Alle 25 enhetstyper: seks helter, 14 fraksjonsenheter og fem nøytrale fiender.
+Alle 20 bygningstyper, pluss Castle/Citadel og Deepwood/Ancient.
+Fem gruvevarianter og uttømt gruve; seks trevarianter og skogdetaljer.
+Alle ti gjenstander, to loot-kister, 18 helteevner og 25 forskningsoppgraderinger.
+Eksempler på byggefaser, skade, arbeiderhandlinger og visuelle tilbakemeldinger.
+
+Nye trær, rekvisitter og miljødetaljer er forslag til utvidet visuell variasjon.
+Ark 15 viser representative tilstander, ikke komplette animasjonsserier for hver enhet.
+Designbeskrivelser og kildereferanser finnes i design-prompts.json.
