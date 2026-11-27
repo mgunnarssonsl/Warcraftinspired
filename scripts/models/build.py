@@ -12,6 +12,8 @@ import blib  # noqa: E402
 import crown  # noqa: E402
 import wild  # noqa: E402
 import neutral  # noqa: E402
+import crown_buildings as CBL  # noqa: E402
+import wild_buildings as WBL  # noqa: E402
 
 OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'public', 'models')
 
@@ -41,6 +43,37 @@ MODELS = {
     'chief': neutral.chief,
     'brute': neutral.brute,
     'wolf': neutral.wolf,
+    # Buildings: b_<type>, with tiers as b_<type>_<tier>.
+    'b_hq': CBL.keep,
+    'b_hq_2': lambda: CBL.keep(2),
+    'b_hq_3': lambda: CBL.keep(3),
+    'b_farm': CBL.farm,
+    'b_barracks': CBL.barracks,
+    'b_lumbermill': CBL.lumbermill,
+    'b_tower': CBL.tower,
+    'b_altar': CBL.altar,
+    'b_smithy': CBL.smithy,
+    'b_chapel': CBL.chapel,
+    'b_workshop': CBL.workshop,
+    'b_shop': CBL.shop,
+    'b_fountain': CBL.fountain,
+    'm_tiny': lambda: CBL.mine('tiny'),
+    'm_small': lambda: CBL.mine('small'),
+    'm_start': lambda: CBL.mine('start'),
+    'm_standard': lambda: CBL.mine('standard'),
+    'm_rich': lambda: CBL.mine('rich'),
+    'm_depleted': lambda: CBL.mine('depleted'),
+    'b_heartwood': WBL.heartwood,
+    'b_heartwood_2': lambda: WBL.heartwood(2),
+    'b_heartwood_3': lambda: WBL.heartwood(3),
+    'b_grove': WBL.grove,
+    'b_saplodge': WBL.saplodge,
+    'b_den': WBL.den,
+    'b_spire': WBL.spire,
+    'b_circle': WBL.circle,
+    'b_barkweaver': WBL.barkweaver,
+    'b_moonwell': WBL.moonwell,
+    'b_rootpit': WBL.rootpit,
 }
 
 if __name__ == '__main__':

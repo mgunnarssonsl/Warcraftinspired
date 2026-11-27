@@ -131,7 +131,7 @@ def sphere(name, r, material, parent, at=(0, 0, 0), rot=(0, 0, 0), scale=(1, 1, 
     return finish(_obj(name, bm, material, parent), sub=sub)
 
 
-def box(name, size, material, parent, at=(0, 0, 0), rot=(0, 0, 0), bevel=0.0, sub=0, taper=None):
+def box(name, size, material, parent, at=(0, 0, 0), rot=(0, 0, 0), bevel=0.0, sub=0, taper=None, bevel_segs=2):
     """A box (size x, y, z); `taper` scales the top face (x, y) to make wedges and trapezoids."""
     bm = bmesh.new()
     bmesh.ops.create_cube(bm, size=1.0)
@@ -143,7 +143,7 @@ def box(name, size, material, parent, at=(0, 0, 0), rot=(0, 0, 0), bevel=0.0, su
             v.co.x *= taper[0]
             v.co.y *= taper[1]
     _place(bm, at, rot)
-    return finish(_obj(name, bm, material, parent, smooth=sub > 0), sub=sub, bevel=bevel)
+    return finish(_obj(name, bm, material, parent, smooth=sub > 0), sub=sub, bevel=bevel, bevel_segs=bevel_segs)
 
 
 def lathe(name, profile, material, parent, at=(0, 0, 0), rot=(0, 0, 0), scale=(1, 1, 1), segs=16, sub=0, angle=2 * math.pi, smooth=True):
@@ -271,8 +271,42 @@ def clip(name, objects, frames, build):
 # ---- export --------------------------------------------------------------------
 
 
+def consolidate():
+    """Bake modifiers and join all parts sharing a parent and a material into one object."""
+    dg = bpy.context.evaluated_depsgraph_get()
+    groups = {}
+    for o in list(bpy.data.objects):
+        if o.type != 'MESH' or o.get('cutter'):
+            continue
+        key = (o.parent.name if o.parent else '', o.data.materials[0].name if o.data.materials else '')
+        groups.setdefault(key, []).append(o)
+    for (pname, mname), objs in groups.items():
+        if len(objs) < 2:
+            continue
+        bm = bmesh.new()
+        parent = objs[0].parent
+        for o in objs:
+            me = bpy.data.meshes.new_from_object(o.evaluated_get(dg))
+            # Into the parent's space.
+            me.transform(o.matrix_parent_inverse if False else Matrix.Translation(o.location) @ o.rotation_euler.to_matrix().to_4x4() @ Matrix.Diagonal((*o.scale, 1)))
+            bm.from_mesh(me)
+            bpy.data.meshes.remove(me)
+        for o in objs:
+            bpy.data.objects.remove(o)
+        me = bpy.data.meshes.new(f'{pname}_{mname}')
+        bm.to_mesh(me)
+        bm.free()
+        for poly in me.polygons:
+            poly.use_smooth = True
+        me.materials.append(bpy.data.materials[mname])
+        o = bpy.data.objects.new(f'{pname}_{mname}', me)
+        bpy.context.scene.collection.objects.link(o)
+        o.parent = parent
+
+
 def export(path):
     # Cutters and helper objects stay out of the file.
+    consolidate()
     for o in list(bpy.data.objects):
         if o.get('cutter'):
             o.hide_viewport = True

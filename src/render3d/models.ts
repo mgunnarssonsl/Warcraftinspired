@@ -5,6 +5,7 @@
 import * as CB from './crownBuildings';
 import * as FX from './fx';
 import { hasGltfUnit, makeGltfUnit } from './gltfUnits';
+import { hasStatic, makeStatic } from './gltfStatic';
 import * as WB from './wildBuildings';
 import { buildingFaction } from '../sim/factions';
 import { Sculpt, blob, cachedModel, capsule, lathe, leafFan, rand, rbox } from './kit';
@@ -186,7 +187,8 @@ export const makeGroundItem = FX.chestModel;
 export function makeBuilding(type: BuildingType, team: string, size: number, tier = 1): BuildingParts {
   const wild = buildingFaction(type) === 'wild';
   const root = new THREE.Group();
-  const model = cachedModel(`b|${type}|${team}|${tier}`, () => BUILDING_MODELS[type](team, tier)) as THREE.Group;
+  const blend = staticName(type, tier);
+  const model = blend ? makeStatic(blend, team) : (cachedModel(`b|${type}|${team}|${tier}`, () => BUILDING_MODELS[type](team, tier)) as THREE.Group);
   root.add(model);
   const scaffold = cachedModel(`site|${size}|${wild}`, () => siteModel(size, wild));
   const damage = cachedModel(`dmg|${size}|${wild}`, () => damageModel(size, wild));
@@ -195,9 +197,17 @@ export function makeBuilding(type: BuildingType, team: string, size: number, tie
   return { root, model, scaffold, damage };
 }
 
+/** The Blender model for a building at a tier, if there is one (loaded). */
+function staticName(type: BuildingType, tier: number): string | null {
+  const name = `b_${type}${tier > 1 ? `_${tier}` : ''}`;
+  if (hasStatic(name)) return name;
+  return hasStatic(`b_${type}`) ? `b_${type}` : null;
+}
+
 /** A translucent copy of a building model for placement previews. */
 export function makeGhost(type: BuildingType, ghostMat: THREE.Material): THREE.Group {
-  const g = BUILDING_MODELS[type]('#ffffff', 1);
+  const blend = staticName(type, 1);
+  const g = blend ? makeStatic(blend, '#ffffff') : BUILDING_MODELS[type]('#ffffff', 1);
   g.traverse((o) => {
     if (o instanceof THREE.Mesh) {
       o.material = ghostMat;

@@ -16,6 +16,7 @@ import { CameraRig } from './cameraRig';
 import { FogTexture, withFog } from './fog';
 import { isKitMaterial, kitMaterial } from './kit';
 import { loadUnitModels, poseGltfUnit, type GltfUnitParts } from './gltfUnits';
+import { STATIC_MODELS, hasStatic, loadStaticModels, makeMineStatic } from './gltfStatic';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { beamTexture, crossTexture, moveArrowGeometry, ringTexture } from './fx';
 import { TREE_KINDS, treeShadowGeometry, decorGeometry, mineLook, mineModel, rockGeometry, saplingGeometry, stumpGeometry, treeGeometry, type MineModel, type TreeKind } from './envModels';
@@ -213,10 +214,16 @@ export class World3D {
       m.envMapIntensity = 0.45;
     }
     // Blender unit models arrive after the first frame: rebuild units once they are in.
-    loadUnitModels(() => {
+    let pending = 2;
+    const ready = () => {
+      if (--pending > 0) return;
       this.unitModelsReady = true;
+      this.ghosts.forEach((g) => this.drop(g));
+      this.ghosts.clear();
       this.recolor();
-    });
+    };
+    loadUnitModels(ready);
+    loadStaticModels(STATIC_MODELS, ready);
 
     this.fog = new FogTexture(W, H);
     this.buildTerrain();
@@ -930,7 +937,7 @@ export class World3D {
     for (const [id, v] of this.mines)
       if (!seen.has(id)) {
         // An emptied mine stays on the map, boarded up.
-        const left = mineModel('depleted');
+        const left = hasStatic('m_depleted') ? makeMineStatic('depleted') : mineModel('depleted');
         left.root.position.copy(v.root.position);
         this.scene.add(left.root);
         this.removePickable(v.root);
@@ -1278,6 +1285,7 @@ export class World3D {
   }
 
   private syncBuilding(b: Building): void {
+    if (!this.unitModelsReady) return;
     let v = this.buildings.get(b.id);
     if (!v || v.type !== b.type || v.tier !== b.tier) {
       if (v) this.removePickable(v.root); // e.g. a Keep fortified into a Castle
@@ -1391,9 +1399,11 @@ export class World3D {
   }
 
   private syncMine(m: ResourceNode, now: number): void {
+    if (!this.unitModelsReady) return;
     let v = this.mines.get(m.id);
     if (!v) {
-      v = mineModel(mineLook(m.maxAmount, m.miners, CONFIG.resources.goldmine.maxMiners));
+      const look = mineLook(m.maxAmount, m.miners, CONFIG.resources.goldmine.maxMiners);
+      v = hasStatic(`m_${look}`) ? makeMineStatic(look) : mineModel(look);
       v.root.position.set(m.x, 0, m.y);
       v.root.userData.entityId = m.id;
       this.mines.set(m.id, v);
