@@ -10,11 +10,37 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import blib  # noqa: E402
 import crown  # noqa: E402
+import wild  # noqa: E402
+import neutral  # noqa: E402
 
 OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'public', 'models')
 
 MODELS = {
     'guard': crown.guard,
+    'worker': crown.laborer,
+    'archer': crown.archer,
+    'cleric': crown.cleric,
+    'lancer': crown.lancer,
+    'outrider': crown.outrider,
+    'mangonel': crown.mangonel,
+    'hero': crown.marshal,
+    'ranger': crown.pathfinder,
+    'sage': crown.sage,
+    'tender': wild.tender,
+    'thornguard': wild.thornguard,
+    'slinger': wild.slinger,
+    'fox': wild.fox,
+    'stagrider': wild.stagrider,
+    'mender': wild.mender,
+    'rootcrusher': wild.rootcrusher,
+    'warden': wild.thorn_warden,
+    'huntress': wild.huntress,
+    'speaker': wild.grove_speaker,
+    'brigand': neutral.brigand,
+    'poacher': neutral.poacher,
+    'chief': neutral.chief,
+    'brute': neutral.brute,
+    'wolf': neutral.wolf,
 }
 
 if __name__ == '__main__':

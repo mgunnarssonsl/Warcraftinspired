@@ -15,6 +15,8 @@ import { TERRAIN } from '../sim/types';
 import { CameraRig } from './cameraRig';
 import { FogTexture, withFog } from './fog';
 import { isKitMaterial, kitMaterial } from './kit';
+import { loadUnitModels, poseGltfUnit, type GltfUnitParts } from './gltfUnits';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { beamTexture, crossTexture, moveArrowGeometry, ringTexture } from './fx';
 import { TREE_KINDS, treeShadowGeometry, decorGeometry, mineLook, mineModel, rockGeometry, saplingGeometry, stumpGeometry, treeGeometry, type MineModel, type TreeKind } from './envModels';
 import { paintGround } from './groundTexture';
@@ -111,6 +113,8 @@ export class World3D {
   private stumpSlot: number[] = [];
   private shakes = new Map<number, number>();
   private ripples: THREE.Mesh | null = null;
+  /** Units wait (unseen) for the Blender models, a moment at most, rather than flash the old ones. */
+  private unitModelsReady = false;
   /** A soft ring of radius 1 (the texture glows either side of the rim). */
   private ringGeo = new THREE.PlaneGeometry(2.6, 2.6).rotateX(-Math.PI / 2);
   private arrowGeo = moveArrowGeometry();
@@ -200,6 +204,19 @@ export class World3D {
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.03;
     this.scene.add(this.sun, this.sun.target);
+
+    // Steel and gold reflect a soft room, so armour reads as metal.
+    const env = new THREE.PMREMGenerator(this.renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+    for (const f of ['metal', 'gold'] as const) {
+      const m = kitMaterial(f);
+      m.envMap = env;
+      m.envMapIntensity = 0.45;
+    }
+    // Blender unit models arrive after the first frame: rebuild units once they are in.
+    loadUnitModels(() => {
+      this.unitModelsReady = true;
+      this.recolor();
+    });
 
     this.fog = new FogTexture(W, H);
     this.buildTerrain();
@@ -1119,6 +1136,7 @@ export class World3D {
   }
 
   private syncUnit(u: Unit, alpha: number, now: number): void {
+    if (!this.unitModelsReady) return;
     let v = this.units.get(u.id);
     if (!v) {
       const team = teamColor(this.game, u.owner);
@@ -1154,6 +1172,28 @@ export class World3D {
     const moving = u.move?.state === 'moving' && (u.x !== u.px || u.y !== u.py);
     const working = (o?.type === 'gather' && o.phase === 'working') || (o?.type === 'build' && o.phase === 'building') || (o?.type === 'repair' && o.phase === 'repairing');
     const windup = secondsToTicks(CONFIG.units[u.type].attack.windup);
+    if ('mixer' in v) {
+      // A Blender model: pick the clip and the moment in it.
+      const g = v as GltfUnitParts;
+      const swing = u.swing > 0 ? Math.max(0, Math.min(1, 1 - (u.swing - alpha) / windup)) : null;
+      const fighting = swing !== null || (u.cooldown > 0 && attacking(u));
+      const state = o?.type === 'cast' && g.actions.cast ? 'cast' : fighting ? 'attack' : moving ? 'walk' : working ? (g.actions.work ? 'work' : 'attack') : 'idle';
+      poseGltfUnit(g, state, now, swing, CONFIG.units[u.type].speed / 3);
+      const hitAt = this.flinches.get(u.id);
+      if (hitAt !== undefined && now - hitAt < 0.18) g.body.rotation.x = -0.18 * (1 - (now - hitAt) / 0.18);
+      else {
+        if (hitAt !== undefined) this.flinches.delete(u.id);
+        g.body.rotation.x = 0;
+      }
+      const mode = o?.type === 'build' || o?.type === 'repair' ? 'hammer' : o?.type === 'gather' && o.res === 'gold' ? 'pick' : 'axe';
+      g.pickHead.visible = mode === 'pick';
+      g.axeHead.visible = mode === 'axe';
+      g.hammerHead.visible = mode === 'hammer';
+      g.goldSack.visible = u.carry.res === 'gold' && u.carry.amount > 0;
+      const logsShown = u.carry.res === 'wood' ? Math.ceil((u.carry.amount / CONFIG.units.worker.carryWood) * 3) : 0;
+      g.logs.forEach((l, i) => (l.visible = i < logsShown));
+      return;
+    }
     const role = unitRole(u.type);
     const mounted = role === 'cavalry' || role === 'scout' || u.type === 'wolf' || u.type === 'fox';
     const ph = now * (mounted ? 13 : 11) + u.id;

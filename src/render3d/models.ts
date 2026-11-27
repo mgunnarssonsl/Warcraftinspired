@@ -4,6 +4,7 @@
 
 import * as CB from './crownBuildings';
 import * as FX from './fx';
+import { hasGltfUnit, makeGltfUnit } from './gltfUnits';
 import * as WB from './wildBuildings';
 import { buildingFaction } from '../sim/factions';
 import { Sculpt, blob, cachedModel, capsule, lathe, leafFan, rand, rbox } from './kit';
@@ -93,6 +94,7 @@ const UNIT_BUILDERS: Record<UnitType, (team: string) => THREE.Group> = {
 
 /** A unit model: built once per type and team colour, then cloned (shared geometry). */
 export function makeUnit(type: UnitType, team: string): WorkerParts {
+  if (hasGltfUnit(type)) return makeGltfUnit(type, team);
   return cachedUnit(`${type}|${team}`, () => UNIT_BUILDERS[type](team));
 }
 

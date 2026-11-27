@@ -24,10 +24,14 @@ def reset():
 
 
 _mats = {}
+# Share of faces kept after subdivision (units are seen small; 0.4 keeps the shapes round).
+DECIMATE = 0.4
 
 
 def mat(finish, color='#ffffff'):
     """A material by finish and colour ('team' and 'team_dark' take the team colour in game)."""
+    if color.startswith('team'):
+        finish = color  # any finish asked in the team colour is the team cloth
     name = finish if finish.startswith('team') else f'{finish}#{color.lstrip("#").lower()}'
     if name in _mats:
         return _mats[name]
@@ -100,7 +104,7 @@ def _place(bm, at=(0, 0, 0), rot=(0, 0, 0), scale=(1, 1, 1)):
     bmesh.ops.transform(bm, matrix=m, verts=bm.verts)
 
 
-def finish(o, sub=0, bevel=0.0, bevel_segs=2, weld=False):
+def finish(o, sub=0, bevel=0.0, bevel_segs=2, weld=False, decimate=True):
     """Add subdivision and bevel modifiers (applied at export)."""
     if weld:
         o.modifiers.new('weld', 'WELD')
@@ -113,6 +117,10 @@ def finish(o, sub=0, bevel=0.0, bevel_segs=2, weld=False):
         s = o.modifiers.new('sub', 'SUBSURF')
         s.levels = sub
         s.render_levels = sub
+        # Subdivision rounds the shapes; a decimate then keeps the count game-sized.
+        if decimate:
+            d = o.modifiers.new('decimate', 'DECIMATE')
+            d.ratio = DECIMATE
     return o
 
 
@@ -207,7 +215,7 @@ def sheet(name, w, h, material, parent, at=(0, 0, 0), rot=(0, 0, 0), bend=0.0, f
         bmesh.ops.solidify(bm, geom=bm.faces[:], thickness=thick)
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     _place(bm, at, rot)
-    return finish(_obj(name, bm, material, parent), sub=sub)
+    return finish(_obj(name, bm, material, parent), sub=sub, decimate=False)
 
 
 def boolean_cut(target, cutter):
@@ -286,3 +294,52 @@ def export(path):
         export_normals=True,
         export_materials='EXPORT',
     )
+
+
+def curve_tube(name, points, radius, material, parent, taper=None, segs=8):
+    """A smooth tube along a path of points (bows, tails, antlers, roots); `taper` scales the radius along it."""
+    cu = bpy.data.curves.new(name + 'Curve', 'CURVE')
+    cu.dimensions = '3D'
+    cu.bevel_depth = radius
+    cu.bevel_resolution = max(1, segs // 4)
+    cu.resolution_u = 6
+    cu.use_fill_caps = True
+    sp = cu.splines.new('BEZIER')
+    sp.bezier_points.add(len(points) - 1)
+    for i, p in enumerate(points):
+        bp = sp.bezier_points[i]
+        bp.co = p
+        bp.handle_left_type = bp.handle_right_type = 'AUTO'
+        if taper:
+            bp.radius = taper[min(i, len(taper) - 1)]
+    tmp = bpy.data.objects.new(name + 'Tmp', cu)
+    bpy.context.scene.collection.objects.link(tmp)
+    dg = bpy.context.evaluated_depsgraph_get()
+    me = bpy.data.meshes.new_from_object(tmp.evaluated_get(dg))
+    bpy.data.objects.remove(tmp)
+    o = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(o)
+    for p in me.polygons:
+        p.use_smooth = True
+    o.data.materials.clear()
+    o.data.materials.append(material)
+    if parent is not None:
+        o.parent = parent
+        o.location = -world_pos(parent)
+    return o
+
+
+def lump(name, r, material, parent, at=(0, 0, 0), rot=(0, 0, 0), scale=(1, 1, 1), seed=1, rough=0.2, segs=14, rings=10, sub=1):
+    """An organic lump (bark plates, moss, foliage, boulders): a sphere pushed about by smooth noise."""
+    import random
+    rnd = random.Random(seed)
+    bm = bmesh.new()
+    bmesh.ops.create_uvsphere(bm, u_segments=segs, v_segments=rings, radius=r)
+    # A few random waves make smooth bumps.
+    waves = [(Vector((rnd.uniform(-1, 1), rnd.uniform(-1, 1), rnd.uniform(-1, 1))).normalized(), rnd.uniform(2, 5), rnd.uniform(0, 6.28)) for _ in range(5)]
+    for v in bm.verts:
+        n = v.co.normalized()
+        k = 1 + rough * sum(math.sin(n.dot(d) * f + ph) for d, f, ph in waves) / len(waves)
+        v.co = n * r * k
+    _place(bm, at, rot, scale)
+    return finish(_obj(name, bm, material, parent), sub=sub)

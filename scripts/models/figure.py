@@ -47,7 +47,7 @@ class Figure:
 
     # ---- animations ----------------------------------------------------------------
 
-    def animate(self, attack='slash', work=False, cast=False):
+    def animate(self, attack='slash', work=False, cast=False, mounted=False):
         P = self.p
         moving = list(P.values())
         rest = {n: tuple(o.rotation_euler) for n, o in P.items()}
@@ -70,6 +70,15 @@ class Figure:
         clip('idle', moving, 61, idle)
 
         def walk():
+            if mounted:
+                # In the saddle: the rider sways with the gait, legs astride.
+                for i in range(0, 19, 3):
+                    f = 1 + i
+                    ph = 2 * math.pi * i / 18
+                    r('chest', f, dx=0.05 * math.sin(ph))
+                    r('upperarm.L', f, dx=0.08 * math.sin(ph))
+                    r('head', f, dx=-0.04 * math.sin(ph))
+                return
             n = 24
             for i in range(0, n + 1, 3):
                 f = 1 + i
@@ -90,7 +99,7 @@ class Figure:
                 r('chest', f, dz=0.08 * s, dx=0.06)
                 r('hips', f, dz=-0.06 * s)
                 bob(f, 0.018 * abs(c))
-        clip('walk', moving, 25, walk)
+        clip('walk', moving, 19 if mounted else 25, walk)
 
         def strike():
             # Wind up overhead (frames 1-20), the blow lands at frame 21 (70%), recover to 30.
@@ -105,15 +114,18 @@ class Figure:
                 r('forearm.L', f, dx=-0.7 * (up + down))
                 r('chest', f, dz=0.25 * up - 0.3 * down, dx=-0.08 * up + 0.15 * down)
                 r('spine', f, dx=0.06 * down)
-                r('thigh.L', f, dx=-0.25 * down)
-                r('shin.L', f, dx=0.2 * down)
-                bob(f, -0.02 * down)
+                if not mounted:
+                    r('thigh.L', f, dx=-0.25 * down)
+                    r('shin.L', f, dx=0.2 * down)
+                    bob(f, -0.02 * down)
         def bowshot():
             # Raise the bow, draw (to frame 21), loose, settle.
             frames = [(1, 0.0, 0.0), (8, 1.0, 0.2), (18, 1.0, 1.0), (21, 1.0, 1.0), (23, 1.0, 0.0), (30, 0.0, 0.0)]
             for f, raise_, draw in frames:
                 r('upperarm.L', f, dx=-1.45 * raise_, dz=-0.15 * raise_)
                 r('forearm.L', f, dx=0.25 * raise_)
+                if 'bow' in P:
+                    r('bow', f, dx=1.2 * raise_)
                 r('upperarm.R', f, dx=-1.3 * raise_ - 0.1 * draw, dz=0.5 * draw)
                 r('forearm.R', f, dx=-1.6 * draw - 0.3 * raise_)
                 r('chest', f, dz=-0.35 * raise_)
