@@ -5,7 +5,8 @@
 
 import { buildableFor, buildingRole, isHall, isWorker } from '../sim/factions';
 import type { World3D } from '../render3d/world';
-import { CONFIG, type AbilityId, type BuildingType, type HeroType, type ItemId, type ResearchId, type UnitType } from '../sim/config';
+import { CONFIG, type AbilityId, type BuildingType, type HeroType, type ItemId, type ResearchId, type SkillId, type SpecId, type UnitType } from '../sim/config';
+import { animalFor, isMounted, skillsOf, specOptions } from '../sim/elite';
 import { abilitiesOf } from '../sim/hero';
 import { canAfford, checkPlacement, shortfall, snapFootprint } from '../sim/construction';
 import type { Game } from '../sim/game';
@@ -40,6 +41,10 @@ export type Action =
   | `item:${number}`
   | `drop:${number}`
   | `buy:${ItemId}`
+  | `skill:${SkillId}`
+  | `spec:${SpecId}`
+  | 'mount'
+  | 'dismount'
   | 'flare';
 
 /** Hotkeys of the hero's inventory slots. */
@@ -342,6 +347,12 @@ export class InputController {
       this.world.flashEntity(target.id, now);
       return;
     }
+    // A rider right-clicking its own animal (War Bear, Nature Wolf) mounts it.
+    if (target?.kind === 'unit' && target.owner === player && units.some((u) => animalFor(u.type) === target.type)) {
+      this.game.issue({ type: 'mount', player, units: units.filter((u) => animalFor(u.type) === target.type).map((u) => u.id), targetId: target.id });
+      this.world.flashEntity(target.id, now);
+      return;
+    }
     if (target?.kind === 'resource' && workers.length) {
       this.game.issue({ type: 'gather', player, units: workers.map((u) => u.id), nodeId: target.id, queued: shift });
       this.world.flashEntity(target.id, now);
@@ -439,6 +450,41 @@ export class InputController {
         this.world.flashEntity(target.id, now);
       }
       if (!shift) this.client.targetMode = null;
+      return;
+    }
+    if (mode.startsWith('skill:')) {
+      const skill = mode.slice(6) as SkillId;
+      const def = CONFIG.skills[skill];
+      const users = units.filter((u) => skillsOf(u.type).includes(skill)).map((u) => u.id);
+      if (!users.length) return;
+      if (def.target === 'point') {
+        // Charge and Leap: aim at a spot, or at an enemy's spot.
+        const t = this.world.pick(sx, sy);
+        const g = t && t.kind === 'unit' ? { x: t.x, y: t.y } : this.rig.screenToGround(sx, sy);
+        if (!g) return;
+        this.game.issue({ type: 'skill', player, units: users, skill, targetId: -1, x: g.x, y: g.y });
+        this.world.addMarker(g.x, g.y, now, '#ffe9a8');
+      } else {
+        const target = this.world.pick(sx, sy);
+        if (target?.kind !== 'unit') {
+          this.onMessage(def.target === 'enemy' ? 'Target an enemy unit.' : 'Target one of your units.');
+          return;
+        }
+        this.game.issue({ type: 'skill', player, units: users, skill, targetId: target.id });
+        this.world.flashEntity(target.id, now);
+      }
+      if (!shift) this.client.targetMode = null;
+      return;
+    }
+    if (mode === 'mount') {
+      const target = this.world.pick(sx, sy);
+      if (target?.kind !== 'unit' || target.owner !== player) {
+        this.onMessage('Click one of your War Bears or Nature Wolves.');
+        return;
+      }
+      this.game.issue({ type: 'mount', player, units: units.map((u) => u.id), targetId: target.id });
+      this.world.flashEntity(target.id, now);
+      this.client.targetMode = null;
       return;
     }
     if (mode === 'attack') {
@@ -548,6 +594,34 @@ export class InputController {
         return;
       }
       this.game.issue({ type: 'buyItem', player, shopId: shop.id, heroId: hero.id, item: name.slice(4) as ItemId });
+      return;
+    }
+    if (name.startsWith('skill:')) {
+      const skill = name.slice(6) as SkillId;
+      const users = this.ownSelectedUnits().filter((u) => skillsOf(u.type).includes(skill));
+      if (!users.length) return;
+      if (CONFIG.skills[skill].target === 'none') this.game.issue({ type: 'skill', player, units: users.map((u) => u.id), skill, targetId: -1 });
+      else {
+        this.client.placing = null;
+        this.client.targetMode = name as `skill:${SkillId}`;
+      }
+      return;
+    }
+    if (name.startsWith('spec:')) {
+      const into = name.slice(5) as SpecId;
+      const units = this.ownSelectedUnits().filter((u) => specOptions(u.type).includes(into));
+      if (units.length) this.game.issue({ type: 'specialize', player, units: units.map((u) => u.id), into });
+      return;
+    }
+    if (name === 'mount') {
+      if (!this.ownSelectedUnits().some((u) => animalFor(u.type))) return;
+      this.client.placing = null;
+      this.client.targetMode = 'mount';
+      return;
+    }
+    if (name === 'dismount') {
+      const riders = this.ownSelectedUnits().filter((u) => isMounted(u.type));
+      if (riders.length) this.game.issue({ type: 'dismount', player, units: riders.map((u) => u.id) });
       return;
     }
     if (name.startsWith('train:')) {
@@ -698,6 +772,30 @@ export class InputController {
           this.action(`buy:${it}`);
           return;
         }
+      }
+    }
+    // Unit skills, specializations and mounting (when no hero claims the key).
+    if (!this.activeHero() && !this.selectedWorkers().length) {
+      const sel = this.ownSelectedUnits();
+      for (const s of new Set(sel.flatMap((u) => skillsOf(u.type)))) {
+        if (k === CONFIG.skills[s].hotkey.toLowerCase()) {
+          this.action(`skill:${s}`);
+          return;
+        }
+      }
+      for (const sp of new Set(sel.flatMap((u) => specOptions(u.type)))) {
+        if (k === CONFIG.specialize[sp].hotkey.toLowerCase()) {
+          this.action(`spec:${sp}`);
+          return;
+        }
+      }
+      if (k === 'd' && sel.some((u) => isMounted(u.type))) {
+        this.action('dismount');
+        return;
+      }
+      if (k === 'd' && sel.some((u) => animalFor(u.type))) {
+        this.action('mount');
+        return;
       }
     }
     const hero = this.activeHero();

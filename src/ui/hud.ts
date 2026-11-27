@@ -5,11 +5,12 @@
 import { rulesOf } from '../sim/rules';
 import { buildableFor, buildingFaction, buildingRole, FACTION, isHall, isHealer, isWorker } from '../sim/factions';
 import { hpColor, teamColor } from './view';
-import { COMMAND_GLYPHS, abilityArt, buildingArt, itemArt, researchArt, unitArt } from './art';
+import { COMMAND_GLYPHS, abilityArt, buildingArt, itemArt, mountArt, researchArt, skillArt, unitArt } from './art';
+import { animalFor, dismountProblem, isMounted, rankName, rankOf, isTroop, skillsOf, specializeProblem, specOptions } from '../sim/elite';
 import { keyLabel } from '../input/keymap';
 import type { ClientState } from '../input/client';
 import { ITEM_KEYS, type Action, type InputController } from '../input/input';
-import { BUILDABLE, CONFIG, isHeroType, TICK_RATE, type AbilityId, type BuildingType, type ItemId, type ResearchId, type UnitType } from '../sim/config';
+import { BUILDABLE, CONFIG, isHeroType, TICK_RATE, type AbilityId, type BuildingType, type ItemId, type ResearchId, type SkillId, type SpecId, type UnitType } from '../sim/config';
 import { canAfford } from '../sim/construction';
 import type { Game } from '../sim/game';
 import { abilitiesOf, rank } from '../sim/hero';
@@ -102,6 +103,9 @@ interface ActionDef {
   slot?: number;
   buy?: ItemId;
   flare?: boolean;
+  skill?: SkillId;
+  spec?: SpecId;
+  mount?: 'mount' | 'dismount';
 }
 
 const BUILD_TIPS: Record<BuildingType, string> = {
@@ -224,6 +228,36 @@ const ACTIONS: ActionDef[] = [
       tip: `${d.desc} ${aim}; ${reach}. ${d.mana} mana, ${d.cooldown}s cooldown. Learned at hero level ${d.learnLevel}; stronger at levels 3 and 5.`,
     };
   }),
+  ...(Object.keys(CONFIG.skills) as SkillId[]).map((sk) => {
+    const d = CONFIG.skills[sk];
+    const aim = d.target === 'point' ? 'Click a spot (or an enemy).' : d.target === 'enemy' ? 'Click an enemy unit.' : d.target === 'ally' ? 'Click one of your units.' : '';
+    return { id: `skill:${sk}` as Action, label: d.name, key: d.hotkey, skill: sk, tip: `${d.desc} ${aim}${d.range ? ` Range ${d.range}.` : ''} ${d.cooldown}s cooldown.` };
+  }),
+  ...(Object.keys(CONFIG.specialize) as SpecId[]).map((sp) => {
+    const d = CONFIG.specialize[sp];
+    const at = CONFIG.buildings[d.at as BuildingType].name;
+    return {
+      id: `spec:${sp}` as Action,
+      label: CONFIG.units[sp].name,
+      key: d.hotkey,
+      spec: sp,
+      tip: `Become a ${CONFIG.units[sp].name}: ${d.desc} Needs ${CONFIG.veterancy.eligibleXp} experience, earned in battle. The soldier walks to your ${at} and pays there. Permanent. Cost: ${d.cost.gold} gold, ${d.cost.wood} wood.`,
+    };
+  }),
+  {
+    id: 'mount' as Action,
+    label: 'Mount',
+    key: 'D',
+    mount: 'mount' as const,
+    tip: `Ride a War Bear (Bearwarden) or a Nature Wolf (Wolfkeeper): click the animal. They meet and hold still for ${CONFIG.mounting.mountSeconds}s; damage interrupts. Health and population add up; experience and cooldowns stay with the rider; if the mount dies, both die. (Right-click the animal also mounts.)`,
+  },
+  {
+    id: 'dismount' as Action,
+    label: 'Dismount',
+    key: 'D',
+    mount: 'dismount' as const,
+    tip: `Split into rider and animal again, each with the same share of health. Only after ${CONFIG.mounting.calmSeconds}s without taking damage.`,
+  },
   {
     id: 'flare' as Action,
     label: 'Signal Flare',
@@ -300,7 +334,25 @@ export class Hud {
         (cost ? `<span class="cmd-cost"><i class="g">${cost.gold}</i> <i class="w">${cost.wood}</i></span>` : '');
       if (a.build || a.train || a.research) b.classList.add('build');
       // Painted art for anything with a picture; a gold glyph for plain orders.
-      const art = a.build ? buildingArt(a.build) : a.train ? unitArt(a.train) : a.research ? researchArt(a.research) : a.ability ? abilityArt(a.ability) : a.buy ? itemArt(a.buy) : null;
+      const art = a.build
+        ? buildingArt(a.build)
+        : a.train
+          ? unitArt(a.train)
+          : a.research
+            ? researchArt(a.research)
+            : a.ability
+              ? abilityArt(a.ability)
+              : a.buy
+                ? itemArt(a.buy)
+                : a.skill
+                  ? skillArt(a.skill)
+                  : a.spec
+                    ? unitArt(a.spec)
+                    : a.mount === 'mount'
+                      ? mountArt(false)
+                      : a.mount === 'dismount'
+                        ? unitArt('bearwarden')
+                        : null;
       const glyph = art ? null : (COMMAND_GLYPHS[a.flare ? 'flare' : a.id] ?? null);
       if (art) {
         b.classList.add('has-art');
@@ -312,6 +364,15 @@ export class Hud {
       if (a.ability) {
         b.classList.add('ability');
         b.innerHTML += `<span class="cmd-cost mana">${CONFIG.hero.abilities[a.ability].mana}</span><span class="cmd-cd"></span>`;
+      }
+      if (a.skill) {
+        b.classList.add('ability');
+        b.innerHTML += `<span class="cmd-cd"></span>`;
+      }
+      if (a.spec) {
+        b.classList.add('build');
+        const c = CONFIG.specialize[a.spec].cost;
+        b.innerHTML += `<span class="cmd-cost"><i class="g">${c.gold}</i> <i class="w">${c.wood}</i></span>`;
       }
       setTip(b, a.tip);
       b.addEventListener('click', () => input.action(a.id));
@@ -466,8 +527,20 @@ export class Hud {
         this.notify(`Your hero picked up ${CONFIG.items[e.item].name}.`, 'good');
       } else if (e.type === 'itemBought' && e.player === this.client.player) {
         this.notify(`Bought ${CONFIG.items[e.item].name}.`, 'good');
-      } else if (e.type === 'cantCast' && e.player === this.client.player) {
+      } else if ((e.type === 'cantCast' || e.type === 'cantOrder') && e.player === this.client.player) {
         this.notify(e.reason, 'alert');
+      } else if (e.type === 'rankUp' && e.player === this.client.player) {
+        const u = this.game.unit(e.id);
+        const name = u ? CONFIG.units[u.type].name : 'A soldier';
+        const opts = u ? specOptions(u.type) : [];
+        if (e.rank >= 2 && opts.length)
+          this.notify(`A ${name} is a seasoned veteran: it can now become a ${opts.map((o) => CONFIG.units[o].name).join(' or ')}.`, 'good');
+        else if (e.rank === 1) this.notify(`A ${name} has become a Veteran.`, 'good');
+      } else if (e.type === 'specialized' && e.player === this.client.player) {
+        this.notify(`A veteran has become a ${CONFIG.units[e.into].name}.`, 'good');
+      } else if (e.type === 'mounted' && e.player === this.client.player) {
+        const u = this.game.unit(e.id);
+        this.notify(`${u ? CONFIG.units[u.type].name : 'A rider'} ready.`, 'good');
       } else if (e.type === 'researchComplete' && e.player === this.client.player) {
         this.notify(`Research complete: ${CONFIG.research[e.research].name}.`);
       } else if (e.type === 'levelUp' && e.player === this.client.player) {
@@ -604,6 +677,47 @@ export class Hud {
           btn.disabled = !!problem && !problem.startsWith('Not enough');
           btn.classList.toggle('poor', !!problem && problem.startsWith('Not enough'));
           setTip(btn, a.tip, problem);
+        }
+        continue;
+      }
+      if (a.skill) {
+        // Shown when any selected unit has the skill (and no hero's abilities claim the card).
+        const users = hero ? [] : own.filter((u) => skillsOf(u.type).includes(a.skill!));
+        btn.classList.toggle('hidden', !users.length);
+        if (users.length) {
+          const ready = Math.min(...users.map((u) => u.ready[a.skill!] ?? 0));
+          const cd = Math.max(0, (ready - this.game.state.tick) / TICK_RATE);
+          setText(btn.querySelector('.cmd-cd')!, cd > 0 ? `${Math.ceil(cd)}s` : '');
+          btn.disabled = cd > 0;
+          btn.classList.toggle('active', this.client.targetMode === a.id || (a.skill === 'stance' && users.some((u) => u.stance)));
+        }
+        continue;
+      }
+      if (a.spec) {
+        const from = hero || workers ? [] : own.filter((u) => specOptions(u.type).includes(a.spec!));
+        btn.classList.toggle('hidden', !from.length);
+        if (from.length) {
+          const ready = from.find((u) => !specializeProblem(this.game, u, a.spec!));
+          const problem = ready ? null : specializeProblem(this.game, from.reduce((x, y) => (y.xp > x.xp ? y : x)), a.spec);
+          btn.disabled = !!problem && !problem.startsWith('Not enough');
+          btn.classList.toggle('poor', !!problem && problem.startsWith('Not enough'));
+          setTip(btn, a.tip, problem);
+        }
+        continue;
+      }
+      if (a.mount) {
+        const show = hero || workers ? false : a.mount === 'mount' ? own.some((u) => !!animalFor(u.type)) : own.some((u) => isMounted(u.type));
+        btn.classList.toggle('hidden', !show);
+        if (show && a.mount === 'dismount') {
+          const m = own.find((u) => isMounted(u.type))!;
+          const problem = dismountProblem(this.game, m);
+          btn.disabled = !!problem;
+          setTip(btn, a.tip, problem);
+        }
+        if (show && a.mount === 'mount') {
+          const wolf = own.some((u) => animalFor(u.type) === 'naturewolf');
+          btn.style.setProperty('--art', `url("${mountArt(wolf)}")`);
+          btn.classList.toggle('active', this.client.targetMode === 'mount');
         }
         continue;
       }
@@ -751,8 +865,41 @@ export class Hud {
         const items = h.items.filter((x): x is ItemId => !!x).map((x) => CONFIG.items[x].name);
         row('Items', items.length ? items.join(', ') : 'none (right-click items on the ground)');
       }
+      if (isTroop(e.type)) {
+        // Veterancy: rank, progress to the next step, and what it opens.
+        const v = CONFIG.veterancy;
+        const r = rankOf(e);
+        const xp = Math.floor(e.xp);
+        // Units with no specialization stop at Veteran: no target past it.
+        const next = r === 0 ? v.veteranXp : r === 1 && specOptions(e.type).length ? v.eligibleXp : 0;
+        row('Rank', `${'★'.repeat(r)}${'☆'.repeat(2 - r)} ${rankName(e)}${next ? ` (${xp} / ${next} xp)` : ` (${xp} xp)`}`);
+        if (next) {
+          const bar = el('div', 'xp-bar');
+          const fill = el('div', 'xp-fill');
+          fill.style.width = `${Math.min(100, Math.round((e.xp / next) * 100))}%`;
+          bar.appendChild(fill);
+          box.appendChild(bar);
+        }
+        if (r === 2 && specOptions(e.type).length && e.owner === this.client.player)
+          row('Specialize', `${specOptions(e.type).map((s) => CONFIG.units[s].name).join(' or ')}, at your ${CONFIG.buildings[CONFIG.specialize[specOptions(e.type)[0]].at as BuildingType].name}`);
+        if (isMounted(e.type)) {
+          const m = CONFIG.mounts[e.type];
+          row('Mount', `${CONFIG.units[m.rider as UnitType].name} on a ${CONFIG.units[m.animal as UnitType].name}: if it falls, both fall`);
+        }
+      }
+      const skills = skillsOf(e.type);
+      if (skills.length)
+        row(
+          'Skills',
+          skills
+            .map((sk) => {
+              const cd = Math.max(0, Math.ceil(((e.ready[sk] ?? 0) - this.game.state.tick) / TICK_RATE));
+              return `${CONFIG.skills[sk].name}${sk === 'stance' && e.stance ? ' (raised)' : cd ? ` (${cd}s)` : ''}`;
+            })
+            .join(', '),
+        );
       if (e.stun > 0) row('Stunned', `${Math.ceil(e.stun / TICK_RATE)}s`);
-      if (e.buffs.length) row('Effects', e.buffs.map((b) => `${BUFF_NAMES[b.kind]} ${Math.ceil((b.until - this.game.state.tick) / TICK_RATE)}s`).join(', '));
+      if (e.buffs.length) row('Effects', e.buffs.map((b) => `${BUFF_NAMES[b.kind]}${b.kind === 'shield' ? ` ${Math.ceil(b.amount)}` : ''} ${Math.ceil((b.until - this.game.state.tick) / TICK_RATE)}s`).join(', '));
       const camp = this.game.state.camps[e.camp];
       if (camp) row('Camp', `level ${camp.level} of 3 · the last guard drops ${CONFIG.items[camp.drop].name}`);
       if (e.owner !== this.client.player) row('Owner', this.game.player(e.owner).name);

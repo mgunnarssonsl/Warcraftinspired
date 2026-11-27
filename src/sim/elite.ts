@@ -82,7 +82,7 @@ export function skillsOf(t: UnitType): SkillId[] {
 /** 0 Recruit, 1 Veteran, 2 Veteran ready to specialize (or a specialist). */
 export function rankOf(u: Unit): number {
   if (!isTroop(u.type)) return 0;
-  if (u.xp >= V().eligibleXp || isSpecialist(u.type) || isMounted(u.type)) return 2;
+  if (isSpecialist(u.type) || isMounted(u.type) || (u.xp >= V().eligibleXp && specOptions(u.type).length)) return 2;
   return u.xp >= V().veteranXp ? 1 : 0;
 }
 

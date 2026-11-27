@@ -2,9 +2,9 @@
 // they are hovering, and transient interface modes. Never serialized with the
 // match and never read by the simulation.
 
-import type { AbilityId, BuildingType } from '../sim/config';
+import type { AbilityId, BuildingType, SkillId } from '../sim/config';
 
-export type TargetMode = null | 'move' | 'gather' | 'repair' | 'attack' | 'flare' | `cast:${AbilityId}`;
+export type TargetMode = null | 'move' | 'gather' | 'repair' | 'attack' | 'flare' | 'mount' | `cast:${AbilityId}` | `skill:${SkillId}`;
 
 export interface ClientState {
   player: number;

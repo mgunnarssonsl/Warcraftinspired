@@ -150,6 +150,10 @@ export class World3D {
   private boulders: THREE.InstancedMesh;
   /** Where each boulder was first seen, for its arc. */
   private boulderFrom = new Map<number, { x: number; y: number }>();
+  /** Musket balls already seen (smoke once, at the muzzle). */
+  private shotsSeen = new Set<number>();
+  /** Told when a musket fires (for its sound). */
+  onShot: ((x: number, y: number) => void) | null = null;
   /** Views of units/buildings that just died, animated out before removal. */
   private dying: Array<{ root: THREE.Object3D; t0: number; building: boolean }> = [];
   private ghosts = new Map<BuildingType, THREE.Group>();
@@ -714,6 +718,53 @@ export class World3D {
           this.addWave(e.x, e.y, now, '#7dff8a', 1.2, 0.6);
         }
         else if (fx === 'bolt' && !def.projectileSpeed) this.burst(e.x, 0.5, e.y, 16, '#6ab04a', 1.4, now); // roots burst up at once
+      } else if (e.type === 'skill') {
+        if (e.phase === 'cancel') continue;
+        const t = e.targetId >= 0 ? this.game.unit(e.targetId) : undefined;
+        switch (e.skill) {
+          case 'aim':
+            if (e.phase === 'fire') {
+              this.burst(e.x, 1.0, e.y, 22, '#d8d4cc', 1.4, now);
+              this.burst(e.x, 1.0, e.y, 8, '#ffb040', 2.4, now);
+            }
+            break;
+          case 'charge':
+            this.burst(e.x, 0.25, e.y, e.phase === 'fire' ? 26 : 14, '#a8916c', 2.6, now);
+            if (e.phase === 'fire') this.addWave(e.x, e.y, now, '#d8c08a', 1.6, 0.5);
+            break;
+          case 'leap':
+          case 'pounce':
+            this.burst(e.x, 0.3, e.y, e.phase === 'fire' ? 20 : 8, e.skill === 'leap' ? '#9ad86a' : '#6a6a78', 2.2, now);
+            if (e.phase === 'fire' && e.skill === 'leap') this.addWave(e.x, e.y, now, '#7dff5a', CONFIG.skills.leap.radius, 0.5);
+            break;
+          case 'root':
+            if (t) {
+              this.burst(t.x, 0.2, t.y, 24, '#5fbf3a', 1.6, now);
+              this.addWave(t.x, t.y, now, '#5fbf3a', 0.9, 0.7);
+            }
+            break;
+          case 'barkshield':
+            if (t) {
+              this.burst(t.x, 0.8, t.y, 18, '#c08a52', 1.4, now);
+              this.addColumn(t.x, t.y, now, '#d9a066', 0.6);
+            }
+            break;
+          case 'stance':
+            this.burst(e.x, 0.7, e.y, 10, '#9fc4ff', 1.0, now);
+            break;
+          case 'shift':
+            this.burst(e.x, 0.7, e.y, e.phase === 'fire' ? 30 : 12, '#7dff5a', 1.8, now);
+            if (e.phase === 'fire') this.addWave(e.x, e.y, now, '#7dff5a', 1.2, 0.6);
+            break;
+          case 'mount':
+            this.burst(e.x, 0.6, e.y, 8, '#f0d27a', 1.0, now);
+            break;
+        }
+      } else if (e.type === 'rankUp') {
+        this.burst(e.x, 1.1, e.y, 16, '#f0d27a', 1.8, now);
+      } else if (e.type === 'specialized' || e.type === 'mounted' || e.type === 'dismounted') {
+        this.burst(e.x, 0.9, e.y, 26, '#f0d27a', 2.0, now);
+        this.addColumn(e.x, e.y, now, '#f0d27a', 0.7);
       } else if (e.type === 'flare') {
         // A flare is seen by whoever lit it (and anyone already watching that spot).
         if (e.player === this.viewer || this.tileVisible(e.x, e.y)) {
@@ -1040,6 +1091,22 @@ export class World3D {
       const x = p.px + (p.x - p.px) * alpha;
       const y = p.py + (p.y - p.py) * alpha;
       const heading = Math.atan2(p.x - p.px, p.y - p.py);
+      if (p.kind === 'shot') {
+        // A musket ball: a quick dark streak; smoke and flash at the muzzle when it leaves.
+        if (!this.shotsSeen.has(p.id)) {
+          this.shotsSeen.add(p.id);
+          this.burst(p.px, 1.0, p.py, 10, '#d8d4cc', 0.9, now);
+          this.burst(p.px, 1.0, p.py, 4, '#ffb040', 1.8, now);
+          this.onShot?.(p.px, p.py);
+        }
+        live.add(p.id);
+        if (st >= 60) continue;
+        this.p.set(x, 0.95, y);
+        this.q.identity();
+        this.s.set(0.22, 0.22, 0.22);
+        this.boulders.setMatrixAt(st++, this.m4.compose(this.p, this.q, this.s));
+        continue;
+      }
       if (p.kind === 'boulder') {
         if (st >= 60) continue;
         // A lobbed arc from launch point to landing spot.
@@ -1079,6 +1146,7 @@ export class World3D {
     this.boulders.count = st;
     this.boulders.instanceMatrix.needsUpdate = true;
     for (const id of this.boulderFrom.keys()) if (!live.has(id)) this.boulderFrom.delete(id);
+    for (const id of this.shotsSeen) if (!live.has(id)) this.shotsSeen.delete(id);
   }
 
   private removePickable(o: THREE.Object3D): void {
@@ -1178,6 +1246,8 @@ export class World3D {
     const x = u.px + (u.x - u.px) * alpha;
     const y = u.py + (u.y - u.py) * alpha;
     v.root.position.set(x, 0, y);
+    // Charges, leaps and pounces kick up dust.
+    if (u.dash && Math.random() < 0.6) this.burst(x, 0.12, y, 2, '#a8916c', 0.7, now);
     const want = Math.atan2(Math.cos(u.facing), Math.sin(u.facing));
     let d = want - v.root.rotation.y;
     d = Math.atan2(Math.sin(d), Math.cos(d));

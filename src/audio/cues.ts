@@ -34,6 +34,10 @@ export const CUE_CATEGORY = {
   spell: 'combat',
   heal: 'combat',
   horn: 'combat',
+  musket: 'combat',
+  aimClick: 'combat',
+  growl: 'combat',
+  shimmer: 'combat',
   // economy and construction
   chop: 'economy',
   treeFall: 'economy',
@@ -45,6 +49,7 @@ export const CUE_CATEGORY = {
   trained: 'economy',
   research: 'economy',
   levelUp: 'economy',
+  rankUp: 'economy',
   pickup: 'economy',
   coin: 'economy',
   // alerts
@@ -92,7 +97,7 @@ export function eventCues(events: GameEvent[], ctx: CueContext): CueHit[] {
         // The swing or shot, where the attacker stands.
         const u = ctx.unit(e.id);
         if (!u || (!mine(u.owner) && !seen(u.x, u.y))) break;
-        at(u.type === 'mangonel' ? 'siegeLaunch' : RANGED.has(u.type) ? 'bowShot' : MAGIC.has(u.type) ? 'spellShot' : 'swing', u.x, u.y);
+        at(u.type === 'mangonel' ? 'siegeLaunch' : u.type === 'musketeer' ? 'aimClick' : RANGED.has(u.type) ? 'bowShot' : MAGIC.has(u.type) ? 'spellShot' : 'swing', u.x, u.y);
         break;
       }
       case 'hit': {
@@ -100,6 +105,8 @@ export function eventCues(events: GameEvent[], ctx: CueContext): CueHit[] {
         if (!mine(e.owner) && !mine(e.attackerOwner) && !seen(e.x, e.y)) break;
         const a = ctx.unit(e.attacker);
         if (a?.type === 'mangonel') break; // its impact booms instead
+        // A musket ball arrives almost at once: the report sounds with the hit.
+        if (a?.type === 'musketeer') at('musket', a.x, a.y);
         if (!ctx.unit(e.id)) at('thud', e.x, e.y);
         else at(a && (RANGED.has(a.type) || MAGIC.has(a.type)) ? 'arrowHit' : 'clash', e.x, e.y);
         break;
@@ -142,6 +149,23 @@ export function eventCues(events: GameEvent[], ctx: CueContext): CueHit[] {
         break;
       case 'levelUp':
         if (mine(e.player)) out.push({ cue: 'levelUp' });
+        break;
+      case 'rankUp':
+      case 'specialized':
+      case 'mounted':
+        if (mine(e.player)) at('rankUp', e.x, e.y);
+        break;
+      case 'skill': {
+        if (e.phase === 'cancel' || (!mine(e.player) && !seen(e.x, e.y))) break;
+        const sk = e.skill;
+        if (sk === 'aim') at(e.phase === 'start' ? 'aimClick' : 'musket', e.x, e.y);
+        else if ((sk === 'charge' || sk === 'leap' || sk === 'pounce') && e.phase === 'start') at('growl', e.x, e.y);
+        else if (sk === 'shift' || sk === 'root' || sk === 'barkshield') at('shimmer', e.x, e.y);
+        else if (sk === 'stance') at('clash', e.x, e.y);
+        break;
+      }
+      case 'cantOrder':
+        if (mine(e.player)) out.push({ cue: 'error' });
         break;
       case 'itemPicked':
         if (mine(e.player)) at('pickup', e.x, e.y);

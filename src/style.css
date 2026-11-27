@@ -1571,3 +1571,17 @@ details.more summary {
   border-color: var(--alert);
   color: #fff;
 }
+
+/* Veterancy progress in the unit panel. */
+.xp-bar {
+  height: 5px;
+  margin: 2px 0 4px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--edge);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.xp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #b8862e, #f0d27a);
+}

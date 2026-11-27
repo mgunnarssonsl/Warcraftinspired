@@ -9,6 +9,7 @@ import { CONFIG } from '../sim/config';
 import type { Game } from '../sim/game';
 import type { GameEvent, Order, QueuedOrder, Unit } from '../sim/types';
 import type { CameraRig } from './cameraRig';
+import { isMounted, isSpecialist, isTroop, rankOf } from '../sim/elite';
 
 interface FloatText {
   x: number;
@@ -48,6 +49,12 @@ export class Overlay {
         this.floats.push({ x: e.x, y: e.y, text: `+${e.amount}`, color: GOLD, t0: now });
       } else if (e.type === 'levelUp' && e.player === viewer) {
         this.floats.push({ x: e.x, y: e.y, text: `Level ${e.level}!`, color: '#ffe9a8', t0: now });
+      } else if (e.type === 'rankUp' && e.player === viewer) {
+        this.floats.push({ x: e.x, y: e.y, text: e.rank >= 2 ? 'Ready to specialize!' : 'Veteran!', color: '#f0d27a', t0: now });
+      } else if (e.type === 'specialized' && e.player === viewer) {
+        this.floats.push({ x: e.x, y: e.y, text: `${CONFIG.units[e.into].name}!`, color: '#f0d27a', t0: now });
+      } else if (e.type === 'mounted' && e.player === viewer) {
+        this.floats.push({ x: e.x, y: e.y, text: 'Mounted!', color: '#f0d27a', t0: now });
       }
     }
   }
@@ -77,6 +84,71 @@ export class Overlay {
       ctx.fillStyle = '#fff';
       ctx.fillText(label, p.x, py - 4);
     }
+  }
+
+  /** One or two gold chevrons (plus a diamond for specialists) above a veteran. */
+  private rankBadge(x: number, y: number, h: number, rank: number, special: boolean): void {
+    const p = this.rig.project(x, y, h);
+    if (!p.visible) return;
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.lineJoin = 'round';
+    for (let i = 0; i < rank; i++) {
+      const cy = p.y - i * 5;
+      ctx.beginPath();
+      ctx.moveTo(p.x - 6, cy + 3);
+      ctx.lineTo(p.x, cy - 2);
+      ctx.lineTo(p.x + 6, cy + 3);
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+      ctx.stroke();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#f0c552';
+      ctx.stroke();
+    }
+    if (special) {
+      const cy = p.y - rank * 5 - 4;
+      ctx.beginPath();
+      ctx.moveTo(p.x, cy - 4);
+      ctx.lineTo(p.x + 3.5, cy);
+      ctx.lineTo(p.x, cy + 4);
+      ctx.lineTo(p.x - 3.5, cy);
+      ctx.closePath();
+      ctx.fillStyle = '#ffe9a8';
+      ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+      ctx.lineWidth = 1.5;
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** The Musketeer's telegraphed shot: a dashed red line, and a ring closing on the target. */
+  private aimLine(x: number, y: number, tx: number, ty: number, k: number): void {
+    const a = this.rig.project(x, y, 0.95);
+    const b = this.rig.project(tx, ty, 0.6);
+    if (!a.visible || !b.visible) return;
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.setLineDash([7, 5]);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = `rgba(255, 70, 50, ${0.45 + 0.5 * k})`;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    const r = 26 - 16 * k;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
+    ctx.stroke();
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      ctx.beginPath();
+      ctx.moveTo(b.x + dx * (r - 5), b.y + dy * (r - 5));
+      ctx.lineTo(b.x + dx * (r + 5), b.y + dy * (r + 5));
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   private marker(x: number, y: number, h: number, text: string, color: string): void {
@@ -193,6 +265,13 @@ export class Overlay {
           this.bar(x, y, head, 40, e.hp / e.maxHp, hpColor(e.hp / e.maxHp), `Lv ${e.hero.level}`, teamColor(game, e.owner));
           this.bar(x, y, head - 0.12, 40, e.hero.mana / e.hero.maxMana, '#5a8cff');
           continue;
+        }
+        // Veterans wear their rank: gold chevrons (a diamond above for specialists and riders).
+        if (isTroop(e.type) && rankOf(e) > 0) this.rankBadge(x, y, isMounted(e.type) ? 1.75 : 1.42, rankOf(e), isSpecialist(e.type) || isMounted(e.type));
+        // Take Aim: a red line to the target and a closing ring around it, for everyone who can see it.
+        if (e.order?.type === 'skill' && e.order.skill === 'aim' && e.order.phase === 'prepare') {
+          const t = game.unit(e.order.targetId);
+          if (t) this.aimLine(x, y, t.x, t.y, 1 - Math.max(0, (e.order.until - game.state.tick) / (CONFIG.skills.aim.prepare * 20)));
         }
         // Health bars per the settings: always, when hurt or selected, or selected only.
         const show = view.healthBars === 'always' || selected.has(e.id) || (view.healthBars === 'damaged' && e.hp < e.maxHp);

@@ -2,7 +2,7 @@
 // (public/art): portraits for units and buildings, icons for abilities,
 // items and research, and small SVG glyphs for plain commands.
 
-import type { AbilityId, BuildingType, ItemId, ResearchId, UnitType } from '../sim/config';
+import type { AbilityId, BuildingType, ItemId, ResearchId, SkillId, UnitType } from '../sim/config';
 
 const base = 'art';
 
@@ -20,6 +20,21 @@ export function buildingArt(t: BuildingType | 'goldmine' | 'tree', tier = 1): st
 export const abilityArt = (a: AbilityId) => `${base}/a/${a}.webp`;
 export const itemArt = (i: ItemId) => `${base}/i/${i}.webp`;
 export const researchArt = (r: ResearchId) => `${base}/r/${r}.webp`;
+
+/** Unit skills: cut from sheet 16, or borrowing the hero spell that looks the same. */
+const SKILL_ART: Record<SkillId, string> = {
+  aim: 's/aim',
+  charge: 's/charge',
+  leap: 's/leap',
+  pounce: 's/pounce',
+  shift: 's/shift',
+  stance: 'r/armor2',
+  barkshield: 'a/barkskin',
+  root: 'a/entangle',
+};
+export const skillArt = (s: SkillId) => `${base}/${SKILL_ART[s]}.webp`;
+/** Mounting: the rider pair it makes. */
+export const mountArt = (wolf: boolean) => `${base}/s/${wolf ? 'mountwolf' : 'mount'}.webp`;
 
 const svg = (body: string) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;

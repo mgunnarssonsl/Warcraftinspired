@@ -128,6 +128,18 @@ UNITS = {
     'chief': ('04-neutral-enemies.png', (1000, 85, 1500, 475), 'head'),
     'wolf': ('04-neutral-enemies.png', (60, 620, 450, 930), 'fit'),
     'brute': ('04-neutral-enemies.png', (480, 550, 900, 945), 'head'),
+    # Sheet 16: elite units (specialists without their own painting borrow the nearest one).
+    'musketeer': ('16-elite-units.png', (845, 95, 1110, 495), 'head'),
+    'warbear': ('16-elite-units.png', (462, 322, 748, 478), 'fit'),
+    'bearrider': ('16-elite-units.png', (20, 92, 445, 478), 'fit'),
+    'bearwarden': ('16-elite-units.png', (528, 128, 668, 298), 'head'),
+    'sentinel': ('02-ironvale-army.png', (470, 80, 785, 392), 'fit'),
+    'naturewolf': ('16-elite-units.png', (448, 768, 748, 962), 'fit'),
+    'wolfrider': ('16-elite-units.png', (28, 540, 478, 965), 'fit'),
+    'wolfkeeper': ('16-elite-units.png', (538, 566, 672, 745), 'head'),
+    'barksentinel': ('03-thornwild-army.png', None, 'fit'),
+    'shifter': ('16-elite-units.png', (812, 522, 1038, 908), 'head'),
+    'panther': ('16-elite-units.png', (1082, 612, 1508, 905), 'fit'),
 }
 
 BUILDINGS = {
@@ -226,11 +238,37 @@ RESOURCES = {
 }
 
 
+# Unit skills (sim/elite.ts): cut-outs from sheet 16.
+SKILLS = {
+    'aim': ('16-elite-units.png', (1160, 245, 1402, 468)),
+    'charge': ('16-elite-units.png', (462, 322, 640, 478)),
+    'leap': ('16-elite-units.png', (448, 768, 748, 962)),
+    'pounce': ('16-elite-units.png', (1300, 612, 1508, 800)),
+    'mount': ('16-elite-units.png', (20, 92, 445, 478)),
+    'mountwolf': ('16-elite-units.png', (28, 540, 478, 965)),
+}
+
+
 def main():
     sheets = {}
     get = lambda n: sheets.setdefault(n, sheet(n))
     for name, (sh, box, mode) in UNITS.items():
+        if box is None:
+            box = UNITS['thornguard'][1]
         save(framed(cut(get(sh), box), 128, mode), 'u', name, 128)
+    for name, (sh, box) in SKILLS.items():
+        save(framed(cut(get(sh), box), 96, 'fit'), 's', name, 96)
+    # Shift Form: the warrior's head beside the panther's, on one backdrop.
+    elite = get('16-elite-units.png')
+    warrior = cut(elite, (812, 522, 1038, 908))
+    warrior = warrior.crop((0, 0, warrior.width, int(warrior.width * 0.9)))
+    cat = cut(elite, (1300, 612, 1508, 800))
+    bg = backdrop(96)
+    for art, x in ((warrior, 2), (cat, 46)):
+        art.thumbnail((50, 80), Image.LANCZOS)
+        bg.alpha_composite(art, (x, (96 - art.height) // 2 + 4))
+    ImageDraw.Draw(bg).rectangle([1, 1, 94, 94], outline=(170, 132, 62, 255), width=2)
+    save(bg, 's', 'shift', 96)
     for name, (sh, box) in BUILDINGS.items():
         save(framed(cut(get(sh), box), 128, 'fit'), 'b', name, 128)
     for name, (sh, box) in ABILITIES.items():

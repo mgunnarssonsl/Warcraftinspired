@@ -40,6 +40,10 @@ const RECIPES: Record<Cue, Recipe> = {
   collapse: R([{ f: 60, d: 0.9, type: 'sine', gain: 0.4, to: 30 }], [{ d: 1.0, gain: 0.4, lp: 500 }], 0.5),
   spell: R([{ f: 520, d: 0.35, type: 'sine', gain: 0.18, to: 1040 }, { f: 780, t: 0.05, d: 0.3, type: 'sine', gain: 0.12, to: 1560 }], [], 0.2),
   heal: R(arp([784, 988, 1175], 0.06, 0.22, 'sine', 0.16), [], 0.4),
+  musket: R([{ f: 120, d: 0.22, type: 'sine', gain: 0.4, to: 45 }], [{ d: 0.28, gain: 0.45, lp: 2600 }, { d: 0.08, gain: 0.3, hp: 2000 }], 0.12),
+  aimClick: R([{ f: 2200, d: 0.03, type: 'square', gain: 0.05 }, { f: 1500, t: 0.06, d: 0.03, type: 'square', gain: 0.05 }], [], 0.12),
+  growl: R([{ f: 85, d: 0.45, type: 'sawtooth', gain: 0.14, to: 60 }, { f: 120, d: 0.4, type: 'sawtooth', gain: 0.06, to: 90 }], [{ d: 0.4, gain: 0.08, lp: 500 }], 0.3),
+  shimmer: R(arp([660, 880, 1175, 1568], 0.05, 0.35, 'sine', 0.12), [], 0.3),
   horn: R([{ f: 196, d: 0.45, type: 'sawtooth', gain: 0.12 }, { f: 294, t: 0.05, d: 0.4, type: 'sawtooth', gain: 0.08 }], [], 0.5),
 
   chop: R([{ f: 180, d: 0.06, type: 'triangle', gain: 0.25, to: 120 }], [{ d: 0.05, gain: 0.15, lp: 1200 }], 0.15),
@@ -52,6 +56,7 @@ const RECIPES: Record<Cue, Recipe> = {
   trained: R([{ f: 523, d: 0.07, gain: 0.3 }, { f: 784, t: 0.07, d: 0.14, gain: 0.3 }], [], 0.25),
   research: R(arp([440, 554, 659, 880], 0.08, 0.35, 'sine', 0.3), [], 0.4),
   levelUp: R(arp([523, 659, 784, 1047], 0.09, 0.4, 'square', 0.14), [], 0.5),
+  rankUp: R(arp([587, 784, 988], 0.08, 0.35, 'triangle', 0.18), [], 0.5),
   pickup: R([{ f: 988, d: 0.06, gain: 0.2 }, { f: 1319, t: 0.05, d: 0.1, gain: 0.2 }], [], 0.2),
   coin: R([{ f: 1760, d: 0.05, gain: 0.15 }, { f: 2349, t: 0.04, d: 0.12, gain: 0.12 }, { f: 1760, t: 0.12, d: 0.1, gain: 0.1 }], [], 0.2),
 
