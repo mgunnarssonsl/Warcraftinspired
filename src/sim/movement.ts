@@ -10,6 +10,7 @@ import type { Game } from './game';
 import { findPath, smoothPath, type GoalRect } from './pathfinding';
 import { TERRAIN, type Footprint, type MoveGoal, type Unit } from './types';
 import { datan2, dcos, dsin, len } from './dmath';
+import { speedFactor } from './elite';
 
 export function distToRect(x: number, y: number, f: Footprint): number {
   const dx = x < f.tx ? f.tx - x : x > f.tx + f.w ? x - (f.tx + f.w) : 0;
@@ -133,7 +134,7 @@ export function updateMovement(game: Game, units: Unit[]): void {
   const spent = new Map<number, number>();
   for (const u of units) {
     const mv = u.move;
-    if (!mv || mv.state !== 'moving' || u.hidden || u.stun > 0) continue;
+    if (!mv || mv.state !== 'moving' || u.hidden || u.stun > 0 || speedFactor(u) === 0) continue;
     if (mv.navVersion !== game.nav.version) {
       // A new order, or the terrain changed (tree felled, building placed):
       // plan now if this player's search budget for the tick allows.
@@ -273,7 +274,7 @@ function separate(game: Game, units: Unit[]): void {
 
 /** Walking speed: the unit's own, or its group's pace while marching together. */
 export function moveSpeed(u: Unit): number {
-  const speed = (CONFIG.units[u.type].speed + itemBonus(u, 'speed')) * (1 - buffAmount(u, 'slow'));
+  const speed = (CONFIG.units[u.type].speed + itemBonus(u, 'speed')) * (1 - buffAmount(u, 'slow')) * speedFactor(u);
   const o = u.order;
   if (o?.type === 'move' && o.pace) return Math.min(speed, o.pace);
   if (o?.type === 'attackMove' && o.pace && o.targetId < 0) return Math.min(speed, o.pace);

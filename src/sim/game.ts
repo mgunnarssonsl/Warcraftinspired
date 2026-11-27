@@ -35,6 +35,7 @@ import type {
   Unit,
 } from './types';
 import { len } from './dmath';
+import { updateDashes, updateMount, updateSkill, updateSpecialize } from './elite';
 
 export const PLAYER_COLORS = ['#3a7bd5', '#c0392b', '#27ae60', '#8e44ad'];
 export const NEUTRAL_COLOR = '#8a5a2b';
@@ -433,6 +434,11 @@ export class Game {
       mana: isHealer(type) ? CONFIG.cleric.mana : 0,
       prayerReady: 0,
       hurt: -1e9,
+      xp: 0,
+      nxp: 0,
+      ready: {},
+      stance: false,
+      dash: null,
     };
     this.state.entities[u.id] = u;
     this.lists = null;
@@ -532,9 +538,17 @@ export class Game {
         u.stun--;
         continue;
       }
+      // Mid-charge: the dash carries it (see updateDashes); orders wait.
+      if (u.dash) continue;
       // The current order finished: start the next Shift-queued one.
       while (u.order === null && u.orderQueue.length) applyQueued(this, u, u.orderQueue.shift()!);
-      if (u.order?.type === 'cast') {
+      if (u.order?.type === 'skill') {
+        updateSkill(this, u, u.order);
+      } else if (u.order?.type === 'mount') {
+        updateMount(this, u, u.order);
+      } else if (u.order?.type === 'specialize') {
+        updateSpecialize(this, u, u.order);
+      } else if (u.order?.type === 'cast') {
         updateCast(this, u, u.order);
       } else if (u.order?.type === 'pickup') {
         updatePickup(this, u, u.order);
@@ -556,6 +570,7 @@ export class Game {
       }
     }
     const alive = units.filter((u) => this.state.entities[u.id]);
+    updateDashes(this, alive);
     updateMovement(this, alive);
     updateCombat(this, alive);
     if (this.state.scenario) updateScenario(this);

@@ -25,6 +25,7 @@ import { destroyBuilding } from './production';
 import { armorTypeOf, armorValue, attackDamage, attackRange, typeMultiplier } from './tech';
 import type { Building, Entity, Order, Unit } from './types';
 import { datan2, dcos, dsin, len } from './dmath';
+import { absorb, attackSlow, creditDamage, creditKill, firesStationary, interrupt, isMounted } from './elite';
 
 type Target = Unit | Building;
 
@@ -125,7 +126,7 @@ function fight(game: Game, u: Unit, targetId: number, mayMove: boolean): boolean
   if (d <= attackRange(game, u)) {
     u.move = null;
     u.facing = datan2(t.y - u.y, t.x - u.x);
-    if (u.swing === 0 && u.cooldown <= 0) {
+    if (u.swing === 0 && u.cooldown <= 0 && !u.dash) {
       u.swing = secondsToTicks(def.windup);
       u.swingTarget = t.id;
       game.emit({ type: 'attack', id: u.id });
@@ -244,12 +245,22 @@ export function updateCombatOrder(game: Game, u: Unit): void {
 
 /** Apply damage, emit feedback, trigger retaliation, and kill at 0 HP. */
 export function dealDamage(game: Game, attackerId: number, attackerOwner: number, t: Target, raw: number, type: AttackType): void {
-  const marked = t.kind === 'unit' ? 1 + buffAmount(t, 'mark') : 1;
-  const dmg = damageAfterArmor(raw * typeMultiplier(type, armorTypeOf(t)) * marked, armorValue(game, t));
+  let scale = t.kind === 'unit' ? 1 + buffAmount(t, 'mark') : 1;
+  // Shield Stance: arrows, shots, bolts and tower fire do half damage.
+  if (t.kind === 'unit' && t.stance) {
+    const a = game.unit(attackerId);
+    if (!a || attackDef(a).projectileSpeed > 0) scale *= CONFIG.skills.stance.rangedTaken;
+  }
+  // Musket balls punch through half of the armor.
+  const armor = armorValue(game, t) * (type === 'shot' ? 0.5 : 1);
+  let dmg = damageAfterArmor(raw * typeMultiplier(type, armorTypeOf(t)) * scale, armor);
+  if (t.kind === 'unit') dmg = absorb(t, dmg);
   t.hp -= dmg;
   t.hurt = game.state.tick;
   game.emit({ type: 'hit', id: t.id, attacker: attackerId, attackerOwner, owner: t.owner, damage: dmg, x: t.x, y: t.y });
+  creditDamage(game, attackerId, attackerOwner, t, Math.min(dmg, dmg + t.hp));
   if (t.hp <= 0) {
+    creditKill(game, attackerId, attackerOwner, t);
     kill(game, t, attackerOwner);
     return;
   }
@@ -266,6 +277,8 @@ export function kill(game: Game, t: Target, attackerOwner: number): void {
   if (killer) killer.stats.kills++;
   if (victim) victim.stats[t.kind === 'building' ? 'buildingsLost' : 'unitsLost']++;
   if (victim && t.kind === 'unit') victim.stats.lost[t.type] = (victim.stats.lost[t.type] ?? 0) + 1;
+  // A mount's death is the rider's and the animal's: two units lost.
+  if (victim && t.kind === 'unit' && isMounted(t.type)) victim.stats.unitsLost++;
   onKill(game, attackerOwner, t);
   if (t.kind === 'building') {
     destroyBuilding(game, t.id);
@@ -298,8 +311,13 @@ export function updateCombat(game: Game, units: Unit[]): void {
     if (!game.state.entities[u.id]) continue;
     if (u.cooldown > 0) u.cooldown--;
     if (u.swing === 0) continue;
-    if (u.stun > 0) {
-      u.swing = 0; // a stun interrupts the attack
+    if (u.stun > 0 || u.dash) {
+      u.swing = 0; // a stun (or a dash) interrupts the attack
+      continue;
+    }
+    // Musketeers fire standing still: a step during the wind-up spoils the shot.
+    if (firesStationary(u.type) && u.move?.state === 'moving') {
+      u.swing = 0;
       continue;
     }
     // A swing is abandoned if the unit's orders moved on to something else.
@@ -310,7 +328,7 @@ export function updateCombat(game: Game, units: Unit[]): void {
     if (--u.swing > 0) continue;
     const def = attackDef(u);
     // Slowed units recover between attacks more slowly.
-    u.cooldown = Math.max(1, Math.round(secondsToTicks(def.cooldown) * (1 + buffAmount(u, 'slow'))) - secondsToTicks(def.windup));
+    u.cooldown = Math.max(1, Math.round(secondsToTicks(def.cooldown) * (1 + buffAmount(u, 'slow') + attackSlow(u))) - secondsToTicks(def.windup));
     const t = game.get(u.swingTarget);
     if (!targetable(t) || gap(u, t) > attackRange(game, u) + CONFIG.combat.swingSlack) continue;
     const damage = attackDamage(game, u);
@@ -373,7 +391,7 @@ function launch(
   attackType: AttackType,
   splash: number,
 ): void {
-  const kind = attackType === 'siege' ? 'boulder' : attackType === 'magic' ? 'bolt' : 'arrow';
+  const kind = attackType === 'siege' ? 'boulder' : attackType === 'magic' ? 'bolt' : attackType === 'shot' ? 'shot' : 'arrow';
   game.state.projectiles.push({ id: game.state.nextId++, owner, sourceId, targetId: t.id, x, y, px: x, py: y, speed, damage, kind, attackType, stun: 0, splash, tx: t.x, ty: t.y });
 }
 
@@ -433,6 +451,7 @@ function updateProjectiles(game: Game): Array<() => void> {
       landings.push(() => {
         if (!targetable(game.get(t.id))) return;
         if (p.stun > 0 && t.kind === 'unit') {
+          interrupt(game, t);
           t.stun = Math.max(t.stun, p.stun);
           t.swing = 0;
         }

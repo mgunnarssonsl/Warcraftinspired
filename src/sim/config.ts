@@ -10,7 +10,7 @@ export function secondsToTicks(seconds: number): number {
 }
 
 /** How an attack deals damage; see CONFIG.combat.typeTable. */
-export type AttackType = 'normal' | 'pierce' | 'siege' | 'magic' | 'hero';
+export type AttackType = 'normal' | 'pierce' | 'siege' | 'magic' | 'hero' | 'shot';
 /** What a unit or building is protected by. */
 export type ArmorType = 'light' | 'medium' | 'heavy' | 'fortified' | 'hero';
 
@@ -359,6 +359,222 @@ export const CONFIG = {
       xp: 55,
       bounty: 0,
       attack: { type: 'siege' as AttackType, damage: 40, range: 0.6, cooldown: 2.6, windup: 0.6, acquire: 6, projectileSpeed: 0, minRange: 0, splash: 0 },
+    },
+    // ---- Elite units (see sim/elite.ts and CONFIG.veterancy / skills / mounts) ----
+    // Crown signature: slow, armor-piercing flintlock shots; fires only standing still.
+    musketeer: {
+      name: 'Musketeer',
+      hp: 300,
+      speed: 2.6,
+      radius: 0.3,
+      sight: 9,
+      pop: 2,
+      cost: { gold: 170, wood: 40 },
+      trainSeconds: 24,
+      trainedAt: 'barracks',
+      requires: 'smithy',
+      tech: 'castle' as string | null,
+      hotkey: 'T',
+      armor: 1,
+      armorType: 'light' as ArmorType,
+      xp: 45,
+      bounty: 0,
+      attack: { type: 'shot' as AttackType, damage: 52, range: 7, cooldown: 4.5, windup: 0.7, acquire: 8, projectileSpeed: 28, minRange: 0, splash: 0 },
+    },
+    // Crown animal: fights on its own; a Bearwarden can ride it.
+    warbear: {
+      name: 'War Bear',
+      hp: 760,
+      speed: 3.0,
+      radius: 0.46,
+      sight: 8,
+      pop: 3,
+      cost: { gold: 170, wood: 70 },
+      trainSeconds: 28,
+      trainedAt: 'barracks',
+      requires: 'smithy',
+      tech: 'castle' as string | null,
+      hotkey: 'D',
+      armor: 3,
+      armorType: 'heavy' as ArmorType,
+      xp: 55,
+      bounty: 0,
+      attack: { type: 'normal' as AttackType, damage: 22, range: 0.5, cooldown: 1.6, windup: 0.4, acquire: 6, projectileSpeed: 0, minRange: 0, splash: 0 },
+    },
+    // Specialists: veteran soldiers who chose a role (not trainable; see CONFIG.specialize).
+    sentinel: {
+      name: 'Sentinel',
+      hp: 500,
+      speed: 2.7,
+      radius: 0.36,
+      sight: 8,
+      pop: 2,
+      cost: { gold: 235, wood: 25 },
+      trainSeconds: 0,
+      trainedAt: null,
+      requires: null,
+      tech: null as string | null,
+      hotkey: '',
+      armor: 3,
+      armorType: 'heavy' as ArmorType,
+      xp: 50,
+      bounty: 0,
+      attack: { type: 'normal' as AttackType, damage: 15, range: 0.45, cooldown: 1.3, windup: 0.4, acquire: 6, projectileSpeed: 0, minRange: 0, splash: 0 },
+    },
+    bearwarden: {
+      name: 'Bearwarden',
+      hp: 460,
+      speed: 2.8,
+      radius: 0.36,
+      sight: 8,
+      pop: 2,
+      cost: { gold: 235, wood: 25 },
+      trainSeconds: 0,
+      trainedAt: null,
+      requires: null,
+      tech: null as string | null,
+      hotkey: '',
+      armor: 2,
+      armorType: 'heavy' as ArmorType,
+      xp: 50,
+      bounty: 0,
+      attack: { type: 'normal' as AttackType, damage: 17, range: 0.5, cooldown: 1.4, windup: 0.4, acquire: 6, projectileSpeed: 0, minRange: 0, splash: 0 },
+    },
+    // Mounted: rider and animal as one unit (population, health and cost are the sums).
+    bearrider: {
+      name: 'Bear Rider',
+      hp: 1220,
+      speed: 3.3,
+      radius: 0.48,
+      sight: 9,
+      pop: 5,
+      cost: { gold: 405, wood: 95 },
+      trainSeconds: 0,
+      trainedAt: null,
+      requires: null,
+      tech: null as string | null,
+      hotkey: '',
+      armor: 3,
+      armorType: 'heavy' as ArmorType,
+      xp: 110,
+      bounty: 0,
+      attack: { type: 'normal' as AttackType, damage: 30, range: 0.55, cooldown: 1.6, windup: 0.4, acquire: 7, projectileSpeed: 0, minRange: 0, splash: 0 },
+    },
+    // Thornwild animal: fights on its own; a Wolfkeeper can ride it.
+    naturewolf: {
+      name: 'Nature Wolf',
+      hp: 460,
+      speed: 4.0,
+      radius: 0.42,
+      sight: 10,
+      pop: 3,
+      cost: { gold: 150, wood: 75 },
+      trainSeconds: 24,
+      trainedAt: 'den',
+      requires: 'barkweaver',
+      tech: 'deepwood' as string | null,
+      hotkey: 'D',
+      armor: 1,
+      armorType: 'medium' as ArmorType,
+      xp: 50,
+      bounty: 0,
+      attack: { type: 'normal' as AttackType, damage: 16, range: 0.45, cooldown: 1.1, windup: 0.3, acquire: 7, projectileSpeed: 0, minRange: 0, splash: 0 },
+    },
+    barksentinel: {
+      name: 'Bark Sentinel',
+      hp: 420,
+      speed: 2.8,
+      radius: 0.36,
+      sight: 8,
+      pop: 2,
+      cost: { gold: 185, wood: 75 },
+      trainSeconds: 0,
+      trainedAt: null,
+      requires: null,
+      tech: null as string | null,
+      hotkey: '',
+      armor: 2,
+      armorType: 'heavy' as ArmorType,
+      xp: 45,
+      bounty: 0,
+      attack: { type: 'normal' as AttackType, damage: 14, range: 0.45, cooldown: 1.3, windup: 0.4, acquire: 6, projectileSpeed: 0, minRange: 0, splash: 0 },
+    },
+    wolfkeeper: {
+      name: 'Wolfkeeper',
+      hp: 380,
+      speed: 3.0,
+      radius: 0.35,
+      sight: 9,
+      pop: 2,
+      cost: { gold: 185, wood: 75 },
+      trainSeconds: 0,
+      trainedAt: null,
+      requires: null,
+      tech: null as string | null,
+      hotkey: '',
+      armor: 1,
+      armorType: 'heavy' as ArmorType,
+      xp: 45,
+      bounty: 0,
+      attack: { type: 'normal' as AttackType, damage: 15, range: 0.55, cooldown: 1.3, windup: 0.4, acquire: 6, projectileSpeed: 0, minRange: 0, splash: 0 },
+    },
+    wolfrider: {
+      name: 'Wolf Rider',
+      hp: 840,
+      speed: 4.2,
+      radius: 0.46,
+      sight: 10,
+      pop: 5,
+      cost: { gold: 335, wood: 150 },
+      trainSeconds: 0,
+      trainedAt: null,
+      requires: null,
+      tech: null as string | null,
+      hotkey: '',
+      armor: 2,
+      armorType: 'medium' as ArmorType,
+      xp: 90,
+      bounty: 0,
+      attack: { type: 'normal' as AttackType, damage: 22, range: 0.5, cooldown: 1.2, windup: 0.3, acquire: 7, projectileSpeed: 0, minRange: 0, splash: 0 },
+    },
+    // Thornwild signature: one unit, two forms (warrior / panther) sharing health.
+    shifter: {
+      name: 'Shapeshifter',
+      hp: 440,
+      speed: 2.9,
+      radius: 0.34,
+      sight: 9,
+      pop: 2,
+      cost: { gold: 160, wood: 55 },
+      trainSeconds: 24,
+      trainedAt: 'den',
+      requires: 'barkweaver',
+      tech: 'deepwood' as string | null,
+      hotkey: 'T',
+      armor: 3,
+      armorType: 'heavy' as ArmorType,
+      xp: 45,
+      bounty: 0,
+      attack: { type: 'normal' as AttackType, damage: 15, range: 0.6, cooldown: 1.4, windup: 0.4, acquire: 6, projectileSpeed: 0, minRange: 0, splash: 0 },
+    },
+    panther: {
+      name: 'Shapeshifter (Panther)',
+      hp: 440,
+      speed: 4.3,
+      radius: 0.38,
+      sight: 10,
+      pop: 2,
+      cost: { gold: 160, wood: 55 },
+      trainSeconds: 0,
+      trainedAt: null,
+      requires: null,
+      tech: null as string | null,
+      hotkey: '',
+      armor: 0,
+      armorType: 'light' as ArmorType,
+      xp: 45,
+      bounty: 0,
+      attack: { type: 'normal' as AttackType, damage: 17, range: 0.45, cooldown: 1.0, windup: 0.25, acquire: 7, projectileSpeed: 0, minRange: 0, splash: 0 },
     },
     // Hostile neutrals that guard expansions. Not trainable by anyone.
     brigand: {
@@ -733,6 +949,75 @@ export const CONFIG = {
   },
 
   /**
+   * Veterancy (sim/elite.ts). Ordinary troops earn experience for the match
+   * from what they do in real fights: damage dealt to enemies, damage taken
+   * from them, and healing allies who are under attack. Nothing is earned
+   * from friendly fire, from healing out of combat, or beyond neutralCap from
+   * neutral camps. Ranks: Recruit, Veteran (veteranXp), then eligible to
+   * specialize (eligibleXp). Experience is lost with the unit and never
+   * carries over to another match.
+   */
+  veterancy: {
+    veteranXp: 120,
+    eligibleXp: 300,
+    /** Experience per point of damage dealt to enemy units / buildings. */
+    perDamage: 0.25,
+    perBuildingDamage: 0.05,
+    /** Experience per point of damage taken from enemies (after armor and shields). */
+    perDamageTaken: 0.12,
+    /** Experience per point healed, if the patient was hurt within combatSeconds. */
+    perHeal: 0.2,
+    combatSeconds: 5,
+    /** Share of a victim's xp value given to the unit that lands the killing blow. */
+    killShare: 0.5,
+    /** Most experience a unit can earn from neutral camps in a whole match. */
+    neutralCap: 60,
+    /** Veteran rank and up: modest bonuses. */
+    damageBonus: 0.08,
+    armorBonus: 1,
+  },
+
+  /**
+   * Specialization: an eligible veteran walks to the building and, on
+   * arrival, pays and becomes the specialist for the rest of its life.
+   * Both factions need the same experience and pay a similar price.
+   */
+  specialize: {
+    sentinel: { from: 'guard', at: 'smithy', cost: { gold: 100, wood: 25 }, hotkey: 'Z', desc: 'A heavier shield and Shield Stance: braced, it shrugs off arrows and blows but moves and strikes slowly.' },
+    bearwarden: { from: 'guard', at: 'smithy', cost: { gold: 100, wood: 25 }, hotkey: 'X', desc: 'A bear handler with a war hammer. Can ride a War Bear, becoming a Bear Rider.' },
+    barksentinel: { from: 'thornguard', at: 'barkweaver', cost: { gold: 85, wood: 40 }, hotkey: 'Z', desc: 'A living bark shield and Bark Shield: covers an ally in bark that soaks up damage.' },
+    wolfkeeper: { from: 'thornguard', at: 'barkweaver', cost: { gold: 85, wood: 40 }, hotkey: 'X', desc: 'A wolf tracker with a hunting spear. Can ride a Nature Wolf, becoming a Wolf Rider.' },
+  },
+
+  /**
+   * Mounted pairs. Mounting: the rider walks to the animal, then both hold
+   * still for mountSeconds (interrupted by damage or a new order). Health and
+   * population are the sums; cooldowns and experience stay with the rider.
+   * Dismounting needs calmSeconds without damage and splits the health in
+   * proportion, so neither ever heals by it. If the mount dies, both die.
+   */
+  mounts: {
+    bearrider: { rider: 'bearwarden', animal: 'warbear' },
+    wolfrider: { rider: 'wolfkeeper', animal: 'naturewolf' },
+  },
+  mounting: { mountSeconds: 2, reach: 0.6, calmSeconds: 5 },
+
+  /**
+   * Unit skills (not hero abilities: no mana, just cooldowns). target:
+   * 'none', 'enemy' (a unit), 'ally' (a unit) or 'point'.
+   */
+  skills: {
+    stance: { name: 'Shield Stance', units: ['sentinel'], hotkey: 'Q', target: 'none', range: 0, cooldown: 2, armor: 4, rangedTaken: 0.5, speed: 0.55, attackSlow: 0.25, desc: 'Toggle: brace the tower shield. +4 armor and half damage from arrows, shots and bolts, but slower to move and strike.' },
+    barkshield: { name: 'Bark Shield', units: ['barksentinel'], hotkey: 'Q', target: 'ally', range: 5, cooldown: 20, absorb: 150, seconds: 12, desc: 'Covers an ally (or itself) in bark that absorbs 150 damage for 12 seconds.' },
+    charge: { name: 'Charge', units: ['bearrider'], hotkey: 'Q', target: 'point', range: 6, cooldown: 16, speed: 9, damage: 40, push: 1.5, stun: 0.6, desc: 'Bowls forward in a straight line: enemies in the way are hurt, knocked aside and briefly dazed. Stops at walls, water and buildings.' },
+    leap: { name: 'Leap', units: ['wolfrider'], hotkey: 'Q', target: 'point', range: 6, cooldown: 12, speed: 12, damage: 30, radius: 1.2, desc: 'Bounds to a spot it can stand on (not over water or cliffs) and savages enemies where it lands.' },
+    aim: { name: 'Take Aim', units: ['musketeer'], hotkey: 'Q', target: 'enemy', range: 9, cooldown: 20, prepare: 2, damage: 140, desc: 'Kneels and aims for 2 seconds, then fires a heavy shot. Moving or a new order spoils the aim.' },
+    root: { name: 'Rootbind', units: ['shifter'], hotkey: 'Q', target: 'enemy', range: 4.5, cooldown: 14, damage: 15, seconds: 2.5, desc: 'Roots burst up around one enemy: it cannot move for 2.5 seconds (it can still fight).' },
+    pounce: { name: 'Pounce', units: ['panther'], hotkey: 'Q', target: 'enemy', range: 5, cooldown: 10, speed: 11, damage: 35, desc: 'Springs at an enemy along open ground and mauls it.' },
+    shift: { name: 'Shift Form', units: ['shifter', 'panther'], hotkey: 'W', target: 'none', range: 0, cooldown: 10, seconds: 1.5, desc: 'Takes 1.5 seconds to change between bark-armored warrior and swift panther. Health and cooldowns carry over.' },
+  },
+
+  /**
    * Items. Heroes carry up to CONFIG.hero.inventorySize, keep them through
    * death and revival, and can drop them for another hero. Permanent items
    * work while carried; consumables are used up. Tier decides where they
@@ -857,6 +1142,8 @@ export const CONFIG = {
       siege: { light: 1, medium: 0.5, heavy: 1, fortified: 2, hero: 0.5 },
       magic: { light: 1.25, medium: 0.75, heavy: 1.5, fortified: 0.35, hero: 0.5 },
       hero: { light: 1, medium: 1, heavy: 1, fortified: 0.7, hero: 1 },
+      // Musket balls: best against medium and heavy armor, poor against walls.
+      shot: { light: 1, medium: 1.25, heavy: 1.5, fortified: 0.5, hero: 0.85 },
     } satisfies Record<AttackType, Record<ArmorType, number>>,
   },
 
@@ -1839,6 +2126,9 @@ export type ResearchId = keyof typeof CONFIG.research;
 export type AbilityId = keyof typeof CONFIG.hero.abilities;
 export type ItemId = keyof typeof CONFIG.items;
 export type HeroType = keyof typeof CONFIG.heroTypes;
+export type SkillId = keyof typeof CONFIG.skills;
+export type SpecId = keyof typeof CONFIG.specialize;
+export type MountedType = keyof typeof CONFIG.mounts;
 export type MineKind = keyof typeof CONFIG.mineKinds;
 
 export const HERO_TYPES = Object.keys(CONFIG.heroTypes) as HeroType[];

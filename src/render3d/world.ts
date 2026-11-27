@@ -1572,7 +1572,7 @@ export class World3D {
   }
 }
 
-const BUFF_COLORS: Record<'cry' | 'mark' | 'slow' | 'ward', string> = { cry: '#ff9a3a', mark: '#ff3a3a', slow: '#6a8cff', ward: '#5ef0ff' };
+const BUFF_COLORS: Record<'cry' | 'mark' | 'slow' | 'ward' | 'root' | 'shield', string> = { cry: '#ff9a3a', mark: '#ff3a3a', slow: '#6a8cff', ward: '#5ef0ff', root: '#5fbf3a', shield: '#b07a3a' };
 
 function attacking(u: Unit): boolean {
   const t = u.order?.type;

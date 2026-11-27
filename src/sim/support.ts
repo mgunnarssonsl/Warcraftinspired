@@ -9,6 +9,7 @@ import type { Game } from './game';
 import { healAmount } from './tech';
 import type { Unit } from './types';
 import { len } from './dmath';
+import { creditHeal } from './elite';
 
 export function updatePrayers(game: Game, units: readonly Unit[]): void {
   const c = CONFIG.cleric;
@@ -21,6 +22,7 @@ export function updatePrayers(game: Game, units: readonly Unit[]): void {
     if (!t) continue;
     const amount = Math.min(healAmount(game, u.owner), t.maxHp - t.hp);
     t.hp += amount;
+    creditHeal(game, u, t, amount);
     u.mana -= c.healMana;
     u.prayerReady = tick + secondsToTicks(c.healCooldown);
     game.emit({ type: 'heal', player: u.owner, id: t.id, source: u.id, amount, x: t.x, y: t.y });

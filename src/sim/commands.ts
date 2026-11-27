@@ -2,7 +2,8 @@
 // They are validated here: a player can only command their own living units.
 
 import { buildableFor, isHall, isWorker } from './factions';
-import { CONFIG, secondsToTicks, type AbilityId, type BuildingType, type ItemId, type ResearchId, type UnitType } from './config';
+import { CONFIG, secondsToTicks, type AbilityId, type BuildingType, type ItemId, type ResearchId, type SkillId, type SpecId, type UnitType } from './config';
+import { dismount, orderMount, orderSkill, orderSpecialize } from './elite';
 import { buyItem, dropItem, useItem } from './items';
 import { cancelConstruction, checkPlacement, repairProblem, resumeBuild, shortfall, startBuild, startRepair } from './construction';
 import type { Game } from './game';
@@ -37,7 +38,13 @@ export type Command =
   | { type: 'cancelBuild'; player: number; buildingId: number }
   | { type: 'train'; player: number; buildingId: number; unit: UnitType }
   | { type: 'cancelTrain'; player: number; buildingId: number; index: number }
-  | { type: 'setRally'; player: number; buildingId: number; x: number; y: number; targetId: number };
+  | { type: 'setRally'; player: number; buildingId: number; x: number; y: number; targetId: number }
+  /** A unit skill (sim/elite.ts): every selected unit that has it uses it. */
+  | { type: 'skill'; player: number; units: number[]; skill: SkillId; targetId: number; x?: number; y?: number }
+  /** Riders mount the animal targetId (the nearest rider goes if several are selected). */
+  | { type: 'mount'; player: number; units: number[]; targetId: number }
+  | { type: 'dismount'; player: number; units: number[] }
+  | { type: 'specialize'; player: number; units: number[]; into: SpecId };
 
 function ownUnits(game: Game, player: number, ids: number[]): Unit[] {
   const out: Unit[] = [];
@@ -195,6 +202,35 @@ export function applyCommand(game: Game, cmd: Command): void {
     }
     case 'hold': {
       for (const u of units) give(game, u, { type: 'hold' }, cmd.queued);
+      return;
+    }
+    case 'skill': {
+      if (!(cmd.skill in CONFIG.skills)) return;
+      const users = units.filter((u) => (CONFIG.skills[cmd.skill].units as readonly string[]).includes(u.type));
+      for (const u of users) {
+        releaseFromNode(game, u);
+        orderSkill(game, u, cmd.skill, cmd.targetId, cmd.x ?? 0, cmd.y ?? 0);
+      }
+      return;
+    }
+    case 'mount': {
+      const animal = game.unit(cmd.targetId);
+      if (!animal) return;
+      const riders = units.filter((u) => u.id !== animal.id);
+      if (!riders.length) return;
+      // One animal carries one rider: the nearest selected rider that can ride it.
+      const able = riders.filter((u) => CONFIG.mounts && Object.values(CONFIG.mounts).some((m) => m.rider === u.type && m.animal === animal.type));
+      const rider = (able.length ? able : riders).reduce((a, b) => (len(a.x - animal.x, a.y - animal.y) <= len(b.x - animal.x, b.y - animal.y) ? a : b));
+      orderMount(game, rider, animal.id);
+      return;
+    }
+    case 'dismount': {
+      for (const u of units) if (u.type in CONFIG.mounts) dismount(game, u);
+      return;
+    }
+    case 'specialize': {
+      if (!(cmd.into in CONFIG.specialize)) return;
+      for (const u of units) if (u.type === CONFIG.specialize[cmd.into].from) orderSpecialize(game, u, cmd.into);
       return;
     }
     case 'stop': {

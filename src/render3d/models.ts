@@ -91,6 +91,18 @@ const UNIT_BUILDERS: Record<UnitType, (team: string) => THREE.Group> = {
   warden: WU.thornWarden,
   huntress: WU.huntress,
   speaker: WU.groveSpeaker,
+  // Stand-ins while the Blender models load.
+  musketeer: CU.archer,
+  warbear: () => CU.brute(),
+  sentinel: CU.guard,
+  bearwarden: CU.guard,
+  bearrider: CU.lancer,
+  naturewolf: () => CU.wolf(),
+  barksentinel: WU.thornguard,
+  wolfkeeper: WU.thornguard,
+  wolfrider: WU.stagrider,
+  shifter: WU.thornguard,
+  panther: () => CU.wolf(),
 };
 
 /** A unit model: built once per type and team colour, then cloned (shared geometry). */

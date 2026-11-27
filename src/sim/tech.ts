@@ -8,6 +8,7 @@ import { buffAmount } from './hero';
 import { itemBonus } from './items';
 import type { Game } from './game';
 import type { Building, Unit } from './types';
+import { stanceArmor, vetArmor, vetDamageFactor } from './elite';
 
 
 export function researched(game: Game, player: number, id: ResearchId): boolean {
@@ -60,7 +61,7 @@ export function attackDamage(game: Game, u: Unit): number {
   let dmg = CONFIG.units[u.type].attack.damage;
   if (upgradesWeapons(u.type)) dmg += CONFIG.tech.weaponBonus * levels(game, u.owner, upgrades(game, u.owner).weapons);
   if (u.hero && isHeroType(u.type)) dmg += CONFIG.heroTypes[u.type].damagePerLevel * (u.hero.level - 1) + itemBonus(u, 'damage');
-  return Math.round(dmg * (1 + buffAmount(u, 'cry')));
+  return Math.round(dmg * (1 + buffAmount(u, 'cry')) * vetDamageFactor(u));
 }
 
 export function armorValue(game: Game, t: Unit | Building): number {
@@ -68,7 +69,7 @@ export function armorValue(game: Game, t: Unit | Building): number {
   let a: number = CONFIG.units[t.type].armor;
   if (upgradesArmor(t.type)) a += CONFIG.tech.armorBonus * levels(game, t.owner, upgrades(game, t.owner).armor);
   if (t.hero && isHeroType(t.type)) a += CONFIG.heroTypes[t.type].armorPerLevel * (t.hero.level - 1) + itemBonus(t, 'armor');
-  return a + buffAmount(t, 'ward');
+  return a + buffAmount(t, 'ward') + vetArmor(t) + stanceArmor(t);
 }
 
 /** A player's research, by what it does (their faction's names). */

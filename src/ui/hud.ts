@@ -46,6 +46,17 @@ export function unitStatus(game: Game, u: Unit): string {
     return it ? `Picking up ${CONFIG.items[it.type].name}` : 'Picking up an item';
   }
   if (o.type === 'cast') return `Casting ${CONFIG.hero.abilities[o.ability].name}`;
+  if (o.type === 'skill') {
+    const name = CONFIG.skills[o.skill].name;
+    if (o.phase === 'prepare') return o.skill === 'aim' ? 'Taking aim…' : o.skill === 'shift' ? 'Changing form…' : name;
+    return `${name}: moving into range`;
+  }
+  if (o.type === 'mount') {
+    const a = game.unit(o.targetId);
+    const name = a ? CONFIG.units[a.type].name : 'mount';
+    return o.phase === 'mounting' ? `Mounting the ${name}…` : `Going to the ${name}`;
+  }
+  if (o.type === 'specialize') return `Going to train as a ${CONFIG.units[o.into].name}`;
   if (o.type === 'hold') return o.targetId >= 0 ? 'Holding position, fighting' : 'Holding position';
   if (o.type === 'attackMove') return o.targetId >= 0 ? 'Attack-moving, fighting' : 'Attack-moving';
   if (o.type === 'attack') {
@@ -77,7 +88,7 @@ export function unitStatus(game: Game, u: Unit): string {
   }
 }
 
-const BUFF_NAMES = { cry: 'Battle Cry', mark: "Hunter's Mark", slow: 'Slowed', ward: 'Arcane Ward' } as const;
+const BUFF_NAMES = { cry: 'Battle Cry', mark: "Hunter's Mark", slow: 'Slowed', ward: 'Arcane Ward', root: 'Rooted', shield: 'Bark Shield' } as const;
 
 interface ActionDef {
   id: Action;
@@ -97,10 +108,10 @@ const BUILD_TIPS: Record<BuildingType, string> = {
   hq: 'Keep: accepts gold and wood, +10 population. Build one near a distant mine to expand.',
   farm: 'Farm: +6 population (up to the match maximum).',
   lumbermill: 'Lumber Mill: accepts wood. Build it beside a forest to shorten wood trips. Enables Archers.',
-  barracks: 'Barracks: trains Guards and Archers, and Lancers from tier II.',
+  barracks: 'Barracks: trains Guards and Archers, and Lancers, Musketeers and War Bears from tier II.',
   tower: 'Watch Tower: shoots enemies within 7 tiles.',
   altar: 'Hall of Valor: trains and revives your hero.',
-  smithy: 'Blacksmith: researches weapon and armor upgrades. Needed for Lancers.',
+  smithy: 'Blacksmith: researches weapon and armor upgrades; veteran Guards specialize here. Needed for Lancers, Musketeers and War Bears.',
   chapel: 'Chapel (tier II): trains Clerics; researches Greater Healing.',
   workshop: 'Siege Works (tier II): builds Mangonels.',
   shop: 'Trading Post (neutral): a hero standing next to it can buy items.',
@@ -108,10 +119,10 @@ const BUILD_TIPS: Record<BuildingType, string> = {
   heartwood: 'Heartwood: accepts gold and wood, +10 population. Plant one near a distant mine to expand. Grows on its own.',
   grove: 'Grove: +7 population (up to the match maximum). Grows on its own.',
   saplodge: 'Sap Lodge: accepts wood. Plant it beside a forest. Enables Briar Slingers.',
-  den: 'Thicket Den: trains Thornguards, Briar Slingers and Fox Scouts, and Stag Riders from tier II.',
+  den: 'Thicket Den: trains Thornguards, Briar Slingers and Fox Scouts, and Stag Riders, Shapeshifters and Nature Wolves from tier II.',
   spire: 'Thorn Spire: shoots enemies within 7 tiles.',
   circle: 'Elder Circle: raises and revives your Thornwild heroes.',
-  barkweaver: 'Barkweaver: researches thorn and bark upgrades and Deep Roots. Needed for Stag Riders.',
+  barkweaver: 'Barkweaver: researches thorn and bark upgrades and Deep Roots; veteran Thornguards specialize here. Needed for Stag Riders, Shapeshifters and Nature Wolves.',
   moonwell: 'Moonwell (tier II): trains Menders; researches Full Bloom.',
   rootpit: 'Root Pit (tier II): awakens Rootcrushers.',
 };
@@ -142,6 +153,17 @@ const TRAIN_TIPS: Record<UnitType, string> = {
   sage: 'Sage (hero): caster. Flame Burst burns groups and buildings, Slow cripples a threat, Arcane Ward armors an ally.',
   wolf: '',
   brute: '',
+  musketeer: 'Musketeer (tier II): a flintlock that hits hard and punches through armor, best against heavy and medium troops. Long reload, fires only standing still; keep melee off it. Take Aim: a heavy aimed shot.',
+  warbear: 'War Bear (tier II): an armored brown bear, a tough frontline fighter on its own. A Bearwarden can ride it as a Bear Rider.',
+  naturewolf: 'Nature Wolf (tier II): a large, quick woodland wolf that bites fast. A Wolfkeeper can ride it as a Wolf Rider.',
+  shifter: 'Shapeshifter (tier II): a bark-armored spear warrior who can become a swift panther (1.5s, shared health). Warrior: Rootbind holds an enemy. Panther: Pounce.',
+  panther: '',
+  sentinel: '',
+  bearwarden: '',
+  bearrider: '',
+  barksentinel: '',
+  wolfkeeper: '',
+  wolfrider: '',
 };
 
 const ACTIONS: ActionDef[] = [

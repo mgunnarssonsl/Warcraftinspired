@@ -11,6 +11,7 @@ import { itemBonus } from './items';
 import { distToRect } from './movement';
 import type { Building, HeroRecord, HeroState, Order, Unit } from './types';
 import { datan2, len } from './dmath';
+import { interrupt } from './elite';
 
 type CastOrder = Extract<Order, { type: 'cast' }>;
 
@@ -236,7 +237,10 @@ function cast(game: Game, u: Unit, ability: AbilityId, t: Unit | null, at: { x: 
       // A hurled weapon (projectile) or, with no projectile speed, roots that strike at once.
       if (t && !def.projectileSpeed) {
         dealDamage(game, u.id, u.owner, t, def.damage[r], 'hero');
-        if (game.state.entities[t.id]) t.stun = Math.max(t.stun, secondsToTicks(def.stun[r]));
+        if (game.state.entities[t.id]) {
+          interrupt(game, t);
+          t.stun = Math.max(t.stun, secondsToTicks(def.stun[r]));
+        }
       } else if (t)
         game.state.projectiles.push({
           id: game.state.nextId++,

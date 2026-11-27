@@ -3,7 +3,7 @@
 // Derived caches (navigation grid etc.) live outside it, in Game.
 
 import type { FactionId } from './factions';
-import type { AbilityId, AttackType, BuildingType, HeroType, ItemId, ResearchId, UnitType } from './config';
+import type { AbilityId, AttackType, BuildingType, HeroType, ItemId, ResearchId, SkillId, SpecId, UnitType } from './config';
 
 export type ResourceKind = 'gold' | 'wood';
 export type NodeType = 'goldmine' | 'tree';
@@ -88,9 +88,11 @@ export interface HeroState {
 /**
  * Timed effects on a unit. cry: +amount damage share. mark: takes +amount
  * more damage. slow: moves and attacks amount slower. ward: +amount armor.
+ * root: held in place. shield: bark that soaks up `amount` damage.
  */
 export interface Buff {
-  kind: 'cry' | 'mark' | 'slow' | 'ward';
+  /** root: cannot move (can still fight). shield: absorbs `amount` more damage. */
+  kind: 'cry' | 'mark' | 'slow' | 'ward' | 'root' | 'shield';
   until: number;
   amount: number;
 }
@@ -272,7 +274,13 @@ export type Order =
     }
   | { type: 'hold'; targetId: number }
   | { type: 'cast'; ability: AbilityId; targetId: number; x: number; y: number }
-  | { type: 'pickup'; itemId: number };
+  | { type: 'pickup'; itemId: number }
+  /** A unit skill (sim/elite.ts): walk into range, maybe prepare (`until`), then act. */
+  | { type: 'skill'; skill: SkillId; targetId: number; x: number; y: number; phase: 'approach' | 'prepare'; until: number; start: number }
+  /** A rider walking to its animal, then mounting (holding still until `until`). */
+  | { type: 'mount'; targetId: number; phase: 'approach' | 'mounting'; until: number; start: number }
+  /** An eligible veteran walking to the building where it specializes. */
+  | { type: 'specialize'; into: SpecId; buildingId: number };
 
 /** A Shift-queued instruction, turned into a real order when its turn comes. */
 export type QueuedOrder =
@@ -328,6 +336,26 @@ export interface Unit extends EntityBase {
   prayerReady: number;
   /** Tick it was last damaged (regrowth waits a while after). */
   hurt: number;
+  /** Veterancy experience this match (troops only), and the part of it earned from neutral camps. */
+  xp: number;
+  nxp: number;
+  /** Tick at which each unit skill is ready again. Kept through mounting and shape-shifting. */
+  ready: Partial<Record<SkillId, number>>;
+  /** Sentinel: Shield Stance raised. */
+  stance: boolean;
+  /** A charge, leap or pounce in progress: moving in a straight line, nothing else. */
+  dash: Dash | null;
+}
+
+export interface Dash {
+  skill: SkillId;
+  x: number;
+  y: number;
+  /** Pounce: the enemy sprung at (followed), else -1. */
+  targetId: number;
+  speed: number;
+  /** Enemies already struck by this charge. */
+  hit: number[];
 }
 
 export interface Projectile {
@@ -341,7 +369,7 @@ export interface Projectile {
   py: number;
   speed: number;
   damage: number;
-  kind: 'arrow' | 'hammer' | 'bolt' | 'boulder';
+  kind: 'arrow' | 'hammer' | 'bolt' | 'boulder' | 'shot';
   attackType: AttackType;
   /** Stun applied on hit, in ticks. */
   stun: number;
@@ -493,4 +521,11 @@ export type GameEvent =
   | { type: 'levelUp'; player: number; id: number; level: number; x: number; y: number }
   | { type: 'cast'; player: number; id: number; ability: AbilityId; targetId: number; x: number; y: number }
   | { type: 'bounty'; player: number; amount: number; x: number; y: number }
-  | { type: 'heroFallen'; player: number; x: number; y: number };
+  | { type: 'heroFallen'; player: number; x: number; y: number }
+  | { type: 'rankUp'; player: number; id: number; rank: number; x: number; y: number }
+  | { type: 'specialized'; player: number; id: number; into: UnitType; x: number; y: number }
+  | { type: 'mounted'; player: number; id: number; x: number; y: number }
+  | { type: 'dismounted'; player: number; id: number; animalId: number; x: number; y: number }
+  /** A unit skill: 'start' when preparing begins (Take Aim, mounting, shifting), 'fire' when it takes effect. */
+  | { type: 'skill'; player: number; id: number; skill: SkillId | 'mount'; phase: 'start' | 'fire' | 'cancel'; targetId: number; x: number; y: number }
+  | { type: 'cantOrder'; player: number; reason: string };

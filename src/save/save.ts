@@ -18,7 +18,7 @@ import type { GameState } from '../sim/types';
 import type { ReplayLog } from '../replay/replay';
 
 export const SAVE_FORMAT = 'ironvale-save';
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 /** The match settings a save was started with (same shape as the start screen's). */
 export interface SavedMatch {
@@ -72,6 +72,21 @@ const MIGRATIONS: Record<number, (save: Record<string, unknown>) => Record<strin
   // 2 -> 3: the replay log joins the save. Older saves have none: they load
   // and play as before, but cannot be replayed from their start.
   2: (save) => save,
+  // 3 -> 4: elite units. Units gain veterancy experience (none yet: earned
+  // from now on), skill cooldowns, Shield Stance and dashes. No old unit is
+  // a specialist, rider, animal or Shapeshifter, so nothing else changes.
+  3: (save) => {
+    const state = save.state as { entities?: Record<string, Record<string, unknown>> } | undefined;
+    for (const e of Object.values(state?.entities ?? {})) {
+      if (e.kind !== 'unit') continue;
+      e.xp ??= 0;
+      e.nxp ??= 0;
+      e.ready ??= {};
+      e.stance ??= false;
+      e.dash ??= null;
+    }
+    return save;
+  },
 };
 
 export function makeSave(parts: Omit<SaveFile, 'format' | 'version' | 'savedAt'>, now = new Date()): SaveFile {
