@@ -1536,6 +1536,8 @@ export const CONFIG = {
         usesSurplus: false,
         /** Expands as soon as it is safe (no threat known, an army at home), not on a timer. */
         expandWhenSafe: false,
+        /** Holds its Blacksmith until its second Keep is started: the wood goes to the Keep. */
+        smithyAfterKeep: false,
       },
       normal: {
         thinkSeconds: 1.0,
@@ -1577,6 +1579,7 @@ export const CONFIG = {
         countsDefences: false,
         usesSurplus: true,
         expandWhenSafe: false,
+        smithyAfterKeep: false,
       },
       hard: {
         thinkSeconds: 0.5,
@@ -1618,6 +1621,7 @@ export const CONFIG = {
         countsDefences: true,
         usesSurplus: true,
         expandWhenSafe: true,
+        smithyAfterKeep: true,
       },
     },
     /**
@@ -1747,7 +1751,7 @@ export const CONFIG = {
     safeExpandSeconds: 180,
     safeExpandArmy: 3,
     /** What an expansion-first style holds until its second Keep: 1 towers, 2 Blacksmith, 4 more Barracks (7 = everything). */
-    expandsFirstHolds: 7,
+    expandsFirstHolds: 3,
     /** Counting defences: a defender fights at home with this edge... */
     defenderEdge: 1.25,
     /** ...and each tower it has seen counts for this many Guards. */
