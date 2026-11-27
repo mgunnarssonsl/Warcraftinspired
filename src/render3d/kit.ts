@@ -5,7 +5,7 @@
 // shares one set of geometry (see cachedModel).
 
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { withFog } from './fog';
 
 /** Surface finishes: each is one shared material that reads its colour from the vertices. */
@@ -208,8 +208,13 @@ export function rbox(w: number, h: number, d: number, r = 0.04): THREE.BufferGeo
 }
 
 /** A lumpy rock or foliage clump: an icosphere pushed about by seeded noise. */
-export function blob(r: number, seed: number, rough = 0.25, detail = 1): THREE.BufferGeometry {
-  const g = new THREE.IcosahedronGeometry(r, detail);
+export function blob(r: number, seed: number, rough = 0.25, detail = 1, smooth = detail > 0): THREE.BufferGeometry {
+  let g: THREE.BufferGeometry = new THREE.IcosahedronGeometry(r, detail);
+  if (smooth) {
+    g.deleteAttribute('normal');
+    g.deleteAttribute('uv');
+    g = mergeVertices(g);
+  }
   const p = g.getAttribute('position') as THREE.BufferAttribute;
   const rnd = rand(seed * 7919 + 13);
   const offs = new Map<string, number>();

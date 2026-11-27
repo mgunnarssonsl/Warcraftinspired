@@ -6,7 +6,7 @@ import { teamColor } from '../ui/view';
 import * as THREE from 'three';
 import type { ClientState } from '../input/client';
 import { CONFIG, isHeroType, secondsToTicks, type BuildingType } from '../sim/config';
-import { unitRole } from '../sim/factions';
+import { buildingFaction, unitRole } from '../sim/factions';
 import type { PlacementCheck } from '../sim/construction';
 import type { Game } from '../sim/game';
 import { hash2 } from '../sim/rng';
@@ -151,14 +151,14 @@ export class World3D {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1.12;
     const { width: W, height: H } = game.state.map;
     this.rig = new CameraRig(W, H);
     this.scene.background = new THREE.Color('#a9c2d6');
     this.scene.fog = new THREE.Fog('#a9c2d6', 70, 150);
 
-    this.scene.add(new THREE.HemisphereLight('#dfeeff', '#4d5a3c', 1.4));
-    this.sun = new THREE.DirectionalLight('#fff0d8', 2.4);
+    this.scene.add(new THREE.HemisphereLight('#fff3dc', '#6f7d4c', 1.75));
+    this.sun = new THREE.DirectionalLight('#ffe9c4', 2.7);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
     const sc = this.sun.shadow.camera;
@@ -963,7 +963,14 @@ export class World3D {
     v.root.visible = this.perceived(b);
     const done = b.progress >= 1;
     v.scaffold.visible = !done;
-    v.model.scale.y = done ? 1 : 0.08 + 0.92 * b.progress;
+    if (buildingFaction(b.type) === 'wild') {
+      // Thornwild buildings grow from the planting in every direction.
+      v.model.scale.setScalar(done ? 1 : 0.18 + 0.82 * b.progress);
+    } else {
+      // Crown buildings rise inside the scaffolding.
+      v.model.scale.y = done ? 1 : 0.08 + 0.92 * b.progress;
+    }
+    v.damage.visible = done && b.hp < b.maxHp * 0.5;
   }
 
   /**
