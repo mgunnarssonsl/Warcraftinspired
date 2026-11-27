@@ -71,7 +71,8 @@ def body(F, glow=False, pelt=False):
     for i in range(6):
         big_leaf(f'skirtLeaf{i}', hips, ((i - 2.5) * 0.045 * b, -0.11 * b, HIP + 0.03), 0.07, 0.16, LEAVES[i % len(LEAVES)], rot=(math.pi, 0, (i - 2.5) * 0.08))
     if glow:
-        # Glowing vines across the bark plates, as on the panther.
+        # A team armband, and glowing vines across the bark plates, as on the panther.
+        torus('armband', 0.05 * b, 0.012, mat('team'), F['upperarm.L'], at=(arm_x(F, 'L'), 0, SHOULDER - 0.1), segs=14, rsegs=4)
         for sx in (-1, 1):
             curve_tube(f'chestVine{sx}', [(sx * 0.02, -0.13 * b, 0.74), (sx * 0.09, -0.125 * b, 0.66), (sx * 0.05, -0.13 * b, 0.58), (sx * 0.1, -0.12 * b, 0.52)], 0.006, mat('glow', VINE_GLOW), ch, taper=[0.4, 1.0, 1.0, 0.4])
     # Arms: bare forearms with bark bracers, leaf pauldrons.

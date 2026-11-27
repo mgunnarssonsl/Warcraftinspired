@@ -285,15 +285,5 @@ def shifter():
 
 
 def panther():
-    """The Shapeshifter's other form: a black woodland panther with vine markings and amber eyes."""
-    B = BS.Beast(length=0.74, leg=0.3, girth=0.14)
-    BS.feline(B, PANTHER, PANTHER_L, eye=AMBER)
-    g, L, cz = B.g, B.L, B.cz
-    bm = B['barrel']
-    for sx in (-1, 1):
-        curve_tube(f'vine{sx}', [(sx * g * 0.8, -L * 0.3, cz + g * 0.5), (sx * g * 0.86, -L * 0.05, cz + g * 0.1), (sx * g * 0.8, L * 0.25, cz + g * 0.45)], 0.01, mat('glow', '#7dff5a'), bm, taper=[0.3, 1.0, 0.3])
-        curve_tube(f'vineLeg{sx}', [(sx * g * 0.6, -L * 0.35, cz - g * 0.3), (sx * g * 0.62, -L * 0.33, cz - g * 0.9)], 0.008, mat('glow', '#7dff5a'), bm, taper=[1.0, 0.3])
-    leaf_ring('shoulderLeaves', bm, (0, -L * 0.3, cz + g * 0.85), g * 0.6, 7, 0.05, 0.1, WD.LEAVES, tilt=1.7)
-    torus('collar', g * 0.55, 0.014, mat('team'), B['neck'], at=(0, -L * 0.42, cz + g * 0.35), rot=(1.2, 0, 0), segs=16, rsegs=4)
-    B.animate(gait='bound', attack='bite')
-    return B
+    import panther as PN
+    return PN.panther()
