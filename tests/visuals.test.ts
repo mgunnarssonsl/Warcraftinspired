@@ -23,8 +23,15 @@ function size(type: UnitType): THREE.Vector3 {
 function colours(root: THREE.Object3D): Set<string> {
   const out = new Set<string>();
   root.traverse((o) => {
-    const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
-    if (m?.color) out.add(`#${m.color.getHexString()}`);
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const m = mesh.material as THREE.MeshStandardMaterial;
+    // Painted models carry their colours per vertex; plain ones in the material.
+    const vc = mesh.geometry.getAttribute('color');
+    if (m.vertexColors && vc) {
+      const c = new THREE.Color();
+      for (let i = 0; i < vc.count; i += 3) out.add(`#${c.setRGB(vc.getX(i), vc.getY(i), vc.getZ(i)).convertLinearToSRGB().getHexString()}`);
+    } else if (m?.color) out.add(`#${m.color.getHexString()}`);
   });
   return out;
 }
@@ -80,7 +87,7 @@ describe('Thornwild silhouettes', () => {
     for (const h of ['warden', 'huntress', 'speaker'] as const) expect(s[h].y, h).toBeGreaterThan(foot * 1.2);
     for (const f of ['tender', 'thornguard', 'slinger', 'mender'] as const) expect(s.stagrider.z, f).toBeGreaterThan(s[f].z * 1.4);
     for (const t of WILD) expect(colours(makeUnit(t, TEAM).root), t).toContain(TEAM);
-    expect(['slinger', 'huntress'].map((t) => makeUnit(t as UnitType, TEAM).style)).toEqual(['bow', 'bow']);
+    expect(['slinger', 'huntress'].map((t) => makeUnit(t as UnitType, TEAM).style)).toEqual(['throw', 'bow']);
     expect(['mender', 'speaker'].map((t) => makeUnit(t as UnitType, TEAM).style)).toEqual(['staff', 'staff']);
   });
 });

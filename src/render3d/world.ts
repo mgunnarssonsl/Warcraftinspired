@@ -5,7 +5,7 @@
 import { teamColor } from '../ui/view';
 import * as THREE from 'three';
 import type { ClientState } from '../input/client';
-import { CONFIG, secondsToTicks, type BuildingType } from '../sim/config';
+import { CONFIG, isHeroType, secondsToTicks, type BuildingType } from '../sim/config';
 import { unitRole } from '../sim/factions';
 import type { PlacementCheck } from '../sim/construction';
 import type { Game } from '../sim/game';
@@ -14,6 +14,7 @@ import type { Building, Entity, Footprint, GameEvent, GroundItem, ResourceNode, 
 import { TERRAIN } from '../sim/types';
 import { CameraRig } from './cameraRig';
 import { FogTexture, withFog } from './fog';
+import { isKitMaterial } from './kit';
 import { paintGround } from './groundTexture';
 import {
   makeBuilding,
@@ -85,6 +86,13 @@ export class World3D {
   private treeShown: number[] = [];
   private shakes = new Map<number, number>();
   private ringGeo = new THREE.RingGeometry(0.86, 1, 40).rotateX(-Math.PI / 2);
+  /** Soft team-colour disc under every player unit, so sides read at a glance. */
+  private discGeo = (() => {
+    const g = new THREE.CircleGeometry(1, 24).rotateX(-Math.PI / 2);
+    g.userData.shared = true;
+    return g;
+  })();
+  private discMats = new Map<string, THREE.MeshBasicMaterial>();
   private ringMats = new Map<string, THREE.MeshBasicMaterial>();
   private rings: THREE.Mesh[] = [];
   private markers: Marker[] = [];
@@ -776,8 +784,8 @@ export class World3D {
     root.traverse((o) => {
       const m = o as THREE.Mesh;
       if (!m.isMesh) return;
-      if (m.geometry !== this.ringGeo) m.geometry.dispose();
-      for (const mt of Array.isArray(m.material) ? m.material : [m.material]) if (!isSharedMaterial(mt)) mt.dispose();
+      if (m.geometry !== this.ringGeo && !m.geometry.userData.shared) m.geometry.dispose();
+      for (const mt of Array.isArray(m.material) ? m.material : [m.material]) if (!isSharedMaterial(mt) && !isKitMaterial(mt) && ![...this.discMats.values()].includes(mt as THREE.MeshBasicMaterial)) mt.dispose();
     });
   }
 
@@ -824,8 +832,22 @@ export class World3D {
   private syncUnit(u: Unit, alpha: number, now: number): void {
     let v = this.units.get(u.id);
     if (!v) {
-      v = makeUnit(u.type, teamColor(this.game, u.owner));
+      const team = teamColor(this.game, u.owner);
+      v = makeUnit(u.type, team);
       v.root.userData.entityId = u.id;
+      if (!this.game.state.players[u.owner]?.neutral) {
+        let m = this.discMats.get(team);
+        if (!m) {
+          m = withFog(new THREE.MeshBasicMaterial({ color: team, transparent: true, opacity: 0.32, depthWrite: false }));
+          this.discMats.set(team, m);
+        }
+        const disc = new THREE.Mesh(this.discGeo, m);
+        const r = CONFIG.units[u.type].radius * (isHeroType(u.type) ? 1.5 : 1.3) + 0.05;
+        disc.scale.set(r, 1, r);
+        disc.position.y = 0.012;
+        disc.renderOrder = -2;
+        v.root.add(disc);
+      }
       this.units.set(u.id, v);
       this.scene.add(v.root);
     }
@@ -843,12 +865,14 @@ export class World3D {
     const moving = u.move?.state === 'moving' && (u.x !== u.px || u.y !== u.py);
     const working = (o?.type === 'gather' && o.phase === 'working') || (o?.type === 'build' && o.phase === 'building') || (o?.type === 'repair' && o.phase === 'repairing');
     const windup = secondsToTicks(CONFIG.units[u.type].attack.windup);
-    const ph = now * 11 + u.id;
     const role = unitRole(u.type);
-    const mounted = role === 'cavalry' || role === 'scout' || u.type === 'wolf';
-    v.body.position.y = moving ? Math.abs(Math.sin(ph)) * (mounted ? 0.07 : 0.04) : 0;
-    // Lean into the stride; riders rock with the gallop.
-    v.body.rotation.x = moving ? (mounted ? 0.05 + Math.sin(ph) * 0.06 : 0.08) : 0;
+    const mounted = role === 'cavalry' || role === 'scout' || u.type === 'wolf' || u.type === 'fox';
+    const ph = now * (mounted ? 13 : 11) + u.id;
+    const stride = Math.sin(ph);
+    v.body.position.y = moving ? Math.abs(stride) * (mounted ? 0.07 : 0.04) : 0;
+    // Lean into the stride; riders rock with the gallop; a slow breath at rest.
+    v.body.rotation.x = moving ? (mounted ? 0.05 + stride * 0.06 : 0.08) : 0;
+    v.body.scale.y = (v.body.userData.s0 ??= v.body.scale.y) * (moving ? 1 : 1 + Math.sin(now * 2.2 + u.id) * 0.012);
     // Flinch: a quick jolt back when struck.
     const hitAt = this.flinches.get(u.id);
     if (hitAt !== undefined) {
@@ -859,44 +883,66 @@ export class World3D {
         v.body.position.z = -0.06 * (1 - k);
       }
     } else v.body.position.z = 0;
-    // Banners and pennants flutter, faster on the move.
+    // Banners, pennants and plumes sway, faster on the move.
     if (v.flag) v.flag.rotation.y = Math.sin(now * (moving ? 9 : 3) + u.id) * 0.35;
-    if (u.type === 'mangonel') {
+    if (v.style === 'siege') {
       // Wheels roll rather than stride.
       if (moving) v.legL.rotation.x = v.legR.rotation.x = v.legL.rotation.x - 0.12;
     } else {
-      v.legL.rotation.x = moving ? Math.sin(ph) * 0.6 : 0;
-      v.legR.rotation.x = moving ? -Math.sin(ph) * 0.6 : 0;
+      v.legL.rotation.x = moving ? stride * 0.6 : 0;
+      v.legR.rotation.x = moving ? -stride * 0.6 : 0;
+      if (v.hindL) v.hindL.rotation.x = v.legR.rotation.x;
+      if (v.hindR) v.hindR.rotation.x = v.legL.rotation.x;
     }
-    // Four-legged mounts: hind legs move with the opposite front leg.
-    (v.legL.userData.partner as THREE.Object3D | undefined)?.rotation.set(v.legR.rotation.x, 0, 0);
-    (v.legR.userData.partner as THREE.Object3D | undefined)?.rotation.set(v.legL.rotation.x, 0, 0);
     const mode = o?.type === 'build' || o?.type === 'repair' ? 'hammer' : o?.type === 'gather' && o.res === 'gold' ? 'pick' : 'axe';
     v.pickHead.visible = mode === 'pick';
     v.axeHead.visible = mode === 'axe';
     v.hammerHead.visible = mode === 'hammer';
     v.tool.position.z = v.tool.userData.z0 ??= v.tool.position.z;
+    // Arms swing against the legs; at rest they hang with a little life.
+    const swingArm = moving && !mounted ? stride * 0.5 : 0;
+    const restArm = Math.sin(now * 2.2 + u.id) * 0.04;
+    if (v.armL) v.armL.rotation.x = moving && !mounted ? -swingArm : 0.04 + restArm;
+    const lunge = (k: number) => {
+      v!.body.position.z = k;
+      v!.body.rotation.x -= k * 1.2;
+    };
     if (u.swing > 0) {
       const p = Math.max(0, Math.min(1, 1 - (u.swing - alpha) / windup));
       if (v.style === 'bow') {
-        // Draw: raise the bow level and pull back, loosing at the end.
-        v.tool.rotation.x = -1.2 * Math.min(1, p * 2);
-        v.tool.position.z = (v.tool.userData.z0 as number) - 0.08 * p;
+        // Raise the bow level and draw the string back, loosing at the end.
+        const k = Math.min(1, p * 2);
+        if (v.armL) v.armL.rotation.x = -1.45 * k;
+        v.tool.rotation.x = -1.45 * k;
+        v.tool.position.z = (v.tool.userData.z0 as number) - 0.1 * p;
       } else if (v.style === 'staff') {
-        // Raise the staff overhead, then thrust it toward the target.
-        v.tool.rotation.x = p < 0.8 ? -(p / 0.8) * 2.4 : -2.4 + ((p - 0.8) / 0.2) * 1.6;
+        // Lift the staff high, then thrust it toward the target.
+        v.tool.rotation.x = p < 0.8 ? -(p / 0.8) * 2.7 : -2.7 + ((p - 0.8) / 0.2) * 1.4;
+      } else if (v.style === 'throw') {
+        // Whirl the sling, then release forward.
+        v.tool.rotation.x = p < 0.85 ? -2.4 - Math.sin(p * 20) * 0.6 : -2.4 + ((p - 0.85) / 0.15) * 1.6;
       } else if (v.style === 'siege') {
-        // The throwing arm cranks back, then whips over.
-        v.tool.rotation.x = p < 0.85 ? (p / 0.85) * 0.5 : 0.5 - ((p - 0.85) / 0.15) * 1.6;
+        // The arm cranks down, then whips over the top.
+        v.tool.rotation.x = p < 0.85 ? -0.25 - (p / 0.85) * 0.2 : -0.45 + ((p - 0.85) / 0.15) * 2.05;
+      } else if (v.style === 'beast') {
+        lunge(p < 0.7 ? -0.04 * (p / 0.7) : -0.04 + ((p - 0.7) / 0.3) * 0.16);
       } else {
-        // Melee: raise the weapon through the wind-up, strike as it lands.
-        v.tool.rotation.x = p < 0.75 ? 0.35 - (p / 0.75) * 2.1 : -1.75 + ((p - 0.75) / 0.25) * 2.3;
+        // Melee: raise the weapon overhead, strike down as the blow lands; the shield braces.
+        v.tool.rotation.x = p < 0.75 ? -(p / 0.75) * 3.0 : -3.0 + ((p - 0.75) / 0.25) * 2.6;
+        if (v.armL) v.armL.rotation.x = -0.55;
       }
     } else if (u.cooldown > 0 && attacking(u)) {
-      v.tool.rotation.x = v.style === 'siege' ? -1.1 : v.style === 'bow' ? -0.6 : 0.55; // follow-through
+      // Follow-through, then settle.
+      v.tool.rotation.x = v.style === 'siege' ? 1.4 : v.style === 'bow' ? -0.8 : v.style === 'staff' ? -1.1 : -0.35;
+      if (v.armL && (v.style === 'bow' || v.style === 'melee')) v.armL.rotation.x = v.style === 'bow' ? -0.8 : -0.45;
+    } else if (working) {
+      // Laborers and Tenders: lift and strike in a steady rhythm.
+      const k = 0.5 + 0.5 * Math.sin(now * 10 + u.id);
+      v.tool.rotation.x = -2.6 + k * k * 2.2;
     } else {
-      v.tool.rotation.x = working ? -1.7 + (0.5 + 0.5 * Math.sin(now * 10 + u.id)) * 2.0 : 0.35;
+      v.tool.rotation.x = v.style === 'siege' ? -0.25 : moving && !mounted ? swingArm : mounted ? -0.15 : 0.04 - restArm;
     }
+    if (v.bow) v.bow.rotation.x = -(v.armL?.rotation.x ?? 0);
     v.goldSack.visible = u.carry.res === 'gold' && u.carry.amount > 0;
     const logs = u.carry.res === 'wood' ? Math.ceil((u.carry.amount / CONFIG.units.worker.carryWood) * 3) : 0;
     v.logs.forEach((l, i) => (l.visible = i < logs));

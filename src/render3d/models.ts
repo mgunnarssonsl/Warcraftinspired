@@ -2,7 +2,10 @@
 // 1 world unit = 1 tile. Models are centered on their footprint with the
 // ground at y = 0 and the front (entrance) facing +Z, toward the camera.
 
-import { WILD_BUILDINGS, WILD_UNITS } from './wildModels';
+import { WILD_BUILDINGS } from './wildModels';
+import * as CU from './crownUnits';
+import * as WU from './wildUnits';
+import { cachedUnit, type UnitParts } from './rig';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { BuildingType, UnitType } from '../sim/config';
@@ -55,376 +58,44 @@ export function tint(hex: string, f: number): string {
 
 // ---- units ---------------------------------------------------------------------
 
-export interface WorkerParts {
-  root: THREE.Group;
-  body: THREE.Group; // bobs while walking
-  legL: THREE.Object3D;
-  legR: THREE.Object3D;
-  tool: THREE.Group; // swings while working
-  pickHead: THREE.Object3D;
-  axeHead: THREE.Object3D;
-  hammerHead: THREE.Object3D;
-  goldSack: THREE.Object3D;
-  logs: THREE.Object3D[];
-  /** A banner or pennant that waves (heroes, riders), if any. */
-  flag?: THREE.Object3D;
-  /** How it attacks, for its animation: a melee blow, a drawn bow, a raised staff, a throwing arm. */
-  style?: 'melee' | 'bow' | 'staff' | 'siege';
-}
+export type WorkerParts = UnitParts;
 
-export function makeWorker(team: string): WorkerParts {
-  const root = new THREE.Group();
-  const body = new THREE.Group();
-  // Drawn larger than the 0.3-tile collision radius so units read clearly.
-  body.scale.setScalar(1.35);
-  root.add(body);
-  const legGeo = box(0.08, 0.22, 0.08);
-  const legL = mesh(legGeo, mat('#4a3826'), -0.07, 0.11, 0);
-  const legR = mesh(legGeo, mat('#4a3826'), 0.07, 0.11, 0);
-  legL.geometry.translate(0, -0.11, 0);
-  legL.position.y = 0.22;
-  legR.position.y = 0.22;
-  body.add(legL, legR);
-  body.add(mesh(new THREE.CylinderGeometry(0.13, 0.17, 0.3, 8), mat(team), 0, 0.37, 0));
-  body.add(mesh(new THREE.CylinderGeometry(0.172, 0.172, 0.05, 8), mat('#5b4126'), 0, 0.27, 0));
-  body.add(mesh(new THREE.SphereGeometry(0.11, 10, 8), mat('#e2b88c'), 0, 0.61, 0));
-  body.add(mesh(new THREE.ConeGeometry(0.18, 0.09, 10), mat('#c9a35a'), 0, 0.71, 0));
+const UNIT_BUILDERS: Record<UnitType, (team: string) => THREE.Group> = {
+  worker: (t) => CU.laborer(t),
+  guard: CU.guard,
+  archer: CU.archer,
+  lancer: CU.lancer,
+  cleric: CU.cleric,
+  mangonel: CU.mangonel,
+  outrider: CU.outrider,
+  hero: CU.marshal,
+  ranger: CU.pathfinder,
+  sage: CU.sage,
+  brigand: CU.brigand,
+  poacher: CU.poacher,
+  chief: CU.chief,
+  brute: () => CU.brute(),
+  wolf: () => CU.wolf(),
+  tender: WU.tender,
+  thornguard: WU.thornguard,
+  slinger: WU.slinger,
+  fox: WU.fox,
+  stagrider: WU.stagrider,
+  mender: WU.mender,
+  rootcrusher: WU.rootcrusher,
+  warden: WU.thornWarden,
+  huntress: WU.huntress,
+  speaker: WU.groveSpeaker,
+};
 
-  const tool = new THREE.Group();
-  tool.position.set(0.19, 0.42, 0.02);
-  tool.add(mesh(box(0.03, 0.36, 0.03), mat('#7a5733'), 0, 0.14, 0));
-  const pickHead = mesh(box(0.24, 0.04, 0.04), mat('#9aa0a8', { rough: 0.5 }), 0, 0.31, 0);
-  const axeHead = mesh(box(0.04, 0.1, 0.12), mat('#9aa0a8', { rough: 0.5 }), 0, 0.28, 0.06);
-  const hammerHead = mesh(box(0.06, 0.07, 0.14), mat('#6d6f75', { rough: 0.5 }), 0, 0.31, 0);
-  tool.add(pickHead, axeHead, hammerHead);
-  body.add(tool);
-
-  const goldSack = new THREE.Group();
-  goldSack.add(mesh(new THREE.SphereGeometry(0.11, 8, 6), mat('#8a6a3a'), 0, 0, 0));
-  goldSack.add(mesh(new THREE.IcosahedronGeometry(0.07, 0), mat('#ffd84a', { emissive: 0x4a3200, rough: 0.35 }), 0, 0.08, 0));
-  goldSack.position.set(0, 0.46, -0.19);
-  body.add(goldSack);
-  const logs: THREE.Object3D[] = [];
-  const logGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.32, 6).rotateZ(Math.PI / 2);
-  for (let i = 0; i < 3; i++) {
-    const l = mesh(logGeo, mat(i % 2 ? '#8a5f34' : '#a0703f'), 0, 0.4 + i * 0.075, -0.2);
-    body.add(l);
-    logs.push(l);
-  }
-  return { root, body, legL, legR, tool, pickHead, axeHead, hammerHead, goldSack, logs };
-}
-
-/** Shared legs + torso + head skeleton for soldiers. */
-export function soldierBase(team: string, scale: number, legColor: string): Pick<WorkerParts, 'root' | 'body' | 'legL' | 'legR'> {
-  const root = new THREE.Group();
-  const body = new THREE.Group();
-  body.scale.setScalar(scale);
-  root.add(body);
-  const legGeo = box(0.09, 0.22, 0.09).translate(0, -0.11, 0);
-  const legL = mesh(legGeo, mat(legColor), -0.075, 0.22, 0);
-  const legR = mesh(legGeo, mat(legColor), 0.075, 0.22, 0);
-  body.add(legL, legR);
-  body.add(mesh(new THREE.CylinderGeometry(0.14, 0.18, 0.32, 8), mat(team), 0, 0.38, 0));
-  body.add(mesh(new THREE.SphereGeometry(0.11, 10, 8), mat('#e2b88c'), 0, 0.63, 0));
-  return { root, body, legL, legR };
-}
-
-export function noTools(): Pick<WorkerParts, 'pickHead' | 'axeHead' | 'hammerHead' | 'goldSack' | 'logs'> {
-  return { pickHead: new THREE.Object3D(), axeHead: new THREE.Object3D(), hammerHead: new THREE.Object3D(), goldSack: new THREE.Object3D(), logs: [] };
-}
-
-/** Guard: helmeted, shield on the left arm, sword in the right hand. */
-function makeGuard(team: string): WorkerParts {
-  const base = soldierBase(team, 1.5, '#5a5f66');
-  const { body } = base;
-  const steel = mat('#a3a9b2', { rough: 0.45 });
-  body.add(mesh(new THREE.SphereGeometry(0.125, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), steel, 0, 0.66, 0));
-  body.add(mesh(box(0.36, 0.07, 0.2), steel, 0, 0.53, 0)); // pauldrons
-  body.add(mesh(box(0.03, 0.09, 0.2), mat(team), 0, 0.77, -0.01)); // crest: the team colour on top
-  // A tall kite shield: the Guard's silhouette, in the team colour with a pale boss.
-  const shield = mesh(box(0.05, 0.38, 0.26), mat(team), -0.21, 0.4, 0.05);
-  shield.add(mesh(box(0.02, 0.12, 0.12), mat('#e6d9a8'), -0.03, 0.02, 0));
-  body.add(shield);
-  const tool = new THREE.Group();
-  tool.position.set(0.2, 0.42, 0.04);
-  tool.add(mesh(box(0.035, 0.08, 0.035), mat('#5b4126'), 0, 0.02, 0));
-  tool.add(mesh(box(0.12, 0.025, 0.04), steel, 0, 0.07, 0));
-  tool.add(mesh(box(0.035, 0.3, 0.015), mat('#d6dbe2', { rough: 0.3 }), 0, 0.23, 0));
-  body.add(tool);
-  return { ...base, tool, ...noTools() };
-}
-
-/** Archer: hooded, bow in the left hand, quiver on the back. */
-function makeArcher(team: string): WorkerParts {
-  const base = soldierBase(team, 1.4, '#4a3826');
-  const { body } = base;
-  // Pointed hood in a darker shade of the team colour: archers read as a team at a glance.
-  body.add(mesh(new THREE.ConeGeometry(0.15, 0.24, 8), mat(tint(team, -0.35)), 0, 0.76, -0.01));
-  body.add(mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.3, 6), mat('#6b4a2b'), 0.06, 0.48, -0.17));
-  for (let i = 0; i < 3; i++) body.add(mesh(box(0.012, 0.08, 0.012), mat('#e8e2d0'), 0.03 + i * 0.025, 0.67, -0.17));
-  const tool = new THREE.Group();
-  tool.position.set(-0.2, 0.42, 0.06);
-  const bow = mesh(new THREE.TorusGeometry(0.22, 0.016, 4, 12, Math.PI), mat('#8a5f34'), 0, 0, 0);
-  bow.rotation.set(0, Math.PI / 2, Math.PI / 2);
-  tool.add(bow);
-  tool.add(mesh(box(0.004, 0.44, 0.004), mat('#e8e2d0'), 0, 0, -0.0));
-  body.add(tool);
-  return { ...base, tool, ...noTools(), style: 'bow' };
-}
-
-/** A hero's banner on a pole at the back: team colour, high above the crowd. */
-export function heroBanner(body: THREE.Group, team: string, height: number): THREE.Object3D {
-  const pole = mesh(box(0.025, height, 0.025), mat('#5b4126'), -0.12, 0.3 + height / 2, -0.16);
-  body.add(pole);
-  const flag = new THREE.Group();
-  flag.position.set(-0.12, 0.3 + height - 0.08, -0.16);
-  flag.add(mesh(box(0.012, 0.16, 0.2), mat(team), 0, 0, -0.1));
-  flag.add(mesh(box(0.014, 0.04, 0.2), mat('#d9b44a', { emissive: 0x2a1e00 }), 0, 0.07, -0.1));
-  body.add(flag);
-  return flag;
-}
-
-/** A faint team-coloured ring at a hero's feet. */
-export function heroHalo(root: THREE.Group, team: string): void {
-  const ring = new THREE.Mesh(
-    new THREE.RingGeometry(0.42, 0.5, 28).rotateX(-Math.PI / 2),
-    new THREE.MeshBasicMaterial({ color: team, transparent: true, opacity: 0.35, depthWrite: false }),
-  );
-  ring.position.y = 0.02;
-  ring.name = 'halo';
-  root.add(ring);
-}
-
-/** The Marshal: a larger armoured champion with cape, plume and a war hammer. */
-function makeHero(team: string): WorkerParts {
-  const base = soldierBase(team, 1.85, '#3b3f46');
-  const { body } = base;
-  const gold = mat('#d9b44a', { rough: 0.35, emissive: 0x2a1e00 });
-  const steel = mat('#b8bec8', { rough: 0.35 });
-  body.add(mesh(new THREE.SphereGeometry(0.13, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), steel, 0, 0.67, 0));
-  body.add(mesh(new THREE.ConeGeometry(0.04, 0.22, 5), mat(team), 0, 0.86, -0.02)); // plume
-  body.add(mesh(box(0.48, 0.08, 0.22), gold, 0, 0.54, 0)); // broad pauldrons: the frontline hero
-  const shield = mesh(box(0.05, 0.32, 0.26), mat(team), -0.27, 0.4, 0.04); // round-topped tower shield
-  shield.add(mesh(box(0.02, 0.14, 0.14), gold, -0.03, 0.02, 0));
-  body.add(shield);
-  const cape = mesh(box(0.3, 0.42, 0.03), mat(tint(team, -0.3)), 0, 0.36, -0.17);
-  cape.rotation.x = 0.15;
-  body.add(cape);
-  const tool = new THREE.Group();
-  tool.position.set(0.21, 0.44, 0.04);
-  tool.add(mesh(box(0.035, 0.42, 0.035), mat('#5b4126'), 0, 0.16, 0));
-  tool.add(mesh(box(0.16, 0.1, 0.1), steel, 0, 0.38, 0));
-  tool.add(mesh(box(0.17, 0.02, 0.11), gold, 0, 0.38, 0));
-  body.add(tool);
-  const flag = heroBanner(body, team, 0.62);
-  heroHalo(base.root, team);
-  return { ...base, tool, ...noTools(), flag };
-}
-
-/** Pathfinder: a tall hooded ranger with a long cloak and a longbow. */
-function makeRanger(team: string): WorkerParts {
-  const base = soldierBase(team, 1.8, '#3b3226');
-  const { body } = base;
-  body.add(mesh(new THREE.ConeGeometry(0.16, 0.28, 8), mat('#2f5a2a'), 0, 0.78, -0.01)); // hood
-  const cloak = mesh(box(0.32, 0.46, 0.03), mat('#2f5a2a'), 0, 0.36, -0.17);
-  cloak.rotation.x = 0.12;
-  body.add(cloak);
-  body.add(mesh(box(0.36, 0.05, 0.2), mat('#d9b44a', { emissive: 0x2a1e00 }), 0, 0.53, 0)); // gold clasp line
-  body.add(mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.32, 6), mat('#6b4a2b'), 0.07, 0.48, -0.18));
-  const tool = new THREE.Group();
-  tool.position.set(-0.21, 0.42, 0.06);
-  const bow = mesh(new THREE.TorusGeometry(0.3, 0.018, 4, 14, Math.PI), mat('#5b3a1e'), 0, 0, 0);
-  bow.rotation.set(0, Math.PI / 2, Math.PI / 2);
-  tool.add(bow);
-  tool.add(mesh(box(0.004, 0.6, 0.004), mat('#e8e2d0'), 0, 0, 0));
-  body.add(tool);
-  const flag = heroBanner(body, team, 0.6);
-  heroHalo(base.root, team);
-  return { ...base, tool, ...noTools(), flag, style: 'bow' };
-}
-
-/** Sage: a robed caster with a tall pointed hat and a staff of fire. */
-function makeSage(team: string): WorkerParts {
-  const base = soldierBase(team, 1.8, '#3a2f4a');
-  const { body } = base;
-  body.add(mesh(new THREE.ConeGeometry(0.24, 0.46, 8), mat('#4a3a6a'), 0, 0.3, 0)); // robe
-  body.add(mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.03, 10), mat('#3a2e55'), 0, 0.71, 0)); // brim
-  body.add(mesh(new THREE.ConeGeometry(0.11, 0.34, 8), mat('#3a2e55'), 0, 0.89, 0)); // hat
-  body.add(mesh(box(0.06, 0.36, 0.02), mat(team), 0, 0.38, 0.19)); // sash
-  const tool = new THREE.Group();
-  tool.position.set(0.22, 0.36, 0.05);
-  tool.add(mesh(box(0.03, 0.68, 0.03), mat('#5b4126'), 0, 0.2, 0));
-  tool.add(mesh(new THREE.OctahedronGeometry(0.08, 0), mat('#ffb060', { emissive: 0xc04a00, rough: 0.3 }), 0, 0.58, 0));
-  body.add(tool);
-  const flag = heroBanner(body, team, 0.5);
-  heroHalo(base.root, team);
-  return { ...base, tool, ...noTools(), flag, style: 'staff' };
-}
-
-/** Timber Wolf: a low grey quadruped. */
-function makeWolf(): WorkerParts {
-  const root = new THREE.Group();
-  const body = new THREE.Group();
-  body.scale.setScalar(1.3);
-  root.add(body);
-  const fur = mat('#7a7468');
-  const legGeo = box(0.06, 0.2, 0.06).translate(0, -0.1, 0);
-  const legL = mesh(legGeo, fur, -0.08, 0.2, 0.15);
-  const legR = mesh(legGeo, fur, 0.08, 0.2, 0.15);
-  const hindL = mesh(legGeo, fur, -0.08, 0.2, -0.15);
-  const hindR = mesh(legGeo, fur, 0.08, 0.2, -0.15);
-  legL.userData.partner = hindR;
-  legR.userData.partner = hindL;
-  body.add(legL, legR, hindL, hindR);
-  body.add(mesh(box(0.2, 0.16, 0.46), fur, 0, 0.27, 0));
-  body.add(mesh(box(0.15, 0.14, 0.18), fur, 0, 0.34, 0.27)); // head
-  body.add(mesh(box(0.08, 0.07, 0.12), mat('#5a554c'), 0, 0.31, 0.39)); // snout
-  for (const x of [-0.05, 0.05]) body.add(mesh(new THREE.ConeGeometry(0.03, 0.08, 4), fur, x, 0.44, 0.24));
-  const tail = mesh(box(0.05, 0.05, 0.22), fur, 0, 0.3, -0.31);
-  tail.rotation.x = 0.5;
-  body.add(tail);
-  const tool = new THREE.Group(); // the bite: the head lunges
-  tool.position.set(0, 0.34, 0.3);
-  body.add(tool);
-  return { root, body, legL, legR, tool, ...noTools() };
-}
-
-/** Bog Brute: a hulking, mossy club-wielder. */
-function makeBrute(): WorkerParts {
-  const base = soldierBase('#5d6b3a', 2.3, '#4a5230');
-  const { body } = base;
-  body.add(mesh(new THREE.SphereGeometry(0.2, 8, 6), mat('#6b7a44'), 0, 0.42, 0.04)); // belly
-  body.add(mesh(new THREE.SphereGeometry(0.07, 6, 4), mat('#ffd84a', { emissive: 0x3a2a00 }), 0.04, 0.66, 0.09)); // eye
-  const tool = new THREE.Group();
-  tool.position.set(0.23, 0.42, 0.04);
-  tool.add(mesh(new THREE.CylinderGeometry(0.03, 0.07, 0.5, 6), mat('#5b3a1e'), 0, 0.2, 0));
-  body.add(tool);
-  return { ...base, tool, ...noTools() };
-}
-
-/** Lancer: a rider on a barded horse with a long lance couched forward. */
-function makeLancer(team: string): WorkerParts {
-  const root = new THREE.Group();
-  const body = new THREE.Group();
-  body.scale.setScalar(1.45);
-  root.add(body);
-  const horse = mat('#6b4a2e');
-  const legGeo = box(0.07, 0.3, 0.07).translate(0, -0.15, 0);
-  // Front legs swing as the "walk" legs; the hind legs follow in the other phase.
-  const legL = mesh(legGeo, horse, -0.09, 0.3, 0.2);
-  const legR = mesh(legGeo, horse, 0.09, 0.3, 0.2);
-  const hindL = mesh(legGeo, horse, -0.09, 0.3, -0.2);
-  const hindR = mesh(legGeo, horse, 0.09, 0.3, -0.2);
-  body.add(legL, legR, hindL, hindR);
-  // Keep the hind legs in step with the front ones.
-  legL.userData.partner = hindR;
-  legR.userData.partner = hindL;
-  body.add(mesh(box(0.26, 0.22, 0.6), horse, 0, 0.4, 0));
-  body.add(mesh(box(0.28, 0.12, 0.5), mat(team), 0, 0.36, 0)); // barding
-  const neck = mesh(box(0.12, 0.3, 0.12), horse, 0, 0.56, 0.3);
-  neck.rotation.x = 0.5;
-  body.add(neck);
-  body.add(mesh(box(0.11, 0.11, 0.24), horse, 0, 0.7, 0.42));
-  body.add(mesh(box(0.05, 0.2, 0.04), mat('#2e2018'), 0, 0.42, -0.34)); // tail
-  // Rider
-  body.add(mesh(new THREE.CylinderGeometry(0.11, 0.14, 0.28, 8), mat(team), 0, 0.64, -0.02));
-  body.add(mesh(new THREE.SphereGeometry(0.095, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), mat('#a3a9b2', { rough: 0.45 }), 0, 0.84, -0.02));
-  body.add(mesh(new THREE.SphereGeometry(0.085, 8, 6), mat('#e2b88c'), 0, 0.82, -0.02));
-  const tool = new THREE.Group();
-  tool.position.set(0.15, 0.66, 0);
-  const lance = mesh(new THREE.ConeGeometry(0.03, 0.95, 6).rotateX(Math.PI / 2), mat('#d6c49a'), 0, 0, 0.35);
-  tool.add(lance);
-  const pennant = mesh(box(0.012, 0.1, 0.1), mat(team), 0, 0.06, 0.62);
-  tool.add(pennant);
-  body.add(tool);
-  return { root, body, legL, legR, tool, ...noTools(), flag: pennant };
-}
-
-/** Outrider: a lighter rider on a smaller horse, carrying a pennant pole. */
-function makeOutrider(team: string): WorkerParts {
-  const p = makeLancer(team);
-  p.body.scale.setScalar(1.25);
-  p.tool.clear();
-  p.tool.add(mesh(box(0.025, 0.6, 0.025), mat('#7a5733'), 0, 0.2, 0));
-  const pennant = mesh(box(0.012, 0.12, 0.18), mat(team), 0, 0.44, 0.09);
-  p.tool.add(pennant);
-  p.flag = pennant;
-  return p;
-}
-
-/** Cleric: long robe and hood, a staff topped with a glowing orb. */
-function makeCleric(team: string): WorkerParts {
-  const base = soldierBase(team, 1.4, '#d9d2c0');
-  const { body } = base;
-  body.add(mesh(new THREE.ConeGeometry(0.22, 0.42, 8), mat('#ece6d6'), 0, 0.3, 0)); // robe
-  body.add(mesh(box(0.05, 0.3, 0.02), mat(team), 0, 0.36, 0.17)); // stole
-  body.add(mesh(new THREE.ConeGeometry(0.14, 0.2, 8), mat('#ece6d6'), 0, 0.74, -0.01)); // hood
-  const tool = new THREE.Group();
-  tool.position.set(0.2, 0.36, 0.05);
-  tool.add(mesh(box(0.03, 0.55, 0.03), mat('#7a5733'), 0, 0.17, 0));
-  tool.add(mesh(new THREE.IcosahedronGeometry(0.06, 0), mat('#b8ffd0', { emissive: 0x3aa05a, rough: 0.3 }), 0, 0.47, 0));
-  body.add(tool);
-  return { ...base, tool, ...noTools(), style: 'staff' };
-}
-
-/** Mangonel: a wheeled timber frame with a throwing arm (the "tool"). */
-function makeMangonel(team: string): WorkerParts {
-  const root = new THREE.Group();
-  const body = new THREE.Group();
-  body.scale.setScalar(1.3);
-  root.add(body);
-  const wood = mat('#8a6440');
-  const dark = mat('#5b4126');
-  const wheelGeo = new THREE.CylinderGeometry(0.16, 0.16, 0.06, 10).rotateZ(Math.PI / 2);
-  const legL = mesh(wheelGeo, dark, -0.3, 0.16, 0.2);
-  const legR = mesh(wheelGeo, dark, 0.3, 0.16, 0.2);
-  body.add(legL, legR, mesh(wheelGeo, dark, -0.3, 0.16, -0.25), mesh(wheelGeo, dark, 0.3, 0.16, -0.25));
-  body.add(mesh(box(0.56, 0.08, 0.7), wood, 0, 0.26, 0));
-  for (const x of [-0.2, 0.2]) body.add(mesh(box(0.06, 0.45, 0.06), wood, x, 0.5, -0.05));
-  body.add(mesh(box(0.46, 0.06, 0.06), wood, 0, 0.7, -0.05));
-  body.add(mesh(box(0.3, 0.06, 0.2), mat(team), 0, 0.32, 0.25)); // team-colored shield board
-  const tool = new THREE.Group();
-  tool.position.set(0, 0.62, -0.05);
-  tool.add(mesh(box(0.06, 0.06, 0.75), wood, 0, 0, 0.1));
-  tool.add(mesh(new THREE.SphereGeometry(0.1, 6, 4), mat('#7a7468'), 0, 0.06, -0.26)); // stone in the cup
-  body.add(tool);
-  return { root, body, legL, legR, tool, ...noTools(), style: 'siege' };
-}
-
-/** Brigand Chief: a bigger brigand with a horned helm, so the camp's leader stands out. */
-function makeChief(team: string): WorkerParts {
-  const p = makeGuard(team);
-  p.body.scale.setScalar(1.75);
-  for (const x of [-1, 1]) {
-    const horn = mesh(new THREE.ConeGeometry(0.035, 0.16, 5), mat('#e6dcc0'), x * 0.12, 0.72, 0);
-    horn.rotation.z = -x * 0.7;
-    p.body.add(horn);
-  }
-  return p;
+/** A unit model: built once per type and team colour, then cloned (shared geometry). */
+export function makeUnit(type: UnitType, team: string): WorkerParts {
+  return cachedUnit(`${type}|${team}`, () => UNIT_BUILDERS[type](team));
 }
 
 /** Hammer projectile for Stormhammer, pointing along +Z. */
 export function makeHammerGeometry(): THREE.BufferGeometry {
   return mergeGeometries([new THREE.BoxGeometry(0.06, 0.06, 0.4), new THREE.BoxGeometry(0.22, 0.16, 0.16).translate(0, 0, 0.2)])!;
-}
-
-export function makeUnit(type: UnitType, team: string): WorkerParts {
-  const wild = WILD_UNITS[type];
-  if (wild) return wild(team);
-  if (type === 'hero') return makeHero(team);
-  if (type === 'lancer') return makeLancer(team);
-  if (type === 'outrider') return makeOutrider(team);
-  if (type === 'ranger') return makeRanger(team);
-  if (type === 'sage') return makeSage(team);
-  if (type === 'wolf') return makeWolf();
-  if (type === 'brute') return makeBrute();
-  if (type === 'cleric') return makeCleric(team);
-  if (type === 'mangonel') return makeMangonel(team);
-  // Camp creeps reuse the soldier silhouettes in their own drab colours.
-  if (type === 'chief') return makeChief(team);
-  if (type === 'guard' || type === 'brigand') return makeGuard(team);
-  if (type === 'archer' || type === 'poacher') return makeArcher(team);
-  return makeWorker(team);
 }
 
 /** Siege boulder and a Cleric's glowing bolt. */
