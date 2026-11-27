@@ -159,7 +159,8 @@ class Figure:
             # Shoulder (to frame 14), steady aim, fire at frame 21 (70%): the recoil kicks, settle.
             for f, k, kick in ((1, 0.0, 0.0), (10, 1.0, 0.0), (20, 1.0, 0.0), (22, 1.0, 1.0), (25, 1.0, 0.4), (30, 0.6, 0.0)):
                 aim_pose(f, k, kick)
-        clip('attack', moving, 30, {'slash': strike, 'bow': bowshot, 'staff': staff, 'throw': throw, 'musket': musket}[attack])
+        if attack:
+            clip('attack', moving, 30, {'slash': strike, 'bow': bowshot, 'staff': staff, 'throw': throw, 'musket': musket}[attack])
         if reload:
             def reloading():
                 # Butt down, ramrod: the right arm pumps up and down twice.

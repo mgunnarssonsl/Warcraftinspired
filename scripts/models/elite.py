@@ -170,9 +170,8 @@ def nature_wolf(saddle=False):
 
 
 def naturewolf():
-    B = nature_wolf()
-    B.animate(gait='bound', attack='bite')
-    return B
+    import wolf
+    return wolf.naturewolf()
 
 
 def wolf_pelt_hood(F):
@@ -188,37 +187,19 @@ def wolf_pelt_hood(F):
 
 
 def wolfkeeper(F=None, animate=True):
-    """A lean tracker: wolf-pelt hood, leaf mantle, bark vambraces, a leaf-bladed hunting spear."""
-    F = F or Figure(bulk=1.14)
-    cloth_legs(F, pants=WD.BARK_D, boots=WD.BARK_D, wraps=WD.LEAF_D)
-    torso(F, WD.BARK, belt=WD.BARK_D, buckle=AMBER)
-    WD.bark_plates(F, seed=9)
-    WD.sash(F, 0.06)
-    WD.leaf_skirt(F, 0.9)
-    cloth_arms(F, WD.LEAF_D, skin=WD.BARK_L, glove=WD.BARK_D, bracer=WD.BARK)
-    face(F, hair='#3a2a1a', brows='#2a1a10')
-    wolf_pelt_hood(F)
-    WD.leaf_mantle(F, 0.9)
-    hd, (hx, hy, hz) = held(F, 'R')
-    tilt = 0.45
-    def along(d):
-        return (hx, hy - math.cos(tilt) * d, hz + math.sin(tilt) * d)
-    tube('spear', 0.015, 0.018, 1.05, mat('matte', WD.BARK_L), hd, at=along(-0.3), rot=(-(math.pi / 2 - tilt), 0, 0), segs=8)
-    extrude('spearHead', [(-0.035, 0.0), (0.035, 0.0), (0.012, 0.12), (0.0, 0.2), (-0.012, 0.12)], 0.014, mat('metal', '#d8dde4'), hd, at=along(0.74), rot=(math.pi / 2 + tilt, 0, 0), bevel=0.004)
-    for i in range(3):
-        leaf(f'spearLeaf{i}', hd, along(0.7), 0.04, 0.08, WD.LEAVES[i], rot=(0.4, 0, i * 2.1))
-    tube('spearTuft', 0.022, 0.012, 0.06, mat('matte', WOLF_L), hd, at=along(0.66), rot=(-(math.pi / 2 - tilt), 0, 0), segs=8)
-    if animate:
-        F.animate(attack='staff')
-    return F
+    import sylvan
+    return sylvan.build('wolfkeeper', F, animate)
 
 
 def wolfrider():
-    B = nature_wolf(saddle=True)
+    import wolf
+    B = wolf.nature_wolf(saddle=True)
+    import sylvan
     F = wolfkeeper(Figure(bulk=1.05), animate=False)
     BS.seat_rider(B, F)
     B.animate(gait='bound', attack='bite')
-    F.animate(attack='staff', mounted=True)
+    F.animate(attack=None, mounted=True)
+    sylvan.spear_thrust(F, mounted=True)
     return F
 
 
@@ -299,7 +280,8 @@ def shifter_warrior():
 
 
 def shifter():
-    return shifter_warrior()
+    import sylvan
+    return sylvan.build('shifter')
 
 
 def panther():
