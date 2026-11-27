@@ -137,7 +137,6 @@ export function farm(team: string): THREE.Group {
 export function barracks(team: string): THREE.Group {
   const s = new Sculpt();
   grassSkirt(s, 2.9, 2.9, 7);
-  s.add(rbox(2.8, 0.06, 2.8, 0.03), B.dirt, 'matte', { at: [0, 0.03, 0] });
   footing(s, 2.3, 1.4, 0.14);
   stoneWall(s, 2.2, 0.5, 1.3, [0, 0.39, -0.25], 31);
   s.add(rbox(2.15, 0.6, 1.25, 0.03), B.plaster, 'matte', { at: [0, 0.94, -0.25] });
@@ -169,7 +168,6 @@ export function barracks(team: string): THREE.Group {
 export function lumbermill(team: string): THREE.Group {
   const s = new Sculpt();
   grassSkirt(s, 2.9, 2.9, 9);
-  s.add(rbox(2.6, 0.06, 2.4, 0.03), B.dirt, 'matte', { at: [0, 0.03, 0] });
   // Open timber shed.
   for (const [x, z] of [
     [-0.9, -0.6],
@@ -247,7 +245,6 @@ export function altar(team: string): THREE.Group {
 export function smithy(team: string): THREE.Group {
   const s = new Sculpt();
   grassSkirt(s, 2.9, 2.9, 17);
-  s.add(rbox(2.6, 0.06, 2.5, 0.03), B.dirt, 'matte', { at: [0, 0.03, 0] });
   footing(s, 1.8, 1.3, 0.12);
   stoneWall(s, 1.7, 0.4, 1.2, [-0.15, 0.32, -0.25], 61);
   s.add(rbox(1.65, 0.55, 1.15, 0.03), B.plaster, 'matte', { at: [-0.15, 0.8, -0.25] });
@@ -300,7 +297,6 @@ export function chapel(team: string): THREE.Group {
 export function workshop(team: string): THREE.Group {
   const s = new Sculpt();
   grassSkirt(s, 2.9, 2.9, 21);
-  s.add(rbox(2.7, 0.06, 2.5, 0.03), '#b49a6e', 'matte', { at: [0, 0.03, 0] });
   for (const [x, z] of [
     [-1.1, -0.7],
     [1.1, -0.7],

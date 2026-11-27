@@ -114,7 +114,6 @@ export function heartwood(team: string, tier = 1): THREE.Group {
 export function grove(team: string): THREE.Group {
   const s = new Sculpt();
   grassSkirt(s, 1.9, 1.9, 41);
-  s.add(rbox(1.85, 0.05, 1.85, 0.03), '#9a845a', 'matte', { at: [0, 0.025, 0] });
   // Leaf hut.
   s.add(cyl(0.45, 0.5, 0.42, 10), W.barkL, 'matte', { at: [-0.35, 0.22, -0.3] });
   s.add(lathe([[0.66, 0], [0.6, 0.25], [0.36, 0.55], [0, 0.72]], 12), LEAVES[0], 'matte', { at: [-0.35, 0.4, -0.3] });
@@ -144,7 +143,6 @@ export function grove(team: string): THREE.Group {
 export function saplodge(team: string): THREE.Group {
   const s = new Sculpt();
   grassSkirt(s, 2.9, 2.9, 51);
-  s.add(rbox(2.6, 0.05, 2.5, 0.03), '#9a845a', 'matte', { at: [0, 0.025, 0] });
   trunk(s, [-0.45, 0.05, -0.4], 0.42, 1.2, 53, 5);
   canopy(s, [-0.45, 1.5, -0.4], 0.8, 55, 7);
   doorGlow(s, [-0.45, 0.06, -0.02], 0.36, 0.5);
@@ -170,7 +168,6 @@ export function saplodge(team: string): THREE.Group {
 export function den(team: string): THREE.Group {
   const s = new Sculpt();
   grassSkirt(s, 2.9, 2.9, 61);
-  s.add(rbox(2.7, 0.05, 2.6, 0.03), '#a88e62', 'matte', { at: [0, 0.025, 0] });
   // A dome of woven branches, leaves on top, tusks around.
   s.add(lathe([[1.05, 0], [1.0, 0.35], [0.75, 0.75], [0.35, 1.0], [0, 1.05]], 12), W.bark, 'matte', { at: [0, 0.05, -0.25] });
   for (let i = 0; i < 6; i++) s.add(new THREE.TorusGeometry(0.95 - i * 0.02, 0.05, 4, 16, Math.PI), i % 2 ? W.barkD : W.barkL, 'matte', { at: [0, 0.05, -0.25], rot: [0, (i * Math.PI) / 6, 0] });
@@ -241,7 +238,6 @@ export function circle(team: string): THREE.Group {
 export function barkweaver(team: string): THREE.Group {
   const s = new Sculpt();
   grassSkirt(s, 2.9, 2.9, 91);
-  s.add(rbox(2.6, 0.05, 2.5, 0.03), '#a88e62', 'matte', { at: [0, 0.025, 0] });
   // A bark hut under a leaf roof with a great tusk ridge.
   s.add(rbox(1.7, 0.75, 1.1, 0.12), W.bark, 'matte', { at: [-0.1, 0.4, -0.35] });
   for (let i = 0; i < 6; i++) s.add(rbox(0.06, 0.78, 0.05, 0.02), W.barkD, 'matte', { at: [-0.85 + i * 0.3, 0.4, 0.21] });

@@ -115,6 +115,17 @@ export class Sculpt {
     return this.parts.size === 0;
   }
 
+  /** Everything merged into one geometry, whatever the finish (for instanced meshes). */
+  geometry(): THREE.BufferGeometry {
+    const all: THREE.BufferGeometry[] = [];
+    for (const list of this.parts.values()) all.push(...list);
+    const geo = mergeGeometries(all)!;
+    for (const g of all) g.dispose();
+    this.parts.clear();
+    geo.computeBoundingSphere();
+    return geo;
+  }
+
   /** One mesh per finish, under a group (or the single mesh itself). */
   build(name = '', shadow = true): THREE.Object3D {
     const meshes: THREE.Mesh[] = [];

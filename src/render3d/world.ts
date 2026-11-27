@@ -9,18 +9,17 @@ import { CONFIG, isHeroType, secondsToTicks, type BuildingType } from '../sim/co
 import { buildingFaction, unitRole } from '../sim/factions';
 import type { PlacementCheck } from '../sim/construction';
 import type { Game } from '../sim/game';
-import { hash2 } from '../sim/rng';
+import { hash2, valueNoise } from '../sim/rng';
 import type { Building, Entity, Footprint, GameEvent, GroundItem, ResourceNode, Unit } from '../sim/types';
 import { TERRAIN } from '../sim/types';
 import { CameraRig } from './cameraRig';
 import { FogTexture, withFog } from './fog';
-import { isKitMaterial } from './kit';
+import { isKitMaterial, kitMaterial } from './kit';
+import { TREE_KINDS, decorGeometry, mineLook, mineModel, rockGeometry, saplingGeometry, stumpGeometry, treeGeometry, type MineModel, type TreeKind } from './envModels';
 import { paintGround } from './groundTexture';
 import {
   makeBuilding,
   makeGhost,
-  makeMine,
-  makeTreeGeometries,
   makeArrowGeometry,
   makeGroundItem,
   makeBoltGeometry,
@@ -28,7 +27,6 @@ import {
   makeHammerGeometry,
   makeUnit,
   type BuildingParts,
-  type MineParts,
   type WorkerParts,
   isSharedMaterial,
 } from './models';
@@ -78,13 +76,22 @@ export class World3D {
   private items = new Map<number, THREE.Group>();
   private memoryGhosts = new Map<number, { root: THREE.Group; tier: number; done: boolean }>();
   private buildings = new Map<number, BuildingParts & { type: BuildingType; tier: number }>();
-  private mines = new Map<number, MineParts>();
-  private trunks!: THREE.InstancedMesh;
-  private canopies!: THREE.InstancedMesh;
+  private mines = new Map<number, MineModel>();
+  /** One instanced mesh per tree species; trees[i] is drawn by treeMesh[i] at treeSlot[i]. */
+  private treeMeshes: THREE.InstancedMesh[] = [];
+  private treeMeshIds: number[][] = [];
+  private treeMesh: number[] = [];
+  private treeSlot: number[] = [];
   private treeIndex = new Map<number, number>();
   private treeIds: number[] = [];
   private treeShown: number[] = [];
+  private treeAt: Array<[number, number]> = [];
+  /** Stumps of felled trees, and the saplings that come up on them in time (decoration). */
+  private stumps!: THREE.InstancedMesh;
+  private saplings!: THREE.InstancedMesh;
+  private felledAt: number[] = [];
   private shakes = new Map<number, number>();
+  private ripples: THREE.Mesh | null = null;
   private ringGeo = new THREE.RingGeometry(0.86, 1, 40).rotateX(-Math.PI / 2);
   /** Soft team-colour disc under every player unit, so sides read at a glance. */
   private discGeo = (() => {
@@ -274,7 +281,9 @@ export class World3D {
 
   private buildTerrain(): void {
     const { width: W, height: H, terrain } = this.game.state.map;
-    const tex = new THREE.CanvasTexture(paintGround(this.game.state.map, this.game.state.seed));
+    const treeTiles = new Uint8Array(W * H);
+    for (const t of this.game.resources()) if (t.type === 'tree') treeTiles[t.ty * W + t.tx] = 1;
+    const tex = new THREE.CanvasTexture(paintGround(this.game.state.map, this.game.state.seed, treeTiles));
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
     const ground = new THREE.Mesh(
@@ -320,82 +329,249 @@ export class World3D {
       sctx.filter = `blur(${PX * 0.22}px)`;
       sctx.drawImage(mask, 0, 0);
       const alpha = new THREE.CanvasTexture(soft);
-      const water = new THREE.Mesh(
+      // Depth: a wide blur of the mask; turquoise shallows to deep blue.
+      const deep = document.createElement('canvas');
+      deep.width = mask.width;
+      deep.height = mask.height;
+      const dctx = deep.getContext('2d')!;
+      dctx.filter = `blur(${PX * 1.6}px)`;
+      dctx.drawImage(mask, 0, 0);
+      const img = dctx.getImageData(0, 0, deep.width, deep.height);
+      const sh = [92, 196, 214];
+      const dp = [30, 92, 160];
+      for (let i = 0; i < img.data.length; i += 4) {
+        const k = Math.min(1, Math.max(0, (img.data[i] / 255 - 0.35) * 2.2));
+        img.data[i] = sh[0] + (dp[0] - sh[0]) * k;
+        img.data[i + 1] = sh[1] + (dp[1] - sh[1]) * k;
+        img.data[i + 2] = sh[2] + (dp[2] - sh[2]) * k;
+        img.data[i + 3] = 255;
+      }
+      dctx.filter = 'none';
+      dctx.putImageData(img, 0, 0);
+      const colorTex = new THREE.CanvasTexture(deep);
+      colorTex.colorSpace = THREE.SRGBColorSpace;
+      // Ripples: light streaks drifting slowly over the water (an emissive layer, clipped by the shore mask).
+      const rip = document.createElement('canvas');
+      rip.width = rip.height = 256;
+      const rctx = rip.getContext('2d')!;
+      rctx.strokeStyle = 'rgba(255,255,255,0.55)';
+      rctx.lineWidth = 2;
+      for (let i = 0; i < 60; i++) {
+        const x = hash2(i, 1, 5) * 256;
+        const y = hash2(i, 2, 5) * 256;
+        const w = 10 + hash2(i, 3, 5) * 22;
+        rctx.beginPath();
+        rctx.moveTo(x, y);
+        rctx.quadraticCurveTo(x + w / 2, y - 4, x + w, y);
+        rctx.stroke();
+      }
+      const ripTex = new THREE.CanvasTexture(rip);
+      ripTex.wrapS = ripTex.wrapT = THREE.RepeatWrapping;
+      ripTex.repeat.set(W / 6, H / 6);
+      ripTex.colorSpace = THREE.SRGBColorSpace;
+      this.ripples = new THREE.Mesh(
         new THREE.PlaneGeometry(W, H).rotateX(-Math.PI / 2).translate(W / 2, 0.05, H / 2),
-        withFog(new THREE.MeshStandardMaterial({ color: '#3d78a8', alphaMap: alpha, transparent: true, opacity: 0.78, roughness: 0.12, metalness: 0.1, depthWrite: false })),
+        withFog(
+          new THREE.MeshStandardMaterial({
+            map: colorTex,
+            alphaMap: alpha,
+            emissive: '#ffffff',
+            emissiveMap: ripTex,
+            emissiveIntensity: 0.22,
+            transparent: true,
+            opacity: 0.9,
+            roughness: 0.08,
+            metalness: 0.15,
+            depthWrite: false,
+          }),
+        ),
       );
-      water.receiveShadow = true;
-      this.scene.add(water);
+      this.ripples.receiveShadow = true;
+      this.scene.add(this.ripples);
     }
 
-    // Cliff ridges as clusters of low-poly boulders.
-    const rocks = new THREE.InstancedMesh(
-      new THREE.IcosahedronGeometry(0.62, 0),
-      withFog(new THREE.MeshStandardMaterial({ color: '#ffffff', flatShading: true, roughness: 0.95 })),
-      rockSpots.length * 2,
-    );
-    rocks.castShadow = true;
-    rocks.receiveShadow = true;
-    let n = 0;
-    const col = new THREE.Color();
+    // Cliff ridges: mossy boulders, three shapes, turned and sized per tile.
     const seed = this.game.state.seed;
+    const variants = [0, 1, 2].map((v) => {
+      const m = new THREE.InstancedMesh(rockGeometry(v), kitMaterial('matte'), Math.max(1, rockSpots.length * 2));
+      m.castShadow = true;
+      m.receiveShadow = true;
+      m.count = 0;
+      this.scene.add(m);
+      return m;
+    });
+    const col = new THREE.Color();
     for (const [x, y] of rockSpots) {
       for (let k = 0; k < 2; k++) {
         const r = hash2(x * 3 + k, y, seed + 21);
-        if (k === 1 && r < 0.45) continue;
-        const sx = k === 0 ? 1.05 + r * 0.25 : 0.55 + r * 0.3;
-        const sy = k === 0 ? 1.0 + r * 1.1 : 0.7 + r * 0.6;
-        this.p.set(x + 0.5 + (r - 0.5) * 0.3 * (k + 1), sy * 0.35, y + 0.5 + (hash2(x, y, seed + 9) - 0.5) * 0.3 * (k + 1));
-        this.q.setFromEuler(this.e.set(r * 0.4, r * 6.28, hash2(y, x, seed) * 0.4));
-        this.s.set(sx, sy, sx * (0.9 + r * 0.2));
-        rocks.setMatrixAt(n, this.m4.compose(this.p, this.q, this.s));
-        col.set(['#8a8174', '#7a7266', '#958b7c', '#6f685e'][Math.floor(r * 4)]);
-        rocks.setColorAt(n, col);
-        n++;
+        if (k === 1 && r < 0.5) continue;
+        const m = variants[Math.floor(hash2(x, y * 3 + k, seed + 5) * 3)];
+        const sc = k === 0 ? 1.15 + r * 0.45 : 0.55 + r * 0.3;
+        this.p.set(x + 0.5 + (r - 0.5) * 0.3 * (k + 1), 0, y + 0.5 + (hash2(x, y, seed + 9) - 0.5) * 0.3 * (k + 1));
+        this.q.setFromEuler(this.e.set(0, r * 6.28, 0));
+        this.s.set(sc, sc * (0.85 + r * 0.6), sc);
+        m.setMatrixAt(m.count, this.m4.compose(this.p, this.q, this.s));
+        const v = 0.9 + hash2(y, x, seed) * 0.2;
+        m.setColorAt(m.count, col.setRGB(v, v, v));
+        m.count++;
       }
     }
-    rocks.count = n;
-    this.scene.add(rocks);
+    this.scatterDetails();
   }
+
+  /** Ferns, mushrooms, reeds, flowers and pebbles, placed by what surrounds each tile. */
+  private scatterDetails(): void {
+    const { width: W, height: H, terrain } = this.game.state.map;
+    const seed = this.game.state.seed;
+    const tree = new Uint8Array(W * H);
+    for (const t of this.game.resources()) if (t.type === 'tree') tree[t.ty * W + t.tx] = 1;
+    const near = (x: number, y: number, test: (i: number) => boolean) => {
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx;
+          const yy = y + dy;
+          if ((dx || dy) && xx >= 0 && yy >= 0 && xx < W && yy < H && test(yy * W + xx)) return true;
+        }
+      return false;
+    };
+    const spots: Record<'fern' | 'reeds' | 'flowers' | 'mushrooms' | 'pebbles', Array<[number, number, number]>> = { fern: [], reeds: [], flowers: [], mushrooms: [], pebbles: [] };
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        const t = terrain[i];
+        if (tree[i] || t === TERRAIN.water || t === TERRAIN.rock) continue;
+        const r = hash2(x, y, seed + 61);
+        const r2 = hash2(y, x, seed + 63);
+        if (near(x, y, (j) => terrain[j] === TERRAIN.water)) {
+          if (r < 0.18) spots.reeds.push([x + r2, y + r, r * 6]);
+        } else if (near(x, y, (j) => tree[j] === 1)) {
+          if (r < 0.14) spots.fern.push([x + r2, y + r, r2 * 6]);
+          else if (r < 0.19) spots.mushrooms.push([x + r2, y + 0.5, r * 6]);
+        } else if (t === TERRAIN.dirt) {
+          if (r < 0.1) spots.pebbles.push([x + r2, y + r, r * 6]);
+        } else if (r < 0.035) spots.flowers.push([x + r2, y + r, r2 * 6]);
+      }
+    for (const kind of Object.keys(spots) as Array<keyof typeof spots>) {
+      const list = spots[kind];
+      if (!list.length) continue;
+      const m = new THREE.InstancedMesh(decorGeometry(kind), kitMaterial(kind === 'fern' ? 'cloth' : 'matte'), list.length);
+      m.receiveShadow = true;
+      list.forEach(([x, y, a], i) => {
+        this.p.set(x, 0, y);
+        this.q.setFromEuler(this.e.set(0, a, 0));
+        this.s.setScalar(0.8 + (a % 1) * 0.5);
+        m.setMatrixAt(i, this.m4.compose(this.p, this.q, this.s));
+      });
+      this.scene.add(m);
+    }
+  }
+
 
   private buildTrees(): void {
     const trees = this.game.resources().filter((r) => r.type === 'tree');
-    const { trunk, canopy } = makeTreeGeometries();
-    this.trunks = new THREE.InstancedMesh(trunk, withFog(new THREE.MeshStandardMaterial({ color: '#6b4a2b', flatShading: true })), trees.length);
-    this.canopies = new THREE.InstancedMesh(
-      canopy,
-      withFog(new THREE.MeshStandardMaterial({ color: '#ffffff', flatShading: true, roughness: 0.9 })),
-      trees.length,
-    );
-    for (const m of [this.trunks, this.canopies]) {
+    const { width: W, height: H, terrain } = this.game.state.map;
+    const nearWater = (x: number, y: number) => {
+      for (let dy = -2; dy <= 2; dy++)
+        for (let dx = -2; dx <= 2; dx++) {
+          const xx = x + dx;
+          const yy = y + dy;
+          if (xx >= 0 && yy >= 0 && xx < W && yy < H && terrain[yy * W + xx] === TERRAIN.water) return true;
+        }
+      return false;
+    };
+    // A species per tree: willows by the water, otherwise a mixed forest by region.
+    const kindOf = (t: ResourceNode): TreeKind => {
+      if (nearWater(t.tx, t.ty) && hash2(t.tx, t.ty, 91) < 0.55) return 'willow';
+      const region = valueNoise(t.tx, t.ty, 9, this.game.state.seed + 41);
+      const r = hash2(t.tx, t.ty, 93);
+      if (r < 0.05) return 'autumn';
+      if (r < 0.12) return 'twisted';
+      if (region < 0.4) return r < 0.75 ? 'pine' : 'birch';
+      if (region < 0.65) return r < 0.5 ? 'oak' : r < 0.75 ? 'birch' : 'pine';
+      return r < 0.7 ? 'oak' : 'pine';
+    };
+    const byKind = new Map<TreeKind, ResourceNode[]>();
+    for (const t of trees) {
+      const k = kindOf(t);
+      byKind.set(k, [...(byKind.get(k) ?? []), t]);
+    }
+    const shade = new THREE.Color();
+    for (const kind of TREE_KINDS) {
+      const list = byKind.get(kind) ?? [];
+      if (!list.length) continue;
+      const m = new THREE.InstancedMesh(treeGeometry(kind), kitMaterial('matte'), list.length);
       m.castShadow = true;
       m.receiveShadow = true;
+      const mi = this.treeMeshes.length;
+      this.treeMeshes.push(m);
+      this.treeMeshIds.push([]);
+      list.forEach((t, slot) => {
+        const i = this.treeIds.length;
+        this.treeIndex.set(t.id, i);
+        this.treeIds.push(t.id);
+        this.treeShown.push(-1);
+        this.treeMesh.push(mi);
+        this.treeSlot.push(slot);
+        this.treeAt.push([t.x, t.y]);
+        this.felledAt.push(-1);
+        this.treeMeshIds[mi].push(t.id);
+        // A little variety in tone per tree.
+        const v = 0.88 + hash2(t.tx, t.ty, 31) * 0.24;
+        m.setColorAt(slot, shade.setRGB(v, v, v * (0.95 + hash2(t.ty, t.tx, 7) * 0.1)));
+      });
       this.scene.add(m);
       this.pickables.push(m);
     }
-    const greens = ['#2f6b3a', '#3a7a40', '#28603a', '#447f45'].map((c) => new THREE.Color(c));
-    trees.forEach((t, i) => {
-      this.treeIndex.set(t.id, i);
-      this.treeIds.push(t.id);
-      this.treeShown.push(-1);
-      this.canopies.setColorAt(i, greens[Math.floor(hash2(t.tx, t.ty, 31) * greens.length)]);
-    });
+    this.stumps = new THREE.InstancedMesh(stumpGeometry(), kitMaterial('matte'), Math.max(1, trees.length));
+    this.saplings = new THREE.InstancedMesh(saplingGeometry(), kitMaterial('matte'), Math.max(1, trees.length));
+    for (const m of [this.stumps, this.saplings]) {
+      m.count = trees.length;
+      m.castShadow = true;
+      m.receiveShadow = true;
+      m.frustumCulled = false;
+      for (let i = 0; i < trees.length; i++) m.setMatrixAt(i, this.m4.makeScale(0, 0, 0));
+      this.scene.add(m);
+    }
     this.updateTrees(0);
   }
 
   private updateTrees(now: number): void {
-    let dirty = false;
+    const dirty = new Set<THREE.InstancedMesh>();
     for (let i = 0; i < this.treeIds.length; i++) {
       const id = this.treeIds[i];
       const t = this.game.resource(id);
       const shake = this.shakes.get(id);
       const shaking = shake !== undefined && now - shake < 0.3;
       const amount = t ? t.amount : 0;
+      // A felled tree leaves a stump; after a few minutes a sapling comes up beside it.
+      if (!t && this.felledAt[i] >= 0) {
+        const age = now - this.felledAt[i];
+        if (age > 150 && age < 400) {
+          const k = Math.min(1, (age - 150) / 200);
+          const [x, y] = this.treeAt[i];
+          this.q.setFromEuler(this.e.set(0, hash2(i, 3, 9) * 6.28, 0));
+          this.p.set(x + 0.22, 0, y + 0.1);
+          this.s.setScalar(0.3 + 0.7 * k);
+          this.saplings.setMatrixAt(i, this.m4.compose(this.p, this.q, this.s));
+          dirty.add(this.saplings);
+        }
+      }
       if (amount === this.treeShown[i] && !shaking) continue;
       this.treeShown[i] = shaking ? -2 : amount;
-      dirty = true;
+      const mesh = this.treeMeshes[this.treeMesh[i]];
+      dirty.add(mesh);
       if (!t) {
         this.m4.makeScale(0, 0, 0);
+        if (this.felledAt[i] < 0) {
+          this.felledAt[i] = now;
+          const [x, y] = this.treeAt[i];
+          const v = hash2(i, 7, 3);
+          this.q.setFromEuler(this.e.set(0, v * 6.28, 0));
+          this.p.set(x, 0, y);
+          this.s.setScalar(0.9 + v * 0.3);
+          this.stumps.setMatrixAt(i, new THREE.Matrix4().compose(this.p, this.q, this.s));
+          dirty.add(this.stumps);
+        }
       } else {
         const v = hash2(t.tx, t.ty, 77);
         const sc = (0.85 + v * 0.35) * (0.7 + 0.3 * (t.amount / t.maxAmount));
@@ -405,14 +581,11 @@ export class World3D {
         this.s.set(sc, sc * (0.9 + v * 0.25), sc);
         this.m4.compose(this.p, this.q, this.s);
       }
-      this.trunks.setMatrixAt(i, this.m4);
-      this.canopies.setMatrixAt(i, this.m4);
+      mesh.setMatrixAt(this.treeSlot[i], this.m4);
     }
-    if (dirty) {
-      this.trunks.instanceMatrix.needsUpdate = true;
-      this.canopies.instanceMatrix.needsUpdate = true;
-      this.trunks.computeBoundingSphere();
-      this.canopies.computeBoundingSphere();
+    for (const m of dirty) {
+      m.instanceMatrix.needsUpdate = true;
+      if (m !== this.stumps && m !== this.saplings) m.computeBoundingSphere();
     }
   }
 
@@ -593,6 +766,10 @@ export class World3D {
   }
 
   render(client: ClientState, alpha: number, now: number): void {
+    if (this.ripples) {
+      const map = (this.ripples.material as THREE.MeshStandardMaterial).emissiveMap!;
+      map.offset.set(now * 0.012, now * 0.007);
+    }
     this.viewer = client.player;
     this.reveal = client.revealAll;
     this.fog.update(this.reveal ? null : this.game.vision.grid(this.viewer), this.game.state.explored[this.viewer] ?? null);
@@ -629,7 +806,15 @@ export class World3D {
     this.syncGhosts();
     this.updateDying(now);
     this.updateArrows(alpha, now);
-    for (const [id, v] of this.mines) if (!seen.has(id)) (this.removePickable(v.root), this.mines.delete(id));
+    for (const [id, v] of this.mines)
+      if (!seen.has(id)) {
+        // An emptied mine stays on the map, boarded up.
+        const left = mineModel('depleted');
+        left.root.position.copy(v.root.position);
+        this.scene.add(left.root);
+        this.removePickable(v.root);
+        this.mines.delete(id);
+      }
     this.updateTrees(now);
     this.updateRings(client, alpha, now);
     this.updateMarkers(now);
@@ -1064,7 +1249,7 @@ export class World3D {
   private syncMine(m: ResourceNode, now: number): void {
     let v = this.mines.get(m.id);
     if (!v) {
-      v = makeMine(m.miners > CONFIG.resources.goldmine.maxMiners);
+      v = mineModel(mineLook(m.maxAmount, m.miners, CONFIG.resources.goldmine.maxMiners));
       v.root.position.set(m.x, 0, m.y);
       v.root.userData.entityId = m.id;
       this.mines.set(m.id, v);
@@ -1185,8 +1370,9 @@ export class World3D {
     if (best) return best;
     const hits = rig.raycaster(sx, sy).intersectObjects(this.pickables, true);
     for (const h of hits) {
-      if (h.object === this.trunks || h.object === this.canopies) {
-        const id = h.instanceId !== undefined ? this.treeIds[h.instanceId] : 0;
+      const mi = this.treeMeshes.indexOf(h.object as THREE.InstancedMesh);
+      if (mi >= 0) {
+        const id = h.instanceId !== undefined ? this.treeMeshIds[mi][h.instanceId] : 0;
         const t = id ? this.game.get(id) : undefined;
         if (t) return t;
         continue;
