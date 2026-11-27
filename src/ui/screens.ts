@@ -74,6 +74,8 @@ export interface ScreenHost {
   challengeBests(): Partial<Record<ScenarioId, ChallengeBest>>;
   /** Set during an online match: the players, and how to leave it (forfeiting if it is on). */
   online: { names: string[]; leave(): void; diagnostics(): string } | null;
+  /** Leave the match for the main menu (saving it first when it can be continued). */
+  leaveToMenu(): void;
 }
 
 /** Difficulty is how well it plays; the style (below) is what it plans. */
@@ -163,7 +165,46 @@ export class Screens {
     else this.showMenu();
   }
 
+  /** The main menu: a few clear choices. */
   showStart(): void {
+    this.back = 'start';
+    const latest = this.host.store.latest();
+    const latestInfo = latest ? this.host.store.info(latest) : null;
+    this.open(
+      'start',
+      `<div class="title-block">
+        <h1>Ironvale</h1>
+        <p class="lead">Build an economy, raise an army, and destroy every enemy building before they destroy yours.</p>
+      </div>
+      ${this.host.loadError ? `<p class="load-error">${escapeHtml(this.host.loadError)}</p>` : ''}
+      <div class="main-menu">
+        <button class="primary big" id="play"><b>Play</b><span>A skirmish against the computer.</span></button>
+        ${latestInfo ? `<button class="big" id="continue"><b>Continue</b><span>${this.slotLine(latest!)}</span></button>` : ''}
+        <button class="big" id="tutorial"><b>Tutorial</b><span>New here? Learn the basics in about ten minutes.</span></button>
+        <button class="big" id="challenges"><b>Challenges</b><span>Fixed goals and medals to earn.</span></button>
+        <button class="big" id="online"><b>Play online</b><span>A private match against a friend, with a code.</span></button>
+      </div>
+      <div class="menu-row">
+        <button id="menu-replays">Replays</button>
+        <button id="menu-load">Load game</button>
+        <button id="menu-editor">Map editor</button>
+        <button id="menu-settings">Settings</button>
+      </div>
+      <p class="fine version">Press F1 in a match for every control. Version ${__VERSION__}.</p>`,
+    );
+    this.on('#play', () => this.showNewMatch());
+    this.on('#tutorial', () => this.host.startTutorial());
+    this.on('#continue', () => latest && this.host.load({ slot: latest }));
+    this.on('#menu-load', () => this.showSaves('load', 'start'));
+    this.on('#online', () => this.showLobby());
+    this.on('#menu-replays', () => this.showReplays());
+    this.on('#challenges', () => this.showChallenges());
+    this.on('#menu-editor', () => (location.search = 'editor=1'));
+    this.on('#menu-settings', () => this.showSettings('start'));
+  }
+
+  /** Setting up a skirmish: faction, map and opponent, the rest folded away. */
+  showNewMatch(): void {
     let picked: Difficulty = this.settings.difficulty;
     let pickedMap = this.settings.mapId;
     let pickedStyle: StyleId | 'random' = this.settings.style;
@@ -186,45 +227,37 @@ export class Screens {
       ...(Object.entries(CONFIG.ai.styles) as Array<[StyleId, (typeof CONFIG.ai.styles)[StyleId]]>).map(([id, st]) => ({ id, name: st.name, blurb: st.blurb })),
     ];
     const styleBlurb = (id: string) => styles.find((x) => x.id === id)!.blurb;
-    const latest = this.host.store.latest();
-    const latestInfo = latest ? this.host.store.info(latest) : null;
+    const heroArt: Record<FactionId, string> = { crown: 'art/u/hero.webp', wild: 'art/u/warden.webp' };
+    const moreOpen = pickedVs !== 'random' && pickedVs !== this.settings.faction ? false : !isDefaultRules(pickedRules) || pickedAdv !== 'none' || pickedStyle !== 'random';
     this.open(
       'start',
-      `<h1>Ironvale</h1>
-      <p class="lead">Build an economy, raise an army, and destroy every enemy building before they destroy yours.</p>
-      ${this.host.loadError ? `<p class="load-error">${escapeHtml(this.host.loadError)}</p>` : ''}
-      <div class="start-actions">
-        <button id="tutorial"><b>Tutorial</b><span>New here? Learn the basics in about ten minutes.</span></button>
-        ${latestInfo ? `<button id="continue"><b>Continue</b><span>${this.slotLine(latest!)}</span></button>` : ''}
-        <button id="online"><b>Play online…</b><span>A private match against a friend, with a code.</span></button>
-        <button id="challenges"><b>Challenges…</b><span>Hold the Line, Gold Rush, Hero Trial: fixed goals, medals to earn.</span></button>
-        <button id="replays"><b>Replays…</b><span>Watch a recent match again, or a replay file.</span></button>
-        <button id="load"><b>Load a saved game…</b><span>From a slot or a file.</span></button>
-        <button id="settings"><b>Settings</b><span>Sound, graphics, camera, interface, controls.</span></button>
-      </div>
-      <h2 class="new-match">New match</h2>
-      <div class="choices">
-        <div>
+      `<h2>New match</h2>
+      <div class="setup">
+        <section>
           <h3>Your faction</h3>
-          <div class="difficulty">
-            ${FACTIONS.map((f) => `<button data-f="${f}" class="${f === pickedFaction ? 'picked' : ''}"><b>${FACTION[f].name}</b><span>${FACTION[f].blurb}</span></button>`).join('')}
+          <div class="cards two">
+            ${FACTIONS.map((f) => `<button data-f="${f}" class="card ${f === pickedFaction ? 'picked' : ''}"><img src="${heroArt[f]}" alt=""><b>${FACTION[f].name}</b><span>${FACTION[f].blurb}</span></button>`).join('')}
           </div>
-          <h3>Map</h3>
-          <div class="difficulty">
-            ${[...MAPS, ...customMapList()].map((m) => `<button data-m="${m.id}" class="${m.id === pickedMap ? 'picked' : ''}"><b>${escapeHtml(m.name)}${isCustomMap(m.id) ? ' <small>(your map)</small>' : ''}</b><span>${escapeHtml(m.blurb)}</span></button>`).join('')}
-            <button id="editor"><b>Map editor…</b><span>Make your own map, or change one of these.</span></button>
-          </div>
-        </div>
-        <div>
+        </section>
+        <section>
           <h3>Opponent</h3>
-          <div class="difficulty">
-            ${DIFFICULTIES.map((d) => `<button data-d="${d.id}" class="${d.id === picked ? 'picked' : ''}"><b>${d.label}</b><span>${d.blurb}</span></button>`).join('')}
+          <div class="cards three">
+            ${DIFFICULTIES.map((d) => `<button data-d="${d.id}" class="card slim ${d.id === picked ? 'picked' : ''}"><b>${d.label}</b><span>${d.blurb}</span></button>`).join('')}
           </div>
+        </section>
+        <section>
+          <h3>Map</h3>
+          <div class="cards three">
+            ${[...MAPS, ...customMapList()].map((m) => `<button data-m="${m.id}" class="card slim ${m.id === pickedMap ? 'picked' : ''}"><b>${escapeHtml(m.name)}${isCustomMap(m.id) ? ' <small>(your map)</small>' : ''}</b><span>${escapeHtml(m.blurb)}</span></button>`).join('')}
+          </div>
+        </section>
+        <details class="more" ${moreOpen ? 'open' : ''}>
+          <summary>More options <span class="fine">opponent faction, style, advantage, match rules</span></summary>
           <h3>Opponent faction</h3>
           <div class="chips">
             ${[...FACTIONS, 'random' as const].map((f) => `<button data-v="${f}" class="${f === pickedVs ? 'picked' : ''}">${f === 'random' ? 'Random' : FACTION[f].name}</button>`).join('')}
           </div>
-          <h3>Style</h3>
+          <h3>Opponent style</h3>
           <div class="chips">
             ${styles.map((st) => `<button data-s="${st.id}" class="${st.id === pickedStyle ? 'picked' : ''}">${st.name}</button>`).join('')}
           </div>
@@ -233,15 +266,17 @@ export class Screens {
           <div class="chips">
             ${(Object.entries(CONFIG.ai.advantages) as Array<[AdvantageId, { name: string }]>).map(([id, a]) => `<button data-a="${id}" class="${id === pickedAdv ? 'picked' : ''}${id === 'none' ? '' : ' cheat'}">${a.name}</button>`).join('')}
           </div>
-        </div>
+          <div class="rules">
+            <h3>Match rules <span class="fine" id="rules-summary">${escapeHtml(describeRules(pickedRules) || 'standard')}</span></h3>
+            ${rulesHtml}
+            <p class="fine">* the standard rules. Without an advantage the computer plays by exactly your rules: the same costs, the same fog of war, no hidden information.</p>
+          </div>
+        </details>
       </div>
-      <details class="rules" ${isDefaultRules(pickedRules) ? '' : 'open'}>
-        <summary>Match rules <span id="rules-summary">${escapeHtml(describeRules(pickedRules) || 'standard')}</span></summary>
-        ${rulesHtml}
-        <p class="fine">* the standard rules. The computer plays by the same rules as you.</p>
-      </details>
-      <p class="fine">Without an advantage the computer plays by exactly your rules: the same costs, the same fog of war, no hidden information. An advantage is a cheat and is always shown as one. F1 in a match lists every control. Version ${__VERSION__}.</p>
-      <div class="actions"><button class="primary" id="go">Start match</button></div>`,
+      <div class="actions sticky">
+        <button id="back">Back</button>
+        <button class="primary" id="go">Start match</button>
+      </div>`,
     );
     const pick = (attr: string, fn: (v: string) => void) =>
       this.root.querySelectorAll<HTMLButtonElement>(`button[data-${attr}]`).forEach((b) =>
@@ -267,22 +302,22 @@ export class Screens {
         this.root.querySelector('#rules-summary')!.textContent = describeRules(pickedRules) || 'standard';
       }),
     );
+    this.on('#back', () => this.showStart());
     this.on('#go', () => {
       const next: MatchSettings = { seed: this.settings.seed, difficulty: picked, mapId: pickedMap, style: pickedStyle, advantage: pickedAdv, faction: pickedFaction, opponentFaction: pickedVs, rules: { ...pickedRules } };
       const same =
         !this.host.tutorial &&
+        !this.game.state.outcome &&
+        this.game.state.tick < 20 &&
         (Object.keys(next) as Array<keyof MatchSettings>).every((k) => (k === 'rules' ? JSON.stringify(next.rules) === JSON.stringify(this.settings.rules ?? DEFAULT_RULES) : next[k] === this.settings[k]));
-      if (!same) startMatch(next);
+      if (!same) startMatch({ ...next, seed: newSeed() });
       else this.close();
     });
-    this.on('#tutorial', () => this.host.startTutorial());
-    this.on('#continue', () => latest && this.host.load({ slot: latest }));
-    this.on('#load', () => this.showSaves('load', 'start'));
-    this.on('#online', () => this.showLobby());
-    this.on('#replays', () => this.showReplays());
-    this.on('#challenges', () => this.showChallenges());
-    this.on('#editor', () => (location.search = 'editor=1'));
-    this.on('#settings', () => this.showSettings('start'));
+  }
+
+  /** Leave the match for the main menu (the autosave keeps it for Continue). */
+  private toMainMenu(): void {
+    this.host.leaveToMenu();
   }
 
   /** The challenges, with each one's best result here. */
@@ -439,10 +474,13 @@ export class Screens {
         <button id="settings">Settings…</button>
         <button id="restart">${this.host.tutorial ? 'Restart the tutorial' : 'Restart (same map and opponent)'}</button>
         <button id="new">New match…</button>
+        <button id="mainmenu">Main menu</button>
         ${over || this.host.tutorial ? '' : '<button class="danger" id="surrender">Surrender</button>'}
-      </div>`,
+      </div>
+      ${over || this.host.tutorial ? '' : '<p class="fine">Main menu keeps this match: Continue picks it up again.</p>'}`,
     );
     this.on('#resume', () => this.close());
+    this.on('#mainmenu', () => this.toMainMenu());
     this.on('#save', () => this.showSaves('save', 'menu'));
     this.on('#load', () => this.showSaves('load', 'menu'));
     this.on('#settings', () => this.showSettings('menu'));
@@ -453,8 +491,8 @@ export class Screens {
       else startMatch(this.settings);
     });
     this.on('#new', () => {
-      const q = new URLSearchParams(matchParams({ ...this.settings, seed: newSeed() }));
-      location.search = q.toString();
+      this.back = 'menu';
+      this.showNewMatch();
     });
     this.on('#surrender', () => {
       this.onSurrender();
@@ -593,12 +631,14 @@ export class Screens {
           ${this.replayButtons()}
           <button class="primary" id="again">Try again</button>
           <button id="list">Challenges</button>
+          <button id="mainmenu">Main menu</button>
           <button id="watch">Keep watching</button>
         </div>`,
       );
       this.wireReplayButtons();
       this.on('#again', () => (location.search = new URLSearchParams({ challenge: c.id, faction: c.faction }).toString()));
       this.on('#list', () => this.showChallenges());
+      this.on('#mainmenu', () => this.toMainMenu());
       this.on('#watch', () => this.close());
       return;
     }
@@ -610,7 +650,7 @@ export class Screens {
         ${summaryHtml(this.game, this.viewer, names)}
         <div class="actions">
           ${this.replayButtons()}
-          <button class="primary" id="home">Back to the start screen</button>
+          <button class="primary" id="home">Main menu</button>
           <button id="watch">Keep watching</button>
         </div>`,
       );
@@ -636,17 +676,16 @@ export class Screens {
       }
       <div class="actions">
         ${this.replayButtons()}
+        <button id="mainmenu">Main menu</button>
+        <button id="change">New match…</button>
         <button class="primary" id="again">Play again</button>
-        <button id="change">Change opponent</button>
         <button id="watch">Keep watching</button>
       </div>`,
     );
     this.wireReplayButtons();
     this.on('#again', () => startMatch({ ...this.settings, seed: newSeed() }));
-    this.on('#change', () => {
-      const q = new URLSearchParams(matchParams({ ...this.settings, seed: newSeed() }));
-      location.search = q.toString();
-    });
+    this.on('#mainmenu', () => this.toMainMenu());
+    this.on('#change', () => this.showNewMatch());
     this.on('#watch', () => this.close());
   }
 

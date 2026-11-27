@@ -321,6 +321,12 @@ const host: ScreenHost = {
   challenge: game.state.scenario && !replayPlayer ? { id: game.state.scenario.id, faction: game.player(0).faction } : null,
   challengeBests: () => challengeBests(storage),
   online: session ? { names: session.setup.names, leave: () => session.leave(), diagnostics: () => session.diagnostics() } : null,
+  leaveToMenu: () => {
+    if (session) session.leave();
+    // A match still being played is kept for Continue on the main menu.
+    else if (!tutorial && !replayPlayer && !challenge && !game.state.outcome) store.write('auto', currentSave());
+    location.search = '';
+  },
 };
 
 /** Open a replay in a fresh page (it waits in session storage for that page). */
