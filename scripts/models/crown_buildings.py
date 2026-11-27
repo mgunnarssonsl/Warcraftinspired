@@ -131,29 +131,76 @@ def barracks():
     return P
 
 
+def plank_wall(name, P, w, h, at, rot_z=0.0, color=TIMBER_L, seed=1):
+    """A wall of upright planks facing -Y (turned by rot_z), on a dark backing."""
+    import random
+    rnd = random.Random(seed)
+    x0, y0, z0 = at
+    c, s = math.cos(rot_z), math.sin(rot_z)
+    box(f'{name}Back', (w, 0.06, h), mat('matte', TIMBER), P, at=(x0, y0, z0 + h / 2), rot=(0, 0, rot_z))
+    n = max(3, round(w / 0.13))
+    for i in range(n):
+        dx = -w / 2 + (i + 0.5) * w / n
+        hh = h * rnd.uniform(0.97, 1.0)
+        shade = color if i % 3 else TIMBER
+        box(f'{name}P{i}', (w / n - 0.012, 0.035, hh), mat('matte', shade), P,
+            at=(x0 + dx * c + 0.04 * s, y0 + dx * s - 0.04 * c, z0 + hh / 2), rot=(0, 0, rot_z), bevel=0.006, bevel_segs=1)
+
+
+def hall(name, P, w, d, wall_h, at, roof_h, seed, plank=True):
+    """A building body (stone footing, plank or plaster walls) under a gabled roof
+    whose ridge runs front to back, so its gable end faces the camera (-Y)."""
+    x0, y0, z0 = at
+    stone_wall(f'{name}Base', P, w, 0.3, d, (x0, y0, z0), seed=seed)
+    if plank:
+        box(f'{name}Core', (w - 0.1, d - 0.1, wall_h - 0.3), mat('matte', TIMBER), P, at=(x0, y0, z0 + 0.3 + (wall_h - 0.3) / 2))
+        plank_wall(f'{name}Front', P, w - 0.08, wall_h - 0.3, (x0, y0 - d / 2 + 0.06, z0 + 0.3), seed=seed)
+        plank_wall(f'{name}Left', P, d - 0.08, wall_h - 0.3, (x0 - w / 2 + 0.06, y0, z0 + 0.3), rot_z=-math.pi / 2, seed=seed + 1)
+        plank_wall(f'{name}Right', P, d - 0.08, wall_h - 0.3, (x0 + w / 2 - 0.06, y0, z0 + 0.3), rot_z=math.pi / 2, seed=seed + 2)
+    else:
+        box(f'{name}Upper', (w - 0.06, d - 0.06, wall_h - 0.3), mat('matte', PLASTER), P, at=(x0, y0, z0 + 0.3 + (wall_h - 0.3) / 2), bevel=0.02)
+        timber_frame(f'{name}Frame', P, w - 0.12, wall_h - 0.32, (x0, y0 - d / 2 + 0.02, z0 + 0.3))
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            box(f'{name}Corner{sx}{sy}', (0.1, 0.1, wall_h - 0.28), mat('matte', TIMBER), P,
+                at=(x0 + sx * (w / 2 - 0.03), y0 + sy * (d / 2 - 0.03), z0 + 0.28 + (wall_h - 0.28) / 2), bevel=0.012)
+    R = pivot(f'{name}RoofPivot', P, (x0, y0, z0 + wall_h))
+    gable_roof(f'{name}Roof', R, d, w, roof_h, (x0, y0, z0 + wall_h), seed=seed + 5)
+    R.rotation_euler = (0, 0, math.pi / 2)
+
+
 def lumbermill():
     P = pivot('root')
     ground_skirt(P, 2.9, 2.9, seed=9)
-    for x, y in ((-0.9, 0.6), (0.9, 0.6), (-0.9, -0.5), (0.9, -0.5)):
-        box(f'post{x}{y}', (0.12, 0.12, 1.0), mat('matte', TIMBER), P, at=(x, y, 0.5), bevel=0.015)
-    for y in (-0.5, 0.6):
-        box(f'beam{y}', (1.95, 0.1, 0.1), mat('matte', TIMBER), P, at=(0, y, 1.02), bevel=0.015)
-    stone_wall('backWall', P, 1.9, 0.55, 0.16, (0, 0.65, 0.0), seed=90, faces='ns')
-    gable_roof('roof', P, 2.0, 1.3, 0.6, (0, 0.05, 1.05), seed=91)
-    box('bench', (1.0, 0.35, 0.1), mat('matte', TIMBER_L), P, at=(0, 0.0, 0.45), bevel=0.015)
-    for x in (-0.4, 0.4):
-        box(f'trestle{x}', (0.08, 0.3, 0.4), mat('matte', TIMBER), P, at=(x, 0, 0.2), bevel=0.01)
-    lathe('sawBlade', [(0.0, -0.01), (0.27, -0.01), (0.27, 0.01), (0.0, 0.01)], mat('metal', '#cfd5dc'), P, at=(0.1, 0, 0.55), rot=(0, math.pi / 2, 0), segs=24)
+    # The mill hall at the back left, its gable toward the yard; a log hatch above the door.
+    hall('hall', P, 1.45, 1.15, 0.95, (-0.45, 0.55, 0.0), 0.8, seed=90)
+    box('doorway', (0.5, 0.05, 0.55), mat('matte', DARK), P, at=(-0.45, -0.04, 0.58))
+    box('lintel', (0.62, 0.08, 0.08), mat('matte', TIMBER), P, at=(-0.45, -0.07, 0.88), bevel=0.012)
+    tube('logOut', 0.07, 0.07, 0.7, mat('matte', '#a06c3c'), P, at=(-0.45, -0.25, 0.42), rot=(math.pi / 2, 0, 0), segs=10)
+    box('hatch', (0.22, 0.05, 0.2), mat('matte', DARK), P, at=(-0.45, -0.05, 1.18))
+    banner('banner', P, (0.3, -0.04, 0.92), w=0.2, h=0.36)
+    # A water wheel on the right side of the hall.
+    lathe('wheelHub', [(0.0, -0.06), (0.08, -0.06), (0.08, 0.06), (0.0, 0.06)], mat('matte', TIMBER), P, at=(0.36, 0.6, 0.5), rot=(0, math.pi / 2, 0), segs=10)
+    torus('wheelRim', 0.42, 0.03, mat('matte', TIMBER_L), P, at=(0.36, 0.6, 0.5), rot=(0, math.pi / 2, 0), segs=20, rsegs=4)
+    for i in range(8):
+        a = 2 * math.pi * i / 8
+        box(f'paddle{i}', (0.16, 0.05, 0.42), mat('matte', TIMBER_L), P, at=(0.36, 0.6 + math.cos(a) * 0.2, 0.5 + math.sin(a) * 0.2), rot=(-a + math.pi / 2, 0, 0), bevel=0.006)
+    # The open saw yard in front: bench, saw blade, crane.
+    box('bench', (1.0, 0.35, 0.1), mat('matte', TIMBER_L), P, at=(0.35, -0.55, 0.45), bevel=0.015)
+    for x in (-0.05, 0.75):
+        box(f'trestle{x}', (0.08, 0.3, 0.4), mat('matte', TIMBER), P, at=(x, -0.55, 0.2), bevel=0.01)
+    lathe('sawBlade', [(0.0, -0.01), (0.27, -0.01), (0.27, 0.01), (0.0, 0.01)], mat('metal', '#cfd5dc'), P, at=(0.45, -0.55, 0.55), rot=(0, math.pi / 2, 0), segs=24)
     for i in range(16):
         a = 2 * math.pi * i / 16
-        lathe(f'tooth{i}', [(0.012, 0.0), (0.0, 0.03)], mat('metal', '#cfd5dc'), P, at=(0.1, math.cos(a) * 0.27, 0.55 + math.sin(a) * 0.27), rot=(a - math.pi / 2, 0, 0) if False else (-a, 0, 0), segs=4)
-    tube('logOnBench', 0.075, 0.075, 0.9, mat('matte', '#a06c3c'), P, at=(-0.7, 0, 0.57), rot=(0, math.pi / 2, 0), segs=10)
-    log_pile('pileA', P, (-0.75, -0.95, 0.0), 3, 0.7, math.pi / 2)
-    log_pile('pileB', P, (0.7, -0.95, 0.0), 2, 0.6, math.pi / 2)
-    box('crane', (0.1, 0.1, 1.3), mat('matte', TIMBER), P, at=(1.15, 0.2, 0.65), bevel=0.012)
-    box('craneArm', (0.7, 0.08, 0.08), mat('matte', TIMBER), P, at=(1.0, 0.2, 1.28), bevel=0.012)
-    tube('rope', 0.006, 0.006, 0.36, mat('matte', '#d8c08a'), P, at=(0.72, 0.2, 0.9), segs=4)
-    torus('hook', 0.04, 0.012, mat('metal', IRON), P, at=(0.72, 0.2, 0.88), rot=(math.pi / 2, 0, 0), segs=10, rsegs=4)
+        lathe(f'tooth{i}', [(0.012, 0.0), (0.0, 0.03)], mat('metal', '#cfd5dc'), P, at=(0.45, -0.55 + math.cos(a) * 0.27, 0.55 + math.sin(a) * 0.27), rot=(-a, 0, 0), segs=4)
+    tube('logOnBench', 0.075, 0.075, 0.9, mat('matte', '#a06c3c'), P, at=(-0.05, -0.55, 0.57), rot=(0, math.pi / 2, 0), segs=10)
+    log_pile('pileA', P, (-0.95, -0.95, 0.0), 3, 0.7, math.pi / 2)
+    log_pile('pileB', P, (1.05, 0.0, 0.0), 2, 0.6, 0.0)
+    box('crane', (0.1, 0.1, 1.3), mat('matte', TIMBER), P, at=(1.15, -0.85, 0.65), bevel=0.012)
+    box('craneArm', (0.7, 0.08, 0.08), mat('matte', TIMBER), P, at=(1.0, -0.85, 1.28), bevel=0.012)
+    tube('rope', 0.006, 0.006, 0.36, mat('matte', '#d8c08a'), P, at=(0.72, -0.85, 0.9), segs=4)
+    torus('hook', 0.04, 0.012, mat('metal', IRON), P, at=(0.72, -0.85, 0.88), rot=(math.pi / 2, 0, 0), segs=10, rsegs=4)
+    flag_pole('flag', P, (-1.25, 0.1, 0.0), 1.4)
     return P
 
 
@@ -254,23 +301,39 @@ def chapel():
 def workshop():
     P = pivot('root')
     ground_skirt(P, 2.9, 2.9, seed=21)
-    for x, y in ((-1.1, 0.7), (1.1, 0.7), (-1.1, -0.55), (1.1, -0.55), (0, 0.7)):
-        box(f'post{x}{y}', (0.12, 0.12, 1.05), mat('matte', TIMBER), P, at=(x, y, 0.52), bevel=0.015)
-    for y in (-0.55, 0.7):
-        box(f'beam{y}', (2.35, 0.1, 0.1), mat('matte', TIMBER), P, at=(0, y, 1.05), bevel=0.015)
-    gable_roof('roof', P, 2.4, 1.35, 0.6, (0, 0.07, 1.08), seed=211)
-    banner('banner', P, (0, -0.6, 0.98), w=0.26, h=0.42)
-    flag_pole('flag', P, (1.1, -0.55, 1.15), 0.5)
-    # A catapult being built.
+    # The workshop hall: stone and plaster, a wide double door under the gable.
+    hall('hall', P, 1.5, 1.25, 1.0, (-0.42, 0.45, 0.0), 0.85, seed=210, plank=False)
+    box('doorway', (0.62, 0.05, 0.62), mat('matte', DARK), P, at=(-0.42, -0.19, 0.4))
+    for sx in (-1, 1):
+        box(f'doorLeaf{sx}', (0.3, 0.04, 0.6), mat('matte', '#6a4226'), P, at=(-0.42 + sx * 0.47, -0.24, 0.4), rot=(0, 0, sx * 0.9), bevel=0.01)
+        for z in (0.2, 0.55):
+            box(f'doorBand{sx}{z}', (0.3, 0.05, 0.03), mat('metal', IRON), P, at=(-0.42 + sx * 0.47, -0.25, z), rot=(0, 0, sx * 0.9))
+    box('lintel', (0.75, 0.09, 0.09), mat('matte', TIMBER), P, at=(-0.42, -0.22, 0.74), bevel=0.012)
+    extrude('crest', crown_outline(0.16, 0.11), 0.025, mat('gold', GOLD), P, at=(-0.42, -0.2, 1.05), bevel=0.003)
+    banner('banner', P, (0.22, -0.21, 0.95), w=0.2, h=0.38)
+    # A chimney with a gear sign.
+    stone_wall('chimney', P, 0.24, 1.75, 0.24, (-0.95, 0.85, 0.0), seed=213)
+    torus('gear', 0.14, 0.035, mat('metal', IRON), P, at=(0.32, -0.2, 0.62), rot=(math.pi / 2, 0, 0), segs=16, rsegs=4)
+    for i in range(8):
+        a = 2 * math.pi * i / 8
+        box(f'cog{i}', (0.05, 0.05, 0.06), mat('metal', IRON), P, at=(0.32 + math.cos(a) * 0.18, -0.2, 0.62 + math.sin(a) * 0.18), rot=(0, -a, 0))
+    # The yard: a catapult being built under a gantry.
+    for x in (0.55, 1.2):
+        box(f'gantryPost{x}', (0.1, 0.1, 1.05), mat('matte', TIMBER), P, at=(x, -0.5, 0.52), bevel=0.012)
+    box('gantryBeam', (0.8, 0.1, 0.1), mat('matte', TIMBER), P, at=(0.88, -0.5, 1.06), bevel=0.012)
+    tube('chain', 0.008, 0.008, 0.4, mat('metal', IRON), P, at=(0.88, -0.5, 0.66), segs=4)
+    cx, cy = 0.88, -0.55
     for x in (-1, 1):
-        box(f'frameRail{x}', (0.07, 0.8, 0.07), mat('matte', TIMBER_L), P, at=(x * 0.25, 0.1, 0.2), bevel=0.01)
-    box('frameUpright', (0.07, 0.07, 0.7), mat('matte', TIMBER_L), P, at=(0, 0.25, 0.5), rot=(-0.5, 0, 0), bevel=0.01)
-    for x in (-0.35, 0.35):
-        lathe(f'wheel{x}', [(0.0, -0.025), (0.15, -0.025), (0.15, 0.025), (0.0, 0.025)], mat('matte', TIMBER), P, at=(x, -0.15, 0.15), rot=(0, math.pi / 2, 0), segs=12)
-    lathe('spareWheel', [(0.0, -0.025), (0.2, -0.025), (0.2, 0.025), (0.0, 0.025)], mat('matte', TIMBER), P, at=(-1.0, -0.95, 0.25), rot=(0.3, math.pi / 2, 0), segs=14)
-    torus('spareTyre', 0.2, 0.02, mat('metal', IRON), P, at=(-1.0, -0.95, 0.25), rot=(0.3, math.pi / 2, 0), segs=16, rsegs=4)
-    crate('crateA', P, (0.8, -0.9, 0.0), 0.24)
-    crate('crateB', P, (1.05, -0.7, 0.0), 0.2, 0.5)
+        box(f'frameRail{x}', (0.07, 0.8, 0.07), mat('matte', TIMBER_L), P, at=(cx + x * 0.22, cy, 0.2), bevel=0.01)
+    box('frameUpright', (0.07, 0.07, 0.7), mat('matte', TIMBER_L), P, at=(cx, cy + 0.15, 0.5), rot=(-0.5, 0, 0), bevel=0.01)
+    for x in (-0.3, 0.3):
+        lathe(f'wheel{x}', [(0.0, -0.025), (0.15, -0.025), (0.15, 0.025), (0.0, 0.025)], mat('matte', TIMBER), P, at=(cx + x, cy - 0.25, 0.15), rot=(0, math.pi / 2, 0), segs=12)
+    lathe('spareWheel', [(0.0, -0.025), (0.2, -0.025), (0.2, 0.025), (0.0, 0.025)], mat('matte', TIMBER), P, at=(-1.05, -0.85, 0.25), rot=(0.3, math.pi / 2, 0), segs=14)
+    torus('spareTyre', 0.2, 0.02, mat('metal', IRON), P, at=(-1.05, -0.85, 0.25), rot=(0.3, math.pi / 2, 0), segs=16, rsegs=4)
+    crate('crateA', P, (1.05, 0.5, 0.0), 0.24)
+    crate('crateB', P, (1.15, 0.15, 0.0), 0.2, 0.5)
+    barrel('barrel', P, (0.65, 0.75, 0.0))
+    flag_pole('flag', P, (1.3, -1.05, 0.0), 1.3)
     return P
 
 

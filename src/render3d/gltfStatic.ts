@@ -70,8 +70,8 @@ export function hasStatic(name: string): boolean {
 
 function finishOf(name: string, team: THREE.Color): { finish: Finish; color: THREE.Color } {
   if (name === 'team') return { finish: 'cloth', color: team };
-  if (name === 'team_dark') return { finish: 'cloth', color: team.clone().multiplyScalar(0.62) };
-  if (name === 'team_light') return { finish: 'cloth', color: team.clone().lerp(new THREE.Color(1, 1, 1), 0.22) };
+  if (name === 'team_dark') return { finish: 'cloth', color: team.clone().multiplyScalar(0.74) };
+  if (name === 'team_light') return { finish: 'cloth', color: team.clone().lerp(new THREE.Color(1, 1, 1), 0.1) };
   const [f, hex] = name.split('#');
   const finish = (['metal', 'gold', 'glow', 'matte'].includes(f) ? f : 'matte') as Finish;
   return { finish, color: new THREE.Color(`#${(hex ?? 'ffffff').slice(0, 6)}`) };

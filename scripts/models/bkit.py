@@ -128,7 +128,7 @@ def gable_roof(name, P, w, d, h, at, color='team', seed=1, overhang=0.12, ridge=
     under = mat('team_dark') if color == 'team' else mat('matte', color)
     extrude(f'{name}Gable', [(-dd, 0), (dd, 0), (0, h)], ww - 0.04, under, P, at=(x0, y0, z0), rot=(0, 0, math.pi / 2))
     extrude(f'{name}GableEnd', [(-dd * 0.92, 0.02), (dd * 0.92, 0.02), (0, h * 0.92)], ww - 0.02, mat('matte', TIMBER), P, at=(x0, y0, z0), rot=(0, 0, math.pi / 2))
-    shades = ['team', 'team_dark', 'team_light'] if color == 'team' else [color]
+    shades = ['team', 'team', 'team', 'team_dark', 'team_light'] if color == 'team' else [color]
     rows = max(3, round(ln / 0.13))
     for side in (-1, 1):
         for j in range(rows):
@@ -143,7 +143,7 @@ def gable_roof(name, P, w, d, h, at, color='team', seed=1, overhang=0.12, ridge=
                     continue
                 m = mat(r.pick(shades)) if color == 'team' else mat('matte', color)
                 box(f'{name}T{side}{j}_{i}', (ww / per - 0.01, ln / rows * 1.8, 0.028), m, P,
-                    at=(x, yy, zz), rot=(side * slope + r(-0.03, 0.03), r(-0.02, 0.02), 0), bevel=0.006, bevel_segs=1)
+                    at=(x, yy, zz), rot=(-side * slope + r(-0.03, 0.03), r(-0.02, 0.02), 0), bevel=0.006, bevel_segs=1)
     box(f'{name}Ridge', (ww + 0.06, 0.09, 0.08), mat('gold', ridge), P, at=(x0, y0, z0 + h + 0.02), bevel=0.02)
     for sgn in (-1, 1):
         sphere(f'{name}Finial{sgn}', 0.045, mat('gold', ridge), P, at=(x0 + sgn * (ww / 2 + 0.03), y0, z0 + h + 0.07))
