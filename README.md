@@ -280,6 +280,76 @@ Player 2 won 32 of 55. That is not significant at this sample size, about
 1.2 standard deviations from even, but it is worth watching in larger
 runs.
 
+## Elite units (1.1)
+
+Design reference: sheet 16 in `warcraft-style-a 2/`. Rules in `src/sim/elite.ts`;
+every number in `CONFIG.veterancy`, `specialize`, `mounts`, `mounting` and
+`skills` (`src/sim/config.ts`).
+
+- **Veterancy.** Ordinary troops (not workers, scouts, heroes or animals)
+  earn experience for the match from real fighting:
+  - damage dealt to enemies (0.25 per point; buildings 0.05);
+  - damage taken from enemies (0.12 per point);
+  - healing an ally hurt in the last 5 s (0.2 per point);
+  - half the victim's worth for a killing blow.
+  - Nothing comes from friendly damage or healing out of combat, and at most
+    60 from neutral camps in a whole match.
+  - Ranks: Recruit, **Veteran** at 120 (+8% damage, +1 armor), then ready to
+    specialize at 300. Shown as gold chevrons over the unit, stars and a
+    bar in its panel. Lost with the unit; never carried between matches.
+- **Specialization** (Guards at the Blacksmith, Thornguards at the
+  Barkweaver; same experience for both factions). The veteran walks there
+  and pays on arrival; permanent:
+  - **Sentinel** (100 gold, 25 wood): tower shield; *Shield Stance*: +4 armor,
+    half damage from arrows, shots and bolts, slower to move and strike.
+  - **Bearwarden** (100, 25): can ride a War Bear.
+  - **Bark Sentinel** (85, 40): *Bark Shield*: an ally absorbs 150 damage.
+  - **Wolfkeeper** (85, 40): can ride a Nature Wolf.
+- **Animals** train on their own from tier II and fight alone:
+  - **War Bear** at the Barracks (needs a Blacksmith): armored, tough.
+  - **Nature Wolf** at the Den (needs a Barkweaver): quick, fast-biting.
+- **Mounting.** Select the rider and right-click the animal (or Mount, D):
+  - Both hold still for 2 s; damage or an order interrupts.
+  - The result is one unit: health and population are the sums.
+  - Experience, cooldowns and buffs stay with the rider. If it dies, both die
+    (two units lost).
+  - *Dismount* needs 5 s without damage and splits health in proportion. The
+    two always add up to what the mount had, so nothing heals and no cooldown
+    resets.
+  - **Bear Rider** (speed 3.3: faster than on foot, slower than Lancers):
+    *Charge* bowls through enemies, hurting, dazing and shoving them aside.
+  - **Wolf Rider** (4.2, the fastest cavalry): *Leap* to a spot it can stand
+    on; never over water or cliffs.
+- **Signature units** (tier II, similar cost):
+  - **Musketeer** (Barracks, needs a Blacksmith; 170 gold, 40 wood):
+    - armor-piercing shots, best against medium and heavy armor;
+    - a 4.5 s reload, and it fires only standing still;
+    - *Take Aim*: kneels for 2 s, then fires a 140-damage shot. Everyone sees
+      the red aiming line; moving spoils it.
+    - Archers stay the cheaper, mobile, sustained ranged damage.
+  - **Shapeshifter** (Den, needs a Barkweaver; 160 gold, 55 wood):
+    - *Shift Form* (1.5 s, 10 s cooldown) between two forms sharing health,
+      experience, cooldowns and population:
+      - bark-armored spear warrior, with *Rootbind* (holds an enemy for
+        2.5 s; it can still fight);
+      - fast, lightly armored panther, with *Pounce* (springs along open
+        ground).
+- **Cavalry roles.**
+  - Lancers and Stag Riders: the standard trainable cavalry.
+  - Outriders and foxes: scouts.
+  - The riders: veteran-only, expensive and risky. Losing one loses two
+    units and their experience.
+- **Computer opponent.**
+  - Trains Musketeers and Shapeshifters as part of its mix.
+  - Specializes veterans (alternating riders and defenders), trains and
+    mounts animals, and uses every skill.
+  - `playtest/elite.playtest.ts` counts this in AI matches.
+- **Saves and online.**
+  - Save format 4 fills the new unit fields in older saves.
+  - The new commands are validated online; protocol 2 keeps 1.0 clients out
+    of a match.
+  - A replay recorded with another version says so when played.
+
 ## Art: style A, classic RTS
 
 The look follows the style A design sheets in `warcraft-style-a 2/`
