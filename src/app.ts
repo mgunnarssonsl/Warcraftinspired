@@ -550,7 +550,19 @@ function frame(t: number): void {
       replayAcc -= n * TICK_SECONDS;
       replayPlayer.run(Math.min(n, 400));
     }
-    replayBar.update(t, replayPlayer.diverged !== null ? 'plays differently from the recording (a different game version)' : replayPlayer.done ? 'end' : null);
+    // A replay from another game version (before 1.1 there were no elite units)
+    // is said so from the start: its rules differ, so it may not play the same.
+    const other = replayPlayer.replay.gameVersion !== __VERSION__;
+    replayBar.update(
+      t,
+      replayPlayer.diverged !== null
+        ? `plays differently from the recording (recorded with version ${replayPlayer.replay.gameVersion}, this is ${__VERSION__})`
+        : replayPlayer.done
+          ? 'end'
+          : other
+            ? `recorded with version ${replayPlayer.replay.gameVersion}: may play differently`
+            : null,
+    );
   } else if (session) {
     // Online: lockstep decides; the match never pauses for one player.
     const { replaying } = session.frame(dt * 1000);

@@ -152,6 +152,38 @@ describe('online match over the network', () => {
   }, 60_000);
 });
 
+describe('elite units online', () => {
+  it('skills, specialization and mounting go through lockstep and both machines stay identical', () => {
+    const w = new NetWorld(11);
+    const a = w.add('Crown', { latency: 30, jitter: 15 }, 'hard');
+    const b = w.add('Wild', { latency: 40, jitter: 20 }, 'hard');
+    w.startMatch('vales', ['crown', 'wild']);
+    const sent = new Set<string>();
+    for (const p of [a, b]) {
+      const issue = p.game!.issue.bind(p.game!);
+      p.game!.issue = (c) => {
+        sent.add(c.type);
+        issue(c);
+      };
+    }
+    w.run(20 * 60_000, () => !!a.game!.state.outcome && !!b.game!.state.outcome);
+    expect(sent.has('skill')).toBe(true);
+    expect(sent.has('specialize')).toBe(true);
+    expect(sent.has('mount')).toBe(true);
+    const c = compare(a, b);
+    expect(c.common).toBeGreaterThan(100);
+    expect(c.agree).toBe(true);
+    expect(desyncs(a) + desyncs(b)).toBe(0);
+    expect(w.server.rejected).toBe(0);
+    // The new commands are checked for shape like any other.
+    expect(validCommand({ type: 'skill', player: 0, units: [1], skill: 'charge', targetId: -1, x: 4, y: 5 }, 0)).toBe(true);
+    expect(validCommand({ type: 'skill', player: 0, units: [1], skill: 'fly', targetId: -1 }, 0)).toBe(false);
+    expect(validCommand({ type: 'specialize', player: 0, units: [1], into: 'sentinel' }, 0)).toBe(true);
+    expect(validCommand({ type: 'specialize', player: 0, units: [1], into: 'dragon' }, 0)).toBe(false);
+    expect(validCommand({ type: 'mount', player: 0, units: [1], targetId: 'x' }, 0)).toBe(false);
+  }, 240_000);
+});
+
 describe('lobby', () => {
   it('codes, seats, map and faction choice, readiness and the start', () => {
     const w = new NetWorld(7);

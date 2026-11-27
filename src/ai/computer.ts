@@ -22,11 +22,12 @@
 // It keeps a journal of its main decisions; the end screen shows it, so a
 // player can see what the computer was doing and why.
 
-import { CONFIG, isHeroType, secondsToTicks, type AbilityId, type ArmyMix, type BuildingType, type ItemId, type ResearchId, type UnitType } from '../sim/config';
+import { CONFIG, isHeroType, secondsToTicks, type AbilityId, type ArmyMix, type BuildingType, type ItemId, type ResearchId, type SkillId, type UnitType } from '../sim/config';
 import { isEnemy } from '../sim/combat';
 import type { Game } from '../sim/game';
 import { distToRect } from '../sim/movement';
 import { abilitiesOf, castProblem } from '../sim/hero';
+import { animalFor, isAnimal, isMounted, skillProblem, skillsOf, specializeProblem, specOptions } from '../sim/elite';
 import { buyProblem, freeSlot } from '../sim/items';
 import { hasCompleted, heroProblem, missingRequirement, trainableAt, trainCost } from '../sim/production';
 import { researched, researchPending, researchProblem } from '../sim/tech';
@@ -49,11 +50,32 @@ type ArmyUnit = keyof ArmyMix;
  * it reads an enemy of either faction the same way.
  */
 const ARMY_ROLE: Record<ArmyUnit, UnitRole> = { guard: 'melee', archer: 'ranged', lancer: 'cavalry', cleric: 'support', mangonel: 'siege' };
+/**
+ * Elite units fill a slot of the mix too: the Musketeer is a ranged soldier,
+ * the Shapeshifter and the specialists melee ones, animals and riders cavalry.
+ */
+const ELITE_KEY: Partial<Record<UnitType, ArmyUnit>> = {
+  musketeer: 'archer',
+  shifter: 'guard',
+  panther: 'guard',
+  sentinel: 'guard',
+  bearwarden: 'guard',
+  barksentinel: 'guard',
+  wolfkeeper: 'guard',
+  warbear: 'lancer',
+  naturewolf: 'lancer',
+  bearrider: 'lancer',
+  wolfrider: 'lancer',
+};
 /** The army-mix key for a unit type of either faction (null: not a soldier). */
 function armyKey(t: UnitType): ArmyUnit | null {
+  const e = ELITE_KEY[t];
+  if (e) return e;
   const r = unitRole(t);
   return (Object.keys(ARMY_ROLE) as ArmyUnit[]).find((k) => ARMY_ROLE[k] === r) ?? null;
 }
+/** Elite units it trains directly (animals are trained for riders, see eliteArmy). */
+const TRAINED_ELITE = new Set<UnitType>(['musketeer', 'shifter']);
 const isScout = (t: UnitType) => unitRole(t) === 'scout';
 const isRole = (t: BuildingType, r: BuildingRole) => buildingRole(t) === r;
 /** Buildings that train soldiers. */
@@ -742,10 +764,17 @@ export class ComputerPlayer {
       if (b.queue.length >= 2) continue;
       const options = trainableAt(b.type).filter((t) => {
         const k = armyKey(t);
-        return k && mix[k] > 0 && !missingRequirement(game, P, t);
+        return k && mix[k] > 0 && !missingRequirement(game, P, t) && !isAnimal(t);
       });
       if (!options.length) continue;
-      const unit = options.reduce((a, c) => (deficit(armyKey(c)!) > deficit(armyKey(a)!) ? c : a));
+      const plain = options.filter((t) => !TRAINED_ELITE.has(t));
+      let unit = (plain.length ? plain : options).reduce((a, c) => (deficit(armyKey(c)!) > deficit(armyKey(a)!) ? c : a));
+      // About one in three of a slot goes to its elite unit once it is unlocked.
+      const elite = options.find((t) => TRAINED_ELITE.has(t) && armyKey(t) === armyKey(unit));
+      if (elite) {
+        const have = army.filter((u) => u.type === elite || (elite === 'shifter' && u.type === 'panther')).length + buildings.reduce((n, x) => n + x.queue.filter((q) => q.unit === elite).length, 0);
+        if (have * 3 < (counts.get(armyKey(unit)!) ?? 0) + 1) unit = elite;
+      }
       // The Barracks always keeps training; specialist buildings only fill their share.
       if (role !== 'barracks' && deficit(armyKey(unit)!) <= 0) continue;
       const c = CONFIG.units[unit].cost;
@@ -1037,6 +1066,113 @@ export class ComputerPlayer {
   }
 
   /**
+   * Veterans and animals: specialize seasoned melee veterans (alternating a
+   * rider and a defender), train an animal for each rider without one, and
+   * send riders to mount. Spends only what the economy can spare.
+   */
+  private eliteArmy(game: Game, army: Unit[], buildings: Building[], spare: number): void {
+    const P = this.player;
+    const me = game.player(P);
+    // Specialize one eligible veteran at a time.
+    const riders = army.filter((u) => u.type === 'bearwarden' || u.type === 'wolfkeeper' || isMounted(u.type)).length;
+    const defenders = army.filter((u) => u.type === 'sentinel' || u.type === 'barksentinel').length;
+    for (const u of army) {
+      const opts = specOptions(u.type);
+      if (!opts.length || u.order?.type === 'specialize' || u.order?.type === 'attack') continue;
+      const into = riders <= defenders ? opts.find((o) => animalFor(o)) ?? opts[0] : opts.find((o) => !animalFor(o)) ?? opts[0];
+      const c = CONFIG.specialize[into].cost;
+      if (specializeProblem(game, u, into) || spare < c.gold + 60) continue;
+      game.issue({ type: 'specialize', player: P, units: [u.id], into });
+      this.note(game, `A veteran ${CONFIG.units[u.type].name} goes to become a ${CONFIG.units[into].name}.`);
+      break;
+    }
+    // Riders mount free animals; a rider with none gets one trained.
+    const freeAnimals = army.filter((u) => isAnimal(u.type) && !game.units().some((r) => r.owner === P && r.order?.type === 'mount' && r.order.targetId === u.id));
+    for (const r of army) {
+      const want = animalFor(r.type);
+      if (!want || r.order?.type === 'mount') continue;
+      const animal = freeAnimals.filter((a) => a.type === want).sort((a, b) => dist(a, r) - dist(b, r))[0];
+      if (animal) {
+        freeAnimals.splice(freeAnimals.indexOf(animal), 1);
+        game.issue({ type: 'mount', player: P, units: [r.id], targetId: animal.id });
+        continue;
+      }
+      const queued = buildings.some((b) => b.owner === P && b.queue.some((q) => q.unit === want));
+      if (queued) continue;
+      const at = buildings.find((b) => b.type === CONFIG.units[want].trainedAt && b.progress >= 1 && b.queue.length < 3);
+      const c = CONFIG.units[want].cost;
+      if (at && !missingRequirement(game, P, want) && me.gold >= c.gold && me.wood >= c.wood && spare >= c.gold) {
+        game.issue({ type: 'train', player: P, buildingId: at.id, unit: want });
+        break;
+      }
+    }
+  }
+
+  /**
+   * Elite units in a fight, by what each skill is for: Take Aim at the
+   * toughest enemy when no one is in the Musketeer's face, Shield Stance
+   * under arrows, Bark Shield on the most hurt ally, Charge into a crowd,
+   * Leap onto archers and healers, Rootbind the nearest fighter, Pounce on
+   * the weakest; Shapeshifters run as panthers and fight as warriors.
+   */
+  private eliteTactics(game: Game, army: Unit[], enemies: Array<Unit | Building>): void {
+    const P = this.player;
+    const tick = game.state.tick;
+    const use = (u: Unit, skill: SkillId, targetId: number, x?: number, y?: number) => {
+      if (skillProblem(game, u, skill, targetId, x ?? 0, y ?? 0)) return false;
+      game.issue({ type: 'skill', player: P, units: [u.id], skill, targetId, x, y });
+      return true;
+    };
+    for (const u of army) {
+      const skills = skillsOf(u.type);
+      if (!skills.length || u.stun > 0 || u.dash || u.order?.type === 'skill') continue;
+      const foes = enemies.filter((e): e is Unit => e.kind === 'unit' && !e.hidden && dist(e, u) < 10);
+      const near = foes.filter((f) => dist(f, u) < 3);
+      if (u.type === 'sentinel') {
+        const shooters = foes.filter((f) => CONFIG.units[f.type].attack.projectileSpeed > 0 && dist(f, u) < 9).length;
+        if ((shooters >= 2) !== u.stance) use(u, 'stance', -1);
+        continue;
+      }
+      if (u.type === 'shifter' || u.type === 'panther') {
+        // Panther to cross the map and chase, warrior to hold a fight.
+        const fighting = near.length > 0;
+        const marching = !foes.length && (u.order?.type === 'attackMove' || u.order?.type === 'move');
+        if (u.type === 'shifter' && marching && (u.ready.shift ?? 0) <= tick) {
+          use(u, 'shift', -1);
+          continue;
+        }
+        if (u.type === 'panther' && fighting && u.hp < u.maxHp * 0.6 && (u.ready.shift ?? 0) <= tick) {
+          use(u, 'shift', -1);
+          continue;
+        }
+      }
+      if (!foes.length) continue;
+      const fighters = foes.filter((f) => !isWorker(f.type));
+      const pick = (list: Unit[], score: (f: Unit) => number) => list.slice().sort((a, b) => score(b) - score(a) || a.id - b.id)[0];
+      if (u.type === 'musketeer' && !near.length) {
+        const t = pick(fighters.filter((f) => dist(f, u) < CONFIG.skills.aim.range), (f) => f.hp + (CONFIG.units[f.type].armorType === 'heavy' ? 300 : 0) + (f.hero ? 500 : 0));
+        if (t) use(u, 'aim', t.id);
+      } else if (u.type === 'barksentinel') {
+        const hurt = army.filter((a) => dist(a, u) < CONFIG.skills.barkshield.range && a.hp < a.maxHp * 0.7 && a.hurt > tick - 60).sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
+        if (hurt) use(u, 'barkshield', hurt.id);
+      } else if (u.type === 'bearrider') {
+        const t = pick(fighters.filter((f) => dist(f, u) > 2 && dist(f, u) < CONFIG.skills.charge.range), (f) => fighters.filter((g) => dist(g, f) < 2).length);
+        if (t) use(u, 'charge', -1, t.x, t.y);
+      } else if (u.type === 'wolfrider') {
+        const soft = fighters.filter((f) => dist(f, u) > 2 && dist(f, u) < CONFIG.skills.leap.range && CONFIG.units[f.type].armorType === 'light');
+        const t = pick(soft, (f) => -f.hp);
+        if (t) use(u, 'leap', -1, t.x, t.y);
+      } else if (u.type === 'shifter') {
+        const t = pick(fighters.filter((f) => dist(f, u) < CONFIG.skills.root.range), (f) => -dist(f, u));
+        if (t) use(u, 'root', t.id);
+      } else if (u.type === 'panther') {
+        const t = pick(fighters.filter((f) => dist(f, u) < CONFIG.skills.pounce.range), (f) => -f.hp);
+        if (t) use(u, 'pounce', t.id);
+      }
+    }
+  }
+
+  /**
    * Focus fire: soldiers in a fight switch to an enemy hero or a badly hurt
    * enemy within their reach, then carry on to where they were going.
    */
@@ -1087,6 +1223,8 @@ export class ComputerPlayer {
     const fit = army.filter((u) => !this.healing.has(u.id));
     const home = fit.filter((u) => !this.wave.includes(u.id));
     this.heroTactics(game, army, enemies);
+    this.eliteTactics(game, army, enemies);
+    this.eliteArmy(game, army, buildings, spare);
     this.heroErrands(game, army, enemies, keeps, spare);
     this.focusFire(game, fit, enemies);
 

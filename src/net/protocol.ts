@@ -16,7 +16,7 @@ import { FACTIONS, type FactionId } from '../sim/factions';
 import { MAPS, type MapDef } from '../sim/maps';
 import type { MatchRules } from '../sim/rules';
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2; // 2: elite units (skills, mounting, specialization)
 /** Simulation ticks per lockstep turn (2 ticks = 100 ms). */
 export const TURN_TICKS = 2;
 export const TURN_MS = (TURN_TICKS * 1000) / 20;
@@ -109,6 +109,8 @@ const BUILDING_TYPES = new Set(Object.keys(CONFIG.buildings));
 const RESEARCH = new Set(Object.keys(CONFIG.research));
 const ABILITIES = new Set(Object.keys(CONFIG.hero.abilities));
 const ITEMS = new Set(Object.keys(CONFIG.items));
+const SKILLS = new Set(Object.keys(CONFIG.skills));
+const SPECS = new Set(Object.keys(CONFIG.specialize));
 const MAP_IDS = new Set(MAPS.map((m) => m.id));
 
 const isInt = (v: unknown) => typeof v === 'number' && Number.isInteger(v) && Math.abs(v) < 1e9;
@@ -170,6 +172,14 @@ export function validCommand(c: unknown, seat: number): c is Command {
       return isInt(o.buildingId) && isInt(o.index);
     case 'setRally':
       return isInt(o.buildingId) && isNum(o.x) && isNum(o.y) && isInt(o.targetId);
+    case 'skill':
+      return isIds(o.units) && SKILLS.has(o.skill as string) && isInt(o.targetId) && (o.x === undefined || isNum(o.x)) && (o.y === undefined || isNum(o.y));
+    case 'mount':
+      return isIds(o.units) && isInt(o.targetId);
+    case 'dismount':
+      return isIds(o.units);
+    case 'specialize':
+      return isIds(o.units) && SPECS.has(o.into as string);
     default:
       return false;
   }
