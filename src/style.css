@@ -406,8 +406,9 @@ body {
 }
 .queue .slot {
   position: relative;
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
   background: var(--panel-2);
   border: 1px solid var(--edge);
   border-radius: 4px;
@@ -415,6 +416,13 @@ body {
   font-weight: 700;
   cursor: pointer;
   overflow: hidden;
+}
+.queue .slot-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
 }
 .queue .slot.empty {
   opacity: 0.35;
@@ -425,6 +433,7 @@ body {
 }
 .queue .fill {
   position: absolute;
+  z-index: 1;
   left: 0;
   bottom: 0;
   height: 4px;
@@ -1274,6 +1283,11 @@ details.rules summary span { font-weight: 400; opacity: 0.75; margin-left: 0.5re
 #commands {
   grid-template-columns: repeat(5, 1fr);
   grid-auto-rows: 40px;
+}
+/* Cancel sits in the bottom-right cell; the other buttons keep their places. */
+#commands .cmd.cancel {
+  grid-column: -2 / -1;
+  grid-row: 4;
 }
 .cmd {
   background: linear-gradient(#30261b, #1d160f);

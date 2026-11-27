@@ -26,8 +26,12 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
   return e;
 }
 
+/** Last text written per element: compared instead of the live text, which a browser's page translation may have rewritten. */
+const written = new WeakMap<HTMLElement, string>();
 function setText(e: HTMLElement, t: string): void {
-  if (e.textContent !== t) e.textContent = t;
+  if (written.get(e) === t) return;
+  written.set(e, t);
+  e.textContent = t;
 }
 
 export function unitStatus(game: Game, u: Unit): string {
@@ -240,6 +244,7 @@ export class Hud {
   private cancelBtn = el('button', 'cmd');
   private lastPanel = 0;
   private panelDirty = true;
+  private panelHtml = '';
 
   constructor(
     private game: Game,
@@ -249,7 +254,8 @@ export class Hud {
     this.idleBtn.addEventListener('click', () => input.selectIdleWorker());
     this.heroBtn?.addEventListener('click', () => input.selectHero());
     this.cancelBtn.innerHTML = `<span class="cmd-glyph">${COMMAND_GLYPHS.cancel}</span><span class="cmd-label">Cancel</span><span class="cmd-key">X</span>`;
-    this.cancelBtn.classList.add('has-glyph');
+    // Pinned to the last cell, so showing it never moves the other buttons.
+    this.cancelBtn.classList.add('has-glyph', 'cancel');
     setTip(this.cancelBtn, `Cancel construction (${CONFIG.construction.cancelRefund * 100}% refund) or the last queued unit (${CONFIG.production.cancelRefund * 100}% refund).`);
     this.cancelBtn.addEventListener('click', () => input.action('cancel'));
     this.card.appendChild(this.cancelBtn);
@@ -625,7 +631,13 @@ export class Hud {
     // Build off-screen and swap only if something visible changed.
     const panel = el('div');
     this.fillPanel(panel, sel);
-    if (panel.innerHTML !== this.panel.innerHTML) this.panel.replaceChildren(...panel.childNodes);
+    // Compare with what was last written, not the live DOM: a browser's page
+    // translation rewrites the live text, which made the panel flip languages.
+    const html = panel.innerHTML;
+    if (html !== this.panelHtml) {
+      this.panelHtml = html;
+      this.panel.replaceChildren(...panel.childNodes);
+    }
   }
 
   /** Names in the viewer's own faction's words. */
@@ -790,7 +802,12 @@ export class Hud {
       const q = b.queue[i];
       const slot = el('button', `slot${q ? '' : ' empty'}`);
       if (q) {
-        slot.textContent = nameOf(q)[0];
+        // The unit's (or research's) picture, framed in the team colour.
+        const pic = el('img', 'slot-art') as HTMLImageElement;
+        pic.src = q.research ? researchArt(q.research) : unitArt(q.unit!);
+        pic.alt = '';
+        pic.draggable = false;
+        slot.appendChild(pic);
         setTip(slot, 'Click to cancel (full refund).', null, nameOf(q));
         const fill = el('div', 'fill');
         fill.style.width = `${q.progress * 100}%`;

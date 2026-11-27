@@ -286,7 +286,7 @@ export class InputController {
     const x1 = Math.max(box.x0, box.x1);
     const y0 = Math.min(box.y0, box.y1);
     const y1 = Math.max(box.y0, box.y1);
-    const hits = this.game
+    let hits = this.game
       .units()
       .filter((u) => {
         if (u.owner !== this.client.player || u.hidden) return false;
@@ -296,6 +296,9 @@ export class InputController {
         return s.visible && s.x + r >= x0 && s.x - r <= x1 && s.y + r >= y0 && s.y - r <= y1;
       })
       .map((u) => u.id);
+    // A box over troops and workers takes only the troops; workers alone are still selected.
+    const troops = hits.filter((id) => !isWorker(this.game.unit(id)!.type));
+    if (troops.length) hits = troops;
     if (shift) {
       const base = this.client.selected.filter((id) => this.game.unit(id)?.owner === this.client.player);
       this.setSelection([...base, ...hits.filter((id) => !base.includes(id))]);
