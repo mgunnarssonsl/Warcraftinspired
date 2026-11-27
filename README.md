@@ -286,28 +286,35 @@ The look follows the style A design sheets in `warcraft-style-a 2/`
 (concept art, not models). The battlefield is fully 3D; nothing in the world
 is a flat cut-out.
 
-- **Models are built in code** (`src/render3d/`): `kit.ts` paints primitives
-  with vertex colours and merges each moving piece, so a unit is about eight
-  draw calls; every model of a type and team is built once and shared.
-  - `rig.ts`: the humanoid rig (legs, arms, torso), `UNIT_SIZE` scales all figures.
-  - `beasts.ts`: horses, the stag, wolves and foxes, with riders.
-  - `crownUnits.ts`, `wildUnits.ts`: both factions, heroes (a size up, gold halo, own silhouettes) and neutrals.
-  - `crownBuildings.ts`, `wildBuildings.ts`, `bkit.ts`: every building and tier, Crown scaffolding sites, Thornwild plantings that grow, wreckage when badly damaged.
-  - `envModels.ts`: six tree species, stumps and saplings, mossy cliffs, ground details, gold mines in five sizes plus a boarded-up depleted mine.
-  - `fx.ts`: rings, order markers, spell waves, light columns, projectiles, loot chests.
-- **Animation:** walking with arm swing, overhead strikes with the shield
-  raised, bows drawn upright, staffs raised and thrust, slings whirled, the
-  mangonel's arm whipping over, beasts lunging, banners swaying.
+- **Models are made in Blender** (`scripts/models/`, run headless with
+  `pip install bpy`): `python3 scripts/models/build.py [names]` writes
+  `public/models/*.glb`.
+  - `blib.py`: shapes, finishes (matte, metal, gold, glow, team colours),
+    pivots, animation clips and export; `figure.py` is the humanoid rig
+    (arms and legs bend at elbows and knees); `beasts.py` the horse, stag,
+    fox and wolf with riders.
+  - `crown.py`, `wild.py`, `neutral.py`: all 25 units and heroes, each with
+    idle, walk, attack and cast clips (workers also a work clip).
+  - `bkit.py`, `crown_buildings.py`, `wild_buildings.py`: every building and
+    Keep/Heartwood tier, and gold mines in five sizes plus a boarded-up one.
+  - In game, `gltfUnits.ts` turns each unit into one skinned mesh per finish
+    (a few draw calls, shared geometry) and plays its clips, with the blow
+    landing in time with the hit; `gltfStatic.ts` merges buildings and mines
+    per finish and recolours team parts. The code-built models in
+    `src/render3d/` remain as a fallback.
+  - Trees, cliffs and ground details (`envModels.ts`) and effects (`fx.ts`)
+    are still built in code.
 - **Interface art** comes from the sheets: `python3 scripts/art_icons.py`
   (Pillow, numpy, scipy) writes portraits and icons to `public/art/`
   (106 WebP files, about half a megabyte). Abilities, items and research use
   the game's own data, so every icon stays on the right hero or building.
-- **Performance:** in a 260-unit battle the renderer makes about 2,200 draw
-  calls (2,900 before the overhaul) and 1.1 million triangles. Trees, cliffs
-  and ground details are instanced per 16x16-tile chunk so off-screen chunks
-  are skipped; trees cast shadows through low-poly stand-ins.
-- **Not covered:** animation is procedural, not skeletal, so units do not
-  bend at elbows or knees; model detail is far below the painted sheets.
+- **Performance:** in a 260-unit battle the renderer makes about 1,300 draw
+  calls and 4 million triangles (shadow pass included). Trees, cliffs and
+  ground details are instanced per 16x16-tile chunk so off-screen chunks are
+  skipped; trees cast shadows through low-poly stand-ins.
+- **Menus:** the start screen offers Play, Tutorial and a few tools, and
+  match setup is one page. The in-match Menu and the victory and defeat
+  screens have **Main menu** (an autosave is written first).
 
 ## Release 1.0.0
 
