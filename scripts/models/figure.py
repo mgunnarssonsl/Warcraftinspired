@@ -204,3 +204,66 @@ class Figure:
                         r(f'forearm.{s}', f, dx=-0.3 * k)
                     r('head', f, dx=-0.25 * k)
             clip('cast', moving, 30, spell)
+
+
+# ---- posing helpers: hands that hold things ---------------------------------------------
+
+def _update():
+    import bpy
+    bpy.context.view_layer.update()
+
+
+def palm(F, s):
+    """Where the palm of hand `s` is now (world space, current pose)."""
+    from mathutils import Vector
+    from blib import world_pos
+    hd = F[f'hand.{s}']
+    sx = -1 if s == 'R' else 1
+    rest = Vector((SH_X * F.bulk * 1.06 * sx, -0.015, SHOULDER - WRIST_DROP - 0.035))
+    return hd.matrix_world @ (rest - world_pos(hd))
+
+
+def solve_arm(F, s, target, start=None, iters=6):
+    """Rotate shoulder and elbow so the palm of hand `s` reaches `target` (world).
+    Returns {pivot: euler} for the arm. A small coordinate descent: good enough
+    for props held in both hands."""
+    from mathutils import Vector, Euler
+    target = Vector(target)
+    ua, fa = F[f'upperarm.{s}'], F[f'forearm.{s}']
+    x = list(start) if start else [ua.rotation_euler.x, ua.rotation_euler.y, ua.rotation_euler.z, fa.rotation_euler.x]
+
+    def err(v):
+        ua.rotation_euler = Euler((v[0], v[1], v[2]))
+        fa.rotation_euler = Euler((min(0.0, max(-2.6, v[3])), 0, 0))
+        _update()
+        return (palm(F, s) - target).length
+
+    best = err(x)
+    for step in (0.4, 0.2, 0.1, 0.05, 0.025, 0.012)[:iters]:
+        improved = True
+        while improved:
+            improved = False
+            for i in range(4):
+                for d in (step, -step):
+                    y = list(x)
+                    y[i] += d
+                    e = err(y)
+                    if e < best - 1e-6:
+                        best, x, improved = e, y, True
+    err(x)
+    x[3] = min(0.0, max(-2.6, x[3]))
+    return {f'upperarm.{s}': (x[0], x[1], x[2]), f'forearm.{s}': (x[3], 0.0, 0.0)}, best
+
+
+def place_prop(prop, parent, grip, direction, up=(0, 0, 1)):
+    """Set a prop pivot (built pointing -Y from its grip, at rest) so its grip is at
+    `grip` and it points along `direction` (world), given the parent's current pose."""
+    from mathutils import Vector, Matrix
+    d = Vector(direction).normalized()
+    pm = parent.matrix_world
+    local_d = (pm.to_3x3().inverted() @ d).normalized()
+    q = local_d.to_track_quat('-Y', 'Z')
+    prop.rotation_euler = q.to_euler()
+    prop.location = pm.inverted() @ Vector(grip)
+    _update()
+    return tuple(prop.location), tuple(prop.rotation_euler)
