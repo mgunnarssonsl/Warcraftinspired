@@ -523,7 +523,12 @@ export class ComputerPlayer {
     const H: number = CONFIG.ai.expandsFirstHolds;
     if (saving && H === 7) return expandNow() ? 'hq' : null;
     const towers = this.profile.towers + (this.posture === 'threatened' ? 1 : 0);
-    if (!(saving && H & 1) && count('tower') < towers && hasCompleted(game, P, F.buildings.barracks)) return 'tower';
+    // Hard saves the wood for its second Keep (towers only for a style with
+    // just one, so the Warden keeps its early tower).
+    const hardSaves = this.profile.smithyAfterKeep && this.posture !== 'threatened' && count('hq') < 2;
+    const HT: number = CONFIG.ai.hardHoldsTowers;
+    const towerWaits = (saving && H & 1) || (hardSaves && HT > 0 && (HT === 1 || this.profile.towers < 2));
+    if (!towerWaits && count('tower') < towers && hasCompleted(game, P, F.buildings.barracks)) return 'tower';
     const smithyWaits = (saving && H & 2) || (this.profile.smithyAfterKeep && this.posture !== 'threatened' && count('hq') < 2);
     if (!smithyWaits && this.profile.upgrades && count('smithy') === 0 && hasCompleted(game, P, F.buildings.lumbermill)) return 'smithy';
     // Tier II production, for the units its mix calls for.
