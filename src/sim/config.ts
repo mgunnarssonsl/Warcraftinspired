@@ -1731,6 +1731,12 @@ export const CONFIG = {
     attackAdvantage: 1.15,
     /** Choosing a target: an outlying base counts as this many tiles nearer (it is defended less). */
     outlyingBonus: 10,
+    /** Focus fire: leaves a soldier's swing alone (1) or retargets mid-swing (0). */
+    focusKeepSwing: 0,
+    /** Focus fire: how far past its range a soldier looks for a target, in tiles. */
+    focusSlack: 0.8,
+    /** Focus fire: switches to an enemy hero below this share of its health (1 = any hero). */
+    focusHeroShare: 1,
     /** Against an enemy known to have more bases, the first attack comes at this share of the usual time. */
     greedAttackTiming: 1,
     /** Expanding when safe: not before this time (seconds), and with this many soldiers home. */

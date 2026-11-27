@@ -1052,11 +1052,15 @@ export class ComputerPlayer {
     const byTarget = new Map<number, number[]>();
     for (const u of army) {
       if (u.hero || this.healing.has(u.id)) continue;
+      // Switching mid-swing throws the swing away.
+      if (CONFIG.ai.focusKeepSwing && u.swing > 0) continue;
       const o = u.order;
       if (o?.type !== 'attack' && o?.type !== 'attackMove') continue;
-      const reach = CONFIG.units[u.type].attack.range + u.radius + 0.8;
+      const reach = CONFIG.units[u.type].attack.range + u.radius + CONFIG.ai.focusSlack;
       const inReach = foes.filter((f) => dist(f, u) - f.radius <= reach);
-      const pick = inReach.find((f) => f.hero) ?? inReach.filter((f) => f.hp < f.maxHp * 0.35).sort((a, b) => a.hp - b.hp)[0];
+      const pick =
+        inReach.find((f) => f.hero && f.hp < f.maxHp * CONFIG.ai.focusHeroShare) ??
+        inReach.filter((f) => f.hp < f.maxHp * 0.35).sort((a, b) => a.hp - b.hp)[0];
       const current = o.targetId;
       if (!pick || pick.id === current) continue;
       byTarget.set(pick.id, [...(byTarget.get(pick.id) ?? []), u.id]);
