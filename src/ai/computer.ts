@@ -519,17 +519,19 @@ export class ComputerPlayer {
     // An expansion-first style saves for its second Keep before towers, a
     // Blacksmith or more Barracks, unless it is under threat.
     const expandNow = () => this.wantsExpansion(game, buildings) && this.expansionMine(game, buildings);
-    if (this.profile.expandsFirst && this.posture !== 'threatened' && count('hq') < 2) return expandNow() ? 'hq' : null;
+    const saving = this.profile.expandsFirst && this.posture !== 'threatened' && count('hq') < 2;
+    const H = CONFIG.ai.expandsFirstHolds;
+    if (saving && H === 7) return expandNow() ? 'hq' : null;
     const towers = this.profile.towers + (this.posture === 'threatened' ? 1 : 0);
-    if (count('tower') < towers && hasCompleted(game, P, F.buildings.barracks)) return 'tower';
-    if (this.profile.upgrades && count('smithy') === 0 && hasCompleted(game, P, F.buildings.lumbermill)) return 'smithy';
+    if (!(saving && H & 1) && count('tower') < towers && hasCompleted(game, P, F.buildings.barracks)) return 'tower';
+    if (!(saving && H & 2) && this.profile.upgrades && count('smithy') === 0 && hasCompleted(game, P, F.buildings.lumbermill)) return 'smithy';
     // Tier II production, for the units its mix calls for.
     if (researched(game, P, F.tiers[0])) {
       if (count('chapel') === 0 && this.profile.mix.cleric > 0) return 'chapel';
       if (count('workshop') === 0 && this.profile.mix.mangonel > 0) return 'workshop';
     }
     const me = game.player(P);
-    if (count('barracks') < this.profile.maxBarracks && workers.length >= this.profile.extraBarracksAtWorkers && me.gold >= 300) return 'barracks';
+    if (!(saving && H & 4) && count('barracks') < this.profile.maxBarracks && workers.length >= this.profile.extraBarracksAtWorkers && me.gold >= 300) return 'barracks';
     if (expandNow()) return 'hq';
     return null;
   }

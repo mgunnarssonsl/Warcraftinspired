@@ -1746,6 +1746,8 @@ export const CONFIG = {
     /** Expanding when safe: not before this time (seconds), and with this many soldiers home. */
     safeExpandSeconds: 180,
     safeExpandArmy: 3,
+    /** What an expansion-first style holds until its second Keep: 1 towers, 2 Blacksmith, 4 more Barracks (7 = everything). */
+    expandsFirstHolds: 7,
     /** Counting defences: a defender fights at home with this edge... */
     defenderEdge: 1.25,
     /** ...and each tower it has seen counts for this many Guards. */
