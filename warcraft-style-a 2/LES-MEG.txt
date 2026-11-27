@@ -20,6 +20,7 @@ INNHOLD
 13 CROWN UPGRADES — 13-crown-upgrades.png
 14 THORNWILD UPGRADES — 14-thornwild-upgrades.png
 15 STATES AND FEEDBACK — 15-states-and-feedback.png
+16 NEW ELITE UNITS — 16-elite-units.png (Bear Rider, Musketeer, Wolf Rider, Shapeshifter)
 
 DEKNING
 Alle 25 enhetstyper: seks helter, 14 fraksjonsenheter og fem nøytrale fiender.
