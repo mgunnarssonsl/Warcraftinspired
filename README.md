@@ -280,6 +280,35 @@ Player 2 won 32 of 55. That is not significant at this sample size, about
 1.2 standard deviations from even, but it is worth watching in larger
 runs.
 
+## Art: style A, classic RTS
+
+The look follows the style A design sheets in `warcraft-style-a 2/`
+(concept art, not models). The battlefield is fully 3D; nothing in the world
+is a flat cut-out.
+
+- **Models are built in code** (`src/render3d/`): `kit.ts` paints primitives
+  with vertex colours and merges each moving piece, so a unit is about eight
+  draw calls; every model of a type and team is built once and shared.
+  - `rig.ts`: the humanoid rig (legs, arms, torso), `UNIT_SIZE` scales all figures.
+  - `beasts.ts`: horses, the stag, wolves and foxes, with riders.
+  - `crownUnits.ts`, `wildUnits.ts`: both factions, heroes (a size up, gold halo, own silhouettes) and neutrals.
+  - `crownBuildings.ts`, `wildBuildings.ts`, `bkit.ts`: every building and tier, Crown scaffolding sites, Thornwild plantings that grow, wreckage when badly damaged.
+  - `envModels.ts`: six tree species, stumps and saplings, mossy cliffs, ground details, gold mines in five sizes plus a boarded-up depleted mine.
+  - `fx.ts`: rings, order markers, spell waves, light columns, projectiles, loot chests.
+- **Animation:** walking with arm swing, overhead strikes with the shield
+  raised, bows drawn upright, staffs raised and thrust, slings whirled, the
+  mangonel's arm whipping over, beasts lunging, banners swaying.
+- **Interface art** comes from the sheets: `python3 scripts/art_icons.py`
+  (Pillow, numpy, scipy) writes portraits and icons to `public/art/`
+  (106 WebP files, about half a megabyte). Abilities, items and research use
+  the game's own data, so every icon stays on the right hero or building.
+- **Performance:** in a 260-unit battle the renderer makes about 2,200 draw
+  calls (2,900 before the overhaul) and 1.1 million triangles. Trees, cliffs
+  and ground details are instanced per 16x16-tile chunk so off-screen chunks
+  are skipped; trees cast shadows through low-poly stand-ins.
+- **Not covered:** animation is procedural, not skeletal, so units do not
+  bend at elbows or knees; model detail is far below the painted sheets.
+
 ## Release 1.0.0
 
 ### Play it
