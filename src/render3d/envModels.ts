@@ -4,7 +4,7 @@
 // vertex-coloured geometries for instanced meshes.
 
 import * as THREE from 'three';
-import { Sculpt, ball, blob, capsule, cyl, lathe, leafFan, rand, rbox, type V3 } from './kit';
+import { Sculpt, ball, blob, capsule, cone, cyl, lathe, leafFan, rand, rbox, type V3 } from './kit';
 import { B, barrel, crate, fence } from './bkit';
 
 export type TreeKind = 'oak' | 'birch' | 'pine' | 'autumn' | 'twisted' | 'willow';
@@ -15,16 +15,16 @@ const BARK_D = '#5c3c22';
 
 function clumps(s: Sculpt, at: V3, r: number, colors: string[], seed: number, n = 6, flat = 0.8): void {
   const rnd = rand(seed);
-  s.add(blob(r * 0.8, seed, 0.2, 2), colors[0], 'matte', { at, scale: [1.15, flat, 1.15] });
+  s.add(blob(r * 0.8, seed, 0.2, 0, true), colors[0], 'matte', { at, scale: [1.15, flat, 1.15] });
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2 + rnd() * 0.5;
     const rr = r * (0.5 + rnd() * 0.3);
-    s.add(blob(r * (0.42 + rnd() * 0.15), seed * 11 + i, 0.25, 2), colors[(i % (colors.length - 1)) + 1], 'matte', {
+    s.add(blob(r * (0.42 + rnd() * 0.15), seed * 11 + i, 0.18, 0, true), colors[(i % (colors.length - 1)) + 1], 'matte', {
       at: [at[0] + Math.cos(a) * rr, at[1] + (rnd() - 0.35) * r * 0.5, at[2] + Math.sin(a) * rr],
       scale: [1, flat, 1],
     });
   }
-  s.add(blob(r * 0.5, seed * 3, 0.25, 2), colors[colors.length - 1], 'matte', { at: [at[0] - r * 0.1, at[1] + r * 0.45, at[2] + r * 0.15], scale: [1, flat, 1] });
+  s.add(blob(r * 0.5, seed * 3, 0.18, 0, true), colors[colors.length - 1], 'matte', { at: [at[0] - r * 0.1, at[1] + r * 0.45, at[2] + r * 0.15], scale: [1, flat, 1] });
 }
 
 /** One tree of a species, about 2 tiles tall, its foot at the origin. */
@@ -51,7 +51,7 @@ export function treeGeometry(kind: TreeKind): THREE.BufferGeometry {
       [0.14, 0.06, 0.2],
     ] as const) {
       s.add(lathe([[0.075, 0], [0.06, 0.5], [0.045, 1.35]], 7), '#eee8dc', 'matte', { at: [x, 0, z], rot: [0, 0, -lean] });
-      for (let i = 0; i < 4; i++) s.add(rbox(0.07, 0.025, 0.04, 0.005), '#2e2a26', 'matte', { at: [x + lean * i * 0.25 * 0.3, 0.2 + i * 0.28, z + 0.05], rot: [0, 0, -lean] });
+      for (let i = 0; i < 4; i++) s.add(new THREE.BoxGeometry(0.07, 0.025, 0.04), '#2e2a26', 'matte', { at: [x + lean * i * 0.25 * 0.3, 0.2 + i * 0.28, z + 0.05], rot: [0, 0, -lean] });
     }
     clumps(s, [0.06, 1.45, 0.02], 0.55, ['#9cc84a', '#b4d85c', '#8abc40', '#c4e070'], 7, 6, 0.85);
   } else if (kind === 'willow') {
@@ -78,6 +78,15 @@ export function treeGeometry(kind: TreeKind): THREE.BufferGeometry {
     clumps(s, [0, 1.45, 0], 0.64, colors, kind === 'autumn' ? 17 : 19, 7, 0.75);
     if (kind === 'autumn') for (let i = 0; i < 6; i++) s.add(rbox(0.06, 0.01, 0.05, 0.003), colors[i % 4], 'matte', { at: [Math.cos(i) * 0.4, 0.01, Math.sin(i * 1.3) * 0.4], rot: [0, i, 0] });
   }
+  return s.geometry();
+}
+
+/** A cheap stand-in that casts a tree's shadow (the painted tree itself does not): a cone on a post. */
+export function treeShadowGeometry(kind: TreeKind): THREE.BufferGeometry {
+  const s = new Sculpt();
+  s.add(cyl(0.1, 0.14, 1.0, 5), '#000000', 'matte', { at: [0, 0.5, 0] });
+  if (kind === 'pine') s.add(cone(0.62, 1.7, 6), '#000000', 'matte', { at: [0, 1.25, 0] });
+  else s.add(blob(kind === 'birch' ? 0.55 : 0.72, 3, 0.1, 0, false), '#000000', 'matte', { at: [0, 1.5, 0], scale: [1.1, 0.75, 1.1] });
   return s.geometry();
 }
 

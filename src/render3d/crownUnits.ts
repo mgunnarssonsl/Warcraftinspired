@@ -5,7 +5,7 @@
 
 import * as THREE from 'three';
 import { Sculpt, ball, capsule, cone, crownGeo, cyl, cloth, kiteShield, lathe, rbox, slab, blob } from './kit';
-import { Figure, assemble, humanoid, SHOULDER_Y, HIP_Y } from './rig';
+import { Figure, assemble, humanoid, SHOULDER_Y, HIP_Y, UNIT_SIZE } from './rig';
 import { beastModel, lance } from './beasts';
 
 export const C = {
@@ -198,7 +198,7 @@ export function mangonel(team: string): THREE.Group {
   const root = new THREE.Group();
   const body = new THREE.Group();
   body.name = 'body';
-  body.scale.setScalar(1.45);
+  body.scale.setScalar(1.45 * UNIT_SIZE);
   root.add(body);
   const frame = new Sculpt();
   for (const x of [-1, 1]) {

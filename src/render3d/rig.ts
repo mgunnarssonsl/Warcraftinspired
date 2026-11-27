@@ -35,6 +35,11 @@ export interface UnitParts {
 }
 
 export const HIP_Y = 0.3;
+/**
+ * Every figure's size is multiplied by this: the models' own scales give the
+ * proportions between units, this sets how big they stand beside buildings.
+ */
+export const UNIT_SIZE = 0.82;
 export const SHOULDER_Y = 0.57;
 export const SHOULDER_X = 0.165;
 
@@ -96,32 +101,31 @@ export function humanoid(look: Look): Figure {
   // Torso: hips, chest, belt, neck, head.
   const t = f.torso;
   if (look.robe) {
-    t.add(lathe([[0.2 * b, 0.0], [0.17 * b, 0.12], [0.14 * b, 0.3], [0.13 * b, 0.4]], 12), look.robe, 'cloth', { at: [0, 0.02, 0] });
+    t.add(lathe([[0.2 * b, 0.0], [0.17 * b, 0.12], [0.14 * b, 0.3], [0.13 * b, 0.4]], 10), look.robe, 'cloth', { at: [0, 0.02, 0] });
   }
-  t.add(lathe([[0.1 * b, 0], [0.12 * b, 0.04], [0.125 * b, 0.1]], 10), look.pants, 'cloth', { at: [0, HIP_Y - 0.03, 0] });
-  t.add(lathe([[0.12 * b, 0], [0.135 * b, 0.08], [0.15 * b, 0.17], [0.12 * b, 0.22], [0.06, 0.25]], 10), look.shirt, 'cloth', { at: [0, HIP_Y + 0.06, 0] });
+  t.add(lathe([[0.1 * b, 0], [0.12 * b, 0.04], [0.125 * b, 0.1]], 8), look.pants, 'cloth', { at: [0, HIP_Y - 0.03, 0] });
+  t.add(lathe([[0.12 * b, 0], [0.135 * b, 0.08], [0.15 * b, 0.17], [0.12 * b, 0.22], [0.06, 0.25]], 8), look.shirt, 'cloth', { at: [0, HIP_Y + 0.06, 0] });
   if (look.over) {
     // A tabard or apron: front and back panels.
     t.add(cloth(0.2 * b, 0.36, 0.035), look.over, look.overFinish ?? 'cloth', { at: [0, SHOULDER_Y - 0.03, 0.142 * b], rot: [0, Math.PI, 0] });
     t.add(cloth(0.2 * b, 0.32, 0.035), look.over, look.overFinish ?? 'cloth', { at: [0, SHOULDER_Y - 0.03, -0.142 * b] });
   }
-  if (look.plate) t.add(lathe([[0.13 * b, 0], [0.155 * b, 0.07], [0.15 * b, 0.14], [0.1 * b, 0.18]], 10), look.plate, 'metal', { at: [0, HIP_Y + 0.14, -0.004], scale: [1, 1, 0.88] });
-  t.add(cyl(0.128 * b, 0.128 * b, 0.04, 10), look.belt ?? '#5b3a20', 'matte', { at: [0, HIP_Y + 0.07, 0] });
+  if (look.plate) t.add(lathe([[0.13 * b, 0], [0.155 * b, 0.07], [0.15 * b, 0.14], [0.1 * b, 0.18]], 8), look.plate, 'metal', { at: [0, HIP_Y + 0.14, -0.004], scale: [1, 1, 0.88] });
+  t.add(cyl(0.128 * b, 0.128 * b, 0.04, 8), look.belt ?? '#5b3a20', 'matte', { at: [0, HIP_Y + 0.07, 0] });
   if (look.buckle) t.add(rbox(0.05, 0.04, 0.02, 0.006), look.buckle, 'gold', { at: [0, HIP_Y + 0.07, 0.13 * b] });
   t.add(cyl(0.04, 0.045, 0.05, 8), skin, 'skin', { at: [0, SHOULDER_Y + 0.03, 0] });
   // A big, readable head.
-  t.add(ball(0.088, 12, 10), skin, 'skin', { at: [0, SHOULDER_Y + 0.12, 0.005] });
-  t.add(ball(0.018, 6, 4), skin, 'skin', { at: [0, SHOULDER_Y + 0.115, 0.09] }); // nose
-  if (look.hair) t.add(ball(0.091, 12, 8), look.hair, 'matte', { at: [0, SHOULDER_Y + 0.135, -0.012], scale: [1, 0.85, 1] });
+  t.add(ball(0.088, 10, 7), skin, 'skin', { at: [0, SHOULDER_Y + 0.12, 0.005] });
+  if (look.hair) t.add(ball(0.091, 10, 6), look.hair, 'matte', { at: [0, SHOULDER_Y + 0.135, -0.012], scale: [1, 0.85, 1] });
   if (look.beard) t.add(lathe([[0.06, 0], [0.07, 0.03], [0.05, 0.07], [0.0, 0.08]], 8), look.beard, 'matte', { at: [0, SHOULDER_Y + 0.025, 0.05], rot: [0.35, 0, 0], scale: [1, 1, 0.7] });
   if (look.pauldron)
-    for (const x of [-1, 1]) t.add(ball(0.075 * b, 10, 6, ), look.pauldron, look.pauldronFinish ?? 'metal', { at: [x * (SHOULDER_X + 0.01), SHOULDER_Y + 0.0, 0], scale: [1.15, 0.7, 1.05] });
+    for (const x of [-1, 1]) t.add(ball(0.075 * b, 8, 5), look.pauldron, look.pauldronFinish ?? 'metal', { at: [x * (SHOULDER_X + 0.01), SHOULDER_Y + 0.0, 0], scale: [1.15, 0.7, 1.05] });
   // Arms (shoulder-local, hanging down from y = 0), the hand at y ~ -0.27.
   for (const s of [f.armL, f.armR]) {
-    s.add(ball(0.055 * b, 8, 6), look.sleeve ?? look.shirt, 'cloth');
+    s.add(ball(0.055 * b, 6, 4), look.sleeve ?? look.shirt, 'cloth');
     s.add(capsule(0.045 * b, 0.1), look.sleeve ?? look.shirt, 'cloth', { at: [0, -0.08, 0] });
     s.add(capsule(0.04 * b, 0.09), look.glove ?? skin, look.glove ? 'matte' : 'skin', { at: [0, -0.19, 0.01] });
-    s.add(ball(0.045 * b, 8, 6), look.glove ?? skin, look.glove ? 'matte' : 'skin', { at: [0, -0.27, 0.015] });
+    s.add(ball(0.045 * b, 6, 4), look.glove ?? skin, look.glove ? 'matte' : 'skin', { at: [0, -0.27, 0.015] });
   }
   return f;
 }
@@ -131,14 +135,15 @@ export function assemble(f: Figure, scale: number, style: UnitParts['style'] = '
   const root = new THREE.Group();
   const body = new THREE.Group();
   body.name = 'body';
-  body.scale.setScalar(scale);
+  body.scale.setScalar(scale * UNIT_SIZE);
   root.add(body);
   body.add(f.torso.build('torso'));
   const pivot = (name: string, s: Sculpt, at: [number, number, number]) => {
     const p = new THREE.Group();
     p.name = name;
     p.position.set(...at);
-    if (!s.empty) p.add(s.build());
+    // Only the body casts a shadow: limbs and what they hold would double the shadow pass.
+    if (!s.empty) p.add(s.build('', false));
     body.add(p);
     return p;
   };
@@ -149,7 +154,7 @@ export function assemble(f: Figure, scale: number, style: UnitParts['style'] = '
   const tool = pivot('tool', f.armR, [sx, SHOULDER_Y - 0.02, 0]);
   if (!f.flag.empty) pivot('flag', f.flag, f.flagAt);
   for (const e of f.extras) {
-    const o = e.sculpt.build(e.name);
+    const o = e.sculpt.build(e.name, false);
     o.name = e.name;
     if (e.at) o.position.set(...e.at);
     (e.parent === 'tool' ? tool : e.parent === 'armL' ? armL : body).add(o);

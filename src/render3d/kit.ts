@@ -12,16 +12,23 @@ import { withFog } from './fog';
 export type Finish = 'matte' | 'cloth' | 'skin' | 'metal' | 'gold' | 'glow';
 
 const FINISHES: Record<Finish, { rough: number; metal: number; glow?: boolean; side?: THREE.Side }> = {
-  matte: { rough: 0.8, metal: 0 },
+  matte: { rough: 0.82, metal: 0, side: THREE.DoubleSide },
   cloth: { rough: 0.92, metal: 0, side: THREE.DoubleSide },
   skin: { rough: 0.7, metal: 0 },
-  metal: { rough: 0.34, metal: 0.62 },
+  metal: { rough: 0.32, metal: 0.66 },
   gold: { rough: 0.3, metal: 0.75 },
   glow: { rough: 0.5, metal: 0, glow: true },
 };
 
+/**
+ * Finishes share materials so a model needs few draw calls: cloth and skin
+ * paint with the matte material, gold with the metal one.
+ */
+const MATERIAL_OF: Record<Finish, Finish> = { matte: 'matte', cloth: 'matte', skin: 'matte', metal: 'metal', gold: 'metal', glow: 'glow' };
+
 const kitMats = new Map<Finish, THREE.MeshStandardMaterial>();
-export function kitMaterial(f: Finish): THREE.MeshStandardMaterial {
+export function kitMaterial(finish: Finish): THREE.MeshStandardMaterial {
+  const f = MATERIAL_OF[finish];
   let m = kitMats.get(f);
   if (!m) {
     const o = FINISHES[f];
@@ -88,9 +95,10 @@ export class Sculpt {
       c[i * 3 + 2] = tmpColor.b;
     }
     g.setAttribute('color', new THREE.BufferAttribute(c, 3));
-    const list = this.parts.get(finish) ?? [];
+    const key = MATERIAL_OF[finish];
+    const list = this.parts.get(key) ?? [];
     list.push(g);
-    this.parts.set(finish, list);
+    this.parts.set(key, list);
     if (g !== geo) geo.dispose();
     return this;
   }
@@ -127,15 +135,15 @@ export class Sculpt {
   }
 
   /** One mesh per finish, under a group (or the single mesh itself). */
-  build(name = '', shadow = true): THREE.Object3D {
+  build(name = '', castShadow = true): THREE.Object3D {
     const meshes: THREE.Mesh[] = [];
     for (const [f, list] of this.parts) {
       const geo = mergeGeometries(list)!;
       for (const g of list) g.dispose();
       geo.computeBoundingSphere();
       const m = new THREE.Mesh(geo, kitMaterial(f));
-      m.castShadow = shadow && f !== 'glow';
-      m.receiveShadow = shadow;
+      m.castShadow = castShadow && f !== 'glow';
+      m.receiveShadow = true;
       meshes.push(m);
     }
     this.parts.clear();
@@ -186,7 +194,7 @@ export const rand = (seed: number) => {
 };
 
 /** A turned profile: [radius, height] pairs from bottom to top. */
-export function lathe(profile: Array<[number, number]>, segs = 10): THREE.BufferGeometry {
+export function lathe(profile: Array<[number, number]>, segs = 8): THREE.BufferGeometry {
   return new THREE.LatheGeometry(
     profile.map(([r, y]) => new THREE.Vector2(Math.max(0.0001, r), y)),
     segs,
@@ -194,13 +202,15 @@ export function lathe(profile: Array<[number, number]>, segs = 10): THREE.Buffer
 }
 
 export const capsule = (r: number, len: number, segs = 6) => new THREE.CapsuleGeometry(r, len, 2, segs);
-export const ball = (r: number, w = 10, h = 8) => new THREE.SphereGeometry(r, w, h);
+export const ball = (r: number, w = 8, h = 6) => new THREE.SphereGeometry(r, w, h);
 export const cyl = (rt: number, rb: number, h: number, segs = 8) => new THREE.CylinderGeometry(rt, rb, h, segs);
 export const cone = (r: number, h: number, segs = 8) => new THREE.ConeGeometry(r, h, segs);
 export const cube = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
 
 /** A rounded box: the chunky, bevelled blocks of the painted style. */
 export function rbox(w: number, h: number, d: number, r = 0.04): THREE.BufferGeometry {
+  // Small pieces read the same as plain boxes at gameplay zoom, for a tenth of the triangles.
+  if (Math.max(w, h, d) < 0.16) return new THREE.BoxGeometry(w, h, d);
   const s = new THREE.Shape();
   const x = w / 2 - r;
   const y = h / 2 - r;
@@ -213,7 +223,7 @@ export function rbox(w: number, h: number, d: number, r = 0.04): THREE.BufferGeo
   s.quadraticCurveTo(-w / 2, h / 2, -w / 2, y);
   s.lineTo(-w / 2, -y);
   s.quadraticCurveTo(-w / 2, -h / 2, -x, -h / 2);
-  const g = new THREE.ExtrudeGeometry(s, { depth: Math.max(0.001, d - 2 * r), bevelEnabled: true, bevelSize: r * 0.8, bevelThickness: r, bevelSegments: 2, curveSegments: 3 });
+  const g = new THREE.ExtrudeGeometry(s, { depth: Math.max(0.001, d - 2 * r), bevelEnabled: true, bevelSize: r * 0.8, bevelThickness: r, bevelSegments: 1, curveSegments: 1 });
   g.translate(0, 0, -(d - 2 * r) / 2);
   return g;
 }
@@ -248,7 +258,7 @@ export function slab(points: Array<[number, number]>, depth: number, bevel = 0.0
   s.moveTo(points[0][0], points[0][1]);
   if (curve) s.splineThru(points.slice(1).map(([x, y]) => new THREE.Vector2(x, y)));
   else for (const [x, y] of points.slice(1)) s.lineTo(x, y);
-  const g = new THREE.ExtrudeGeometry(s, { depth, bevelEnabled: bevel > 0, bevelSize: bevel, bevelThickness: bevel, bevelSegments: 1, curveSegments: 6 });
+  const g = new THREE.ExtrudeGeometry(s, { depth, bevelEnabled: bevel > 0, bevelSize: bevel, bevelThickness: bevel, bevelSegments: 1, curveSegments: 2 });
   g.translate(0, 0, -depth / 2);
   return g;
 }
@@ -302,20 +312,15 @@ export function cloth(w: number, h: number, bend = 0.12, ragged = 0, seed = 1): 
 
 /** Leaves fanned out: a clump of flat leaf shapes (Thornwild capes, shoulder plates). */
 export function leafFan(n: number, len: number, width: number, spread: number, seed = 1): THREE.BufferGeometry {
-  const leaf = slab(
-    [
-      [0, 0],
-      [width / 2, len * 0.35],
-      [width * 0.35, len * 0.75],
-      [0, len],
-      [-width * 0.35, len * 0.75],
-      [-width / 2, len * 0.35],
-      [0, 0],
-    ],
-    0.01,
-    0,
-    true,
-  );
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0);
+  shape.lineTo(width / 2, len * 0.35);
+  shape.lineTo(width * 0.35, len * 0.75);
+  shape.lineTo(0, len);
+  shape.lineTo(-width * 0.35, len * 0.75);
+  shape.lineTo(-width / 2, len * 0.35);
+  shape.lineTo(0, 0);
+  const leaf = new THREE.ShapeGeometry(shape, 1);
   const rnd = rand(seed);
   const parts: THREE.BufferGeometry[] = [];
   for (let i = 0; i < n; i++) {

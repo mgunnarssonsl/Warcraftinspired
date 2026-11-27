@@ -3,7 +3,7 @@
 
 import * as THREE from 'three';
 import { Sculpt, ball, capsule, cone, cyl, lathe, rbox, slab } from './kit';
-import { Figure, SHOULDER_X, SHOULDER_Y, type UnitParts } from './rig';
+import { Figure, SHOULDER_X, SHOULDER_Y, UNIT_SIZE, type UnitParts } from './rig';
 
 export interface Beast {
   coat: string;
@@ -27,7 +27,7 @@ export function beastModel(b: Beast, scale: number, rider?: Figure, style: UnitP
   const root = new THREE.Group();
   const body = new THREE.Group();
   body.name = 'body';
-  body.scale.setScalar(scale);
+  body.scale.setScalar(scale * UNIT_SIZE);
   root.add(body);
   const torso = new Sculpt();
   const cy = b.legH + b.girth * 0.55;
@@ -90,12 +90,12 @@ export function beastModel(b: Beast, scale: number, rider?: Figure, style: UnitP
     tool = new THREE.Group();
     tool.name = 'tool';
     tool.position.set(SHOULDER_X * (rider.look.bulk ?? 1), lift + SHOULDER_Y - 0.02, -half * 0.05);
-    if (!rider.armR.empty) tool.add(rider.armR.build());
+    if (!rider.armR.empty) tool.add(rider.armR.build('', false));
     if (!rider.flag.empty) {
       const flag = new THREE.Group();
       flag.name = 'flag';
       flag.position.set(rider.flagAt[0], rider.flagAt[1] + lift, rider.flagAt[2] - half * 0.05);
-      flag.add(rider.flag.build());
+      flag.add(rider.flag.build('', false));
       body.add(flag);
     }
   }
@@ -120,7 +120,7 @@ export function beastModel(b: Beast, scale: number, rider?: Figure, style: UnitP
     const p = new THREE.Group();
     p.name = name;
     p.position.set(x, l, z);
-    p.add(s.build());
+    p.add(s.build('', false));
     body.add(p);
   };
   const lx = b.girth * 0.5;

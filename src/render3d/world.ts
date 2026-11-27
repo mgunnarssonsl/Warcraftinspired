@@ -16,7 +16,7 @@ import { CameraRig } from './cameraRig';
 import { FogTexture, withFog } from './fog';
 import { isKitMaterial, kitMaterial } from './kit';
 import { beamTexture, crossTexture, moveArrowGeometry, ringTexture } from './fx';
-import { TREE_KINDS, decorGeometry, mineLook, mineModel, rockGeometry, saplingGeometry, stumpGeometry, treeGeometry, type MineModel, type TreeKind } from './envModels';
+import { TREE_KINDS, treeShadowGeometry, decorGeometry, mineLook, mineModel, rockGeometry, saplingGeometry, stumpGeometry, treeGeometry, type MineModel, type TreeKind } from './envModels';
 import { paintGround } from './groundTexture';
 import {
   makeBuilding,
@@ -31,6 +31,14 @@ import {
   type WorkerParts,
   isSharedMaterial,
 } from './models';
+
+/** An instance to place: its tile position (for chunking), matrix and optional tint. */
+interface Placed {
+  x: number;
+  y: number;
+  m: THREE.Matrix4;
+  c?: THREE.Color;
+}
 
 interface Marker {
   mesh: THREE.Object3D;
@@ -86,6 +94,8 @@ export class World3D {
   private mines = new Map<number, MineModel>();
   /** One instanced mesh per tree species; trees[i] is drawn by treeMesh[i] at treeSlot[i]. */
   private treeMeshes: THREE.InstancedMesh[] = [];
+  /** Each tree mesh's low-poly shadow caster, kept in step with it. */
+  private treeShadows = new Map<THREE.InstancedMesh, THREE.InstancedMesh>();
   private treeMeshIds: number[][] = [];
   private treeMesh: number[] = [];
   private treeSlot: number[] = [];
@@ -97,6 +107,8 @@ export class World3D {
   private stumps!: THREE.InstancedMesh;
   private saplings!: THREE.InstancedMesh;
   private felledAt: number[] = [];
+  /** Each felled tree's slot in the stump and sapling meshes. */
+  private stumpSlot: number[] = [];
   private shakes = new Map<number, number>();
   private ripples: THREE.Mesh | null = null;
   /** A soft ring of radius 1 (the texture glows either side of the rim). */
@@ -402,31 +414,45 @@ export class World3D {
 
     // Cliff ridges: mossy boulders, three shapes, turned and sized per tile.
     const seed = this.game.state.seed;
-    const variants = [0, 1, 2].map((v) => {
-      const m = new THREE.InstancedMesh(rockGeometry(v), kitMaterial('matte'), Math.max(1, rockSpots.length * 2));
-      m.castShadow = true;
-      m.receiveShadow = true;
-      m.count = 0;
-      this.scene.add(m);
-      return m;
-    });
-    const col = new THREE.Color();
+    const rockGeos = [0, 1, 2].map((v) => rockGeometry(v));
+    const rocks: Array<Placed & { v: number }> = [];
     for (const [x, y] of rockSpots) {
       for (let k = 0; k < 2; k++) {
         const r = hash2(x * 3 + k, y, seed + 21);
         if (k === 1 && r < 0.5) continue;
-        const m = variants[Math.floor(hash2(x, y * 3 + k, seed + 5) * 3)];
         const sc = k === 0 ? 1.15 + r * 0.45 : 0.55 + r * 0.3;
         this.p.set(x + 0.5 + (r - 0.5) * 0.3 * (k + 1), 0, y + 0.5 + (hash2(x, y, seed + 9) - 0.5) * 0.3 * (k + 1));
         this.q.setFromEuler(this.e.set(0, r * 6.28, 0));
         this.s.set(sc, sc * (0.85 + r * 0.6), sc);
-        m.setMatrixAt(m.count, this.m4.compose(this.p, this.q, this.s));
         const v = 0.9 + hash2(y, x, seed) * 0.2;
-        m.setColorAt(m.count, col.setRGB(v, v, v));
-        m.count++;
+        rocks.push({ x, y, v: Math.floor(hash2(x, y * 3 + k, seed + 5) * 3), m: this.m4.compose(this.p, this.q, this.s).clone(), c: new THREE.Color(v, v, v) });
       }
     }
+    for (let v = 0; v < 3; v++) this.addChunked(rockGeos[v], kitMaterial('matte'), rocks.filter((r) => r.v === v), true);
     this.scatterDetails();
+  }
+
+  /**
+   * Instanced meshes split into 16x16-tile chunks of the map, so only the
+   * chunks in view (or in the shadow camera) are drawn.
+   */
+  private addChunked(geo: THREE.BufferGeometry, mat: THREE.Material, items: Placed[], castShadow: boolean): void {
+    const chunks = new Map<string, Placed[]>();
+    for (const it of items) {
+      const k = `${Math.floor(it.x) >> 4}|${Math.floor(it.y) >> 4}`;
+      chunks.set(k, [...(chunks.get(k) ?? []), it]);
+    }
+    for (const list of chunks.values()) {
+      const m = new THREE.InstancedMesh(geo, mat, list.length);
+      m.castShadow = castShadow;
+      m.receiveShadow = true;
+      list.forEach((it, i) => {
+        m.setMatrixAt(i, it.m);
+        if (it.c) m.setColorAt(i, it.c);
+      });
+      m.computeBoundingSphere();
+      this.scene.add(m);
+    }
   }
 
   /** Ferns, mushrooms, reeds, flowers and pebbles, placed by what surrounds each tile. */
@@ -464,15 +490,13 @@ export class World3D {
     for (const kind of Object.keys(spots) as Array<keyof typeof spots>) {
       const list = spots[kind];
       if (!list.length) continue;
-      const m = new THREE.InstancedMesh(decorGeometry(kind), kitMaterial(kind === 'fern' ? 'cloth' : 'matte'), list.length);
-      m.receiveShadow = true;
-      list.forEach(([x, y, a], i) => {
+      const placed = list.map(([x, y, a]) => {
         this.p.set(x, 0, y);
         this.q.setFromEuler(this.e.set(0, a, 0));
         this.s.setScalar(0.8 + (a % 1) * 0.5);
-        m.setMatrixAt(i, this.m4.compose(this.p, this.q, this.s));
+        return { x, y, m: this.m4.compose(this.p, this.q, this.s).clone() };
       });
-      this.scene.add(m);
+      this.addChunked(decorGeometry(kind), kitMaterial('matte'), placed, false);
     }
   }
 
@@ -500,18 +524,28 @@ export class World3D {
       if (region < 0.65) return r < 0.5 ? 'oak' : r < 0.75 ? 'birch' : 'pine';
       return r < 0.7 ? 'oak' : 'pine';
     };
-    const byKind = new Map<TreeKind, ResourceNode[]>();
+    // One instanced mesh per species and 16x16-tile chunk of the map, so the
+    // forests off screen (and outside the shadow camera) are skipped.
+    const byKind = new Map<string, ResourceNode[]>();
     for (const t of trees) {
-      const k = kindOf(t);
+      const k = `${kindOf(t)}|${t.tx >> 4}|${t.ty >> 4}`;
       byKind.set(k, [...(byKind.get(k) ?? []), t]);
     }
     const shade = new THREE.Color();
-    for (const kind of TREE_KINDS) {
-      const list = byKind.get(kind) ?? [];
-      if (!list.length) continue;
-      const m = new THREE.InstancedMesh(treeGeometry(kind), kitMaterial('matte'), list.length);
-      m.castShadow = true;
+    const geos = new Map(TREE_KINDS.map((k) => [k, treeGeometry(k)]));
+    const shadowGeos = new Map(TREE_KINDS.map((k) => [k, treeShadowGeometry(k)]));
+    // The shadow stand-ins draw nothing on screen, only into the shadow map.
+    const shadowOnly = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+    for (const [key, list] of byKind) {
+      const kind = key.split('|')[0] as TreeKind;
+      const m = new THREE.InstancedMesh(geos.get(kind)!, kitMaterial('matte'), list.length);
+      m.castShadow = false;
       m.receiveShadow = true;
+      const caster = new THREE.InstancedMesh(shadowGeos.get(kind)!, shadowOnly, list.length);
+      caster.castShadow = true;
+      caster.receiveShadow = false;
+      this.treeShadows.set(m, caster);
+      this.scene.add(caster);
       const mi = this.treeMeshes.length;
       this.treeMeshes.push(m);
       this.treeMeshIds.push([]);
@@ -534,12 +568,12 @@ export class World3D {
     }
     this.stumps = new THREE.InstancedMesh(stumpGeometry(), kitMaterial('matte'), Math.max(1, trees.length));
     this.saplings = new THREE.InstancedMesh(saplingGeometry(), kitMaterial('matte'), Math.max(1, trees.length));
+    // Only felled trees take a slot: hidden instances would still be drawn.
     for (const m of [this.stumps, this.saplings]) {
-      m.count = trees.length;
+      m.count = 0;
       m.castShadow = true;
       m.receiveShadow = true;
       m.frustumCulled = false;
-      for (let i = 0; i < trees.length; i++) m.setMatrixAt(i, this.m4.makeScale(0, 0, 0));
       this.scene.add(m);
     }
     this.updateTrees(0);
@@ -562,7 +596,7 @@ export class World3D {
           this.q.setFromEuler(this.e.set(0, hash2(i, 3, 9) * 6.28, 0));
           this.p.set(x + 0.22, 0, y + 0.1);
           this.s.setScalar(0.3 + 0.7 * k);
-          this.saplings.setMatrixAt(i, this.m4.compose(this.p, this.q, this.s));
+          this.saplings.setMatrixAt(this.stumpSlot[i], this.m4.compose(this.p, this.q, this.s));
           dirty.add(this.saplings);
         }
       }
@@ -579,7 +613,12 @@ export class World3D {
           this.q.setFromEuler(this.e.set(0, v * 6.28, 0));
           this.p.set(x, 0, y);
           this.s.setScalar(0.9 + v * 0.3);
-          this.stumps.setMatrixAt(i, new THREE.Matrix4().compose(this.p, this.q, this.s));
+          const slot = this.stumps.count++;
+          this.stumpSlot[i] = slot;
+          this.stumps.setMatrixAt(slot, new THREE.Matrix4().compose(this.p, this.q, this.s));
+          // The sapling's slot waits, invisible, until it comes up.
+          this.saplings.setMatrixAt(slot, new THREE.Matrix4().makeScale(0, 0, 0));
+          this.saplings.count = this.stumps.count;
           dirty.add(this.stumps);
         }
       } else {
@@ -592,10 +631,16 @@ export class World3D {
         this.m4.compose(this.p, this.q, this.s);
       }
       mesh.setMatrixAt(this.treeSlot[i], this.m4);
+      this.treeShadows.get(mesh)?.setMatrixAt(this.treeSlot[i], this.m4);
     }
     for (const m of dirty) {
       m.instanceMatrix.needsUpdate = true;
       if (m !== this.stumps && m !== this.saplings) m.computeBoundingSphere();
+      const caster = this.treeShadows.get(m);
+      if (caster) {
+        caster.instanceMatrix.needsUpdate = true;
+        caster.computeBoundingSphere();
+      }
     }
   }
 

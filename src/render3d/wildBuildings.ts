@@ -19,16 +19,16 @@ const done = (s: Sculpt) => {
 /** A leafy canopy of clumps around a centre. */
 function canopy(s: Sculpt, at: V3, r: number, seed: number, n = 7): void {
   const rnd = rand(seed);
-  s.add(blob(r * 0.75, seed, 0.22, 2), LEAVES[1], 'matte', { at, scale: [1.2, 0.8, 1.2] });
+  s.add(blob(r * 0.75, seed, 0.22, 1), LEAVES[1], 'matte', { at, scale: [1.2, 0.8, 1.2] });
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2 + rnd() * 0.4;
     const rr = r * (0.55 + rnd() * 0.3);
-    s.add(blob(r * (0.4 + rnd() * 0.18), seed * 13 + i, 0.25, 2), LEAVES[i % LEAVES.length], 'matte', {
+    s.add(blob(r * (0.4 + rnd() * 0.18), seed * 13 + i, 0.25, 1), LEAVES[i % LEAVES.length], 'matte', {
       at: [at[0] + Math.cos(a) * rr, at[1] + (rnd() - 0.3) * r * 0.45, at[2] + Math.sin(a) * rr],
       scale: [1, 0.8, 1],
     });
   }
-  s.add(blob(r * 0.5, seed * 7, 0.25, 2), LEAVES[2], 'matte', { at: [at[0], at[1] + r * 0.45, at[2]] });
+  s.add(blob(r * 0.5, seed * 7, 0.25, 1), LEAVES[2], 'matte', { at: [at[0], at[1] + r * 0.45, at[2]] });
 }
 
 /** A gnarled trunk with flaring roots. */
