@@ -654,6 +654,14 @@ export class Hud {
       panel.appendChild(el('div', 'hint', `Left-click or drag to select workers. Right-click a gold mine or tree to gather. Select a ${this.workerName()} to build.`));
       return;
     }
+    // A clear way out of any selection (same as Esc or clicking open ground).
+    const close = el('button', 'sel-close', '✕');
+    setTip(close, 'Deselect. Also: Esc, or left-click open ground.', null, 'Deselect');
+    close.addEventListener('mousedown', (ev) => {
+      ev.stopPropagation();
+      this.input.setSelection([]);
+    });
+    panel.appendChild(close);
     if (sel.length === 1) {
       panel.appendChild(this.detail(sel[0]));
       return;

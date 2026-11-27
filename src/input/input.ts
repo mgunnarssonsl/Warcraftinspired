@@ -248,7 +248,9 @@ export class InputController {
   private clickSelect(sx: number, sy: number, shift: boolean): void {
     const e = this.world.pick(sx, sy);
     const now = this.now();
-    if (!e) {
+    // Open ground, or a tree while troops are selected, clears the selection:
+    // forest covers much of the map, so a stray click there should not pick a tree.
+    if (!e || (e.kind === 'resource' && e.type === 'tree' && this.ownSelectedUnits().length > 0)) {
       if (!shift) this.setSelection([]);
       return;
     }
