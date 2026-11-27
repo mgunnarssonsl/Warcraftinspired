@@ -70,7 +70,9 @@ def armoured_arm(F, s, plate=STEEL, under=MAIL, glove=STEEL_D):
 
 def guard(kind='guard', F=None, animate=True):
     """The Guard, or a specialist built on it: 'sentinel' (tower shield, crested helm) or
-    'bearwarden' (open helm, beard, long cape, war hammer)."""
+    'bearwarden' (bare head, beard, long cape, war hammer). Built in knight.py."""
+    import knight
+    return knight.build(kind, F, animate)
     F = F or Figure(bulk=1.18)
     team, team_d = mat('team'), mat('team_dark')
     steel, gold = mat('metal', STEEL), mat('gold', GOLD)
@@ -178,6 +180,8 @@ def _guard_gear(F, shield_style, weapon, steel, gold, team):
         extrude('shieldCrown', crown_outline(0.11, 0.08), 0.02, gold, fa, at=on(0, -0.03, 0.03), rot=(0, 0, yaw), bevel=0.004)
         sphere('shieldGem', 0.012, mat('glow', '#6aa8ff'), fa, at=on(0, -0.04, 0.05))
         extrude('shieldChevron', [(-0.1, 0.0), (0.0, -0.09), (0.1, 0.0), (0.1, 0.025), (0.0, -0.065), (-0.1, 0.025)], 0.02, gold, fa, at=on(0, -0.03, -0.04), rot=(0, 0, yaw), bevel=0.003)
+    if weapon == 'none':
+        return
     # Arming sword (or a war hammer) in the right fist, pointing forward and up.
     hd = F['hand.R']
     hx = -SH_X * F.bulk * 1.06

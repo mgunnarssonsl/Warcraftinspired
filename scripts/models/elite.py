@@ -116,10 +116,9 @@ def war_bear(armoured=True):
 
 
 def warbear():
-    B = war_bear()
-    # A saddle (empty), so a rider has somewhere to sit.
-    box('saddle', (B.g * 0.9, B.g * 1.0, 0.06), mat('matte', LEATHER_D), B['saddle'], at=(0, 0.02, B.cz + B.g * 0.98), bevel=0.02, sub=1)
-    B.animate(gait='trot', attack='rear')
+    import bear
+    B = bear.war_bear()
+    bear.animate_bear(B)
     return B
 
 
@@ -132,14 +131,15 @@ def bearwarden():
 
 
 def bearrider():
-    B = war_bear()
-    box('saddle', (B.g * 0.9, B.g * 1.0, 0.06), mat('matte', LEATHER_D), B['saddle'], at=(0, 0.02, B.cz + B.g * 0.98), bevel=0.02, sub=1)
+    import bear
+    B = bear.war_bear()
     F = CR.guard('bearwarden', F=Figure(bulk=1.12), animate=False)
     BS.seat_rider(B, F)
-    for s, sx in (('R', -1), ('L', 1)):
-        # A broader beast: legs further apart.
-        F[f'thigh.{s}'].rotation_euler = (-1.3, sx * 0.55, 0)
-    B.animate(gait='trot', attack='rear')
+    for s_, sx in (('R', -1), ('L', 1)):
+        # A broad back: legs well apart, knees bent around the saddle.
+        F[f'thigh.{s_}'].rotation_euler = (-1.25, sx * 0.62, 0)
+        F[f'shin.{s_}'].rotation_euler = (1.35, 0, 0)
+    bear.animate_bear(B)
     F.animate(attack='slash', mounted=True)
     return F
 

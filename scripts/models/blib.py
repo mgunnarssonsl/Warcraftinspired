@@ -363,14 +363,14 @@ def curve_tube(name, points, radius, material, parent, taper=None, segs=8):
     return o
 
 
-def lump(name, r, material, parent, at=(0, 0, 0), rot=(0, 0, 0), scale=(1, 1, 1), seed=1, rough=0.2, segs=14, rings=10, sub=1):
+def lump(name, r, material, parent, at=(0, 0, 0), rot=(0, 0, 0), scale=(1, 1, 1), seed=1, rough=0.2, segs=14, rings=10, sub=1, freq=(2, 5), waves_n=5):
     """An organic lump (bark plates, moss, foliage, boulders): a sphere pushed about by smooth noise."""
     import random
     rnd = random.Random(seed)
     bm = bmesh.new()
     bmesh.ops.create_uvsphere(bm, u_segments=segs, v_segments=rings, radius=r)
     # A few random waves make smooth bumps.
-    waves = [(Vector((rnd.uniform(-1, 1), rnd.uniform(-1, 1), rnd.uniform(-1, 1))).normalized(), rnd.uniform(2, 5), rnd.uniform(0, 6.28)) for _ in range(5)]
+    waves = [(Vector((rnd.uniform(-1, 1), rnd.uniform(-1, 1), rnd.uniform(-1, 1))).normalized(), rnd.uniform(*freq), rnd.uniform(0, 6.28)) for _ in range(waves_n)]
     for v in bm.verts:
         n = v.co.normalized()
         k = 1 + rough * sum(math.sin(n.dot(d) * f + ph) for d, f, ph in waves) / len(waves)
