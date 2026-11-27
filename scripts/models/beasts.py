@@ -1,6 +1,6 @@
 """Four-legged figures (horse, stag, wolf, fox) with optional riders. Faces -Y."""
 import math
-from blib import mat, sphere, box, lathe, tube, torus, sheet, pivot, key, clip, extrude
+from blib import mat, sphere, box, lathe, tube, torus, sheet, pivot, key, clip, extrude, curve_tube
 
 
 class Beast:
@@ -208,3 +208,60 @@ def seat_rider(B, F):
     for s, sx in (('R', -1), ('L', 1)):
         F[f'thigh.{s}'].rotation_euler = (-1.35, sx * 0.35, 0)
         F[f'shin.{s}'].rotation_euler = (1.5, 0, 0)
+
+
+def bear(B, coat, muzzle, claw='#3a2e24', eye='#1a120c'):
+    """A heavy brown bear: a shoulder hump, a big round head, short legs and paws."""
+    g, L, cz = B.g, B.L, B.cz
+    bm = B['barrel']
+    sphere('barrelBody', g, mat('matte', coat), bm, at=(0, 0.02, cz), scale=(1.0, L / (2 * g) * 1.02, 0.95), segs=20, rings=14, sub=1)
+    sphere('hump', g * 0.95, mat('matte', coat), bm, at=(0, -L * 0.22, cz + g * 0.3), scale=(1.05, 1.1, 0.95), sub=1)
+    sphere('rump', g * 0.95, mat('matte', coat), bm, at=(0, L * 0.3, cz + 0.0), scale=(1.0, 1.0, 0.95), sub=1)
+    sphere('belly', g * 0.8, mat('matte', muzzle), bm, at=(0, -L * 0.05, cz - g * 0.45), scale=(0.9, 1.6, 0.55), sub=1)
+    nk, hd = B['neck'], B['head']
+    tube('neckBody', g * 0.62, g * 0.55, g * 0.9, mat('matte', coat), nk, at=(0, -L * 0.42, cz + g * 0.05), rot=(1.2, 0, 0), segs=12, sub=1)
+    hz = cz + g * 0.75
+    hy = -L * 0.62
+    sphere('skull', g * 0.6, mat('matte', coat), hd, at=(0, hy, hz), scale=(1.05, 1.0, 0.92), sub=1)
+    lathe('snout', [(g * 0.32, 0.0), (g * 0.26, g * 0.3), (g * 0.12, g * 0.45)], mat('matte', muzzle), hd, at=(0, hy - g * 0.35, hz - g * 0.16), rot=(math.pi / 2, 0, 0), segs=12, sub=1)
+    sphere('nose', g * 0.1, mat('matte', '#1a1412'), hd, at=(0, hy - g * 0.82, hz - g * 0.12), scale=(1.2, 0.8, 0.8))
+    box('jaw', (g * 0.36, g * 0.4, g * 0.1), mat('matte', '#5a2a22'), hd, at=(0, hy - g * 0.5, hz - g * 0.33), bevel=0.02, sub=1)
+    for sx in (-1, 1):
+        sphere(f'ear{sx}', g * 0.16, mat('matte', coat), hd, at=(sx * g * 0.38, hy + g * 0.15, hz + g * 0.42), scale=(1, 0.6, 1), sub=1)
+        sphere(f'earIn{sx}', g * 0.09, mat('matte', muzzle), hd, at=(sx * g * 0.38, hy + g * 0.08, hz + g * 0.42), scale=(1, 0.5, 1))
+        sphere(f'eye{sx}', g * 0.06, mat('matte', eye), hd, at=(sx * g * 0.26, hy - g * 0.42, hz + g * 0.15))
+        for i in range(2):
+            lathe(f'fang{sx}{i}', [(g * 0.035, 0.0), (0.0, g * 0.12)], mat('matte', '#f2ead8'), hd, at=(sx * g * (0.08 + i * 0.06), hy - g * 0.62, hz - g * 0.24), rot=(math.pi, 0, 0), segs=5)
+    sphere('tail', g * 0.18, mat('matte', coat), B['tail'], at=(0, L * 0.52, cz + g * 0.15), sub=1)
+    B.legs(coat, coat, claw, paws=True)
+    for k in ('FL', 'FR', 'HL', 'HR'):
+        x = (1 if k in ('FL', 'HL') else -1) * g * 0.55
+        y = (-1 if k[0] == 'F' else 1) * L * 0.36
+        for i in range(3):
+            lathe(f'claw.{k}{i}', [(g * 0.025, 0.0), (0.0, g * 0.1)], mat('matte', '#efe6d0'), B[f'lower.{k}'], at=(x + (i - 1) * g * 0.08, y - g * 0.22, 0.02), rot=(math.pi / 2 + 0.3, 0, 0), segs=4)
+
+
+def feline(B, coat, belly, eye='#ffb02a', ear_in='#3a2a2a'):
+    """A big cat: long low body, small round head, round ears and a long curling tail."""
+    g, L, cz = B.g, B.L, B.cz
+    bm = B['barrel']
+    sphere('barrelBody', g, mat('matte', coat), bm, at=(0, 0, cz), scale=(0.85, L / (2 * g) * 1.05, 0.9), segs=20, rings=14, sub=1)
+    sphere('chest', g * 0.98, mat('matte', coat), bm, at=(0, -L * 0.3, cz + 0.02), scale=(0.95, 0.9, 1.05), sub=1)
+    sphere('haunch', g * 0.95, mat('matte', coat), bm, at=(0, L * 0.3, cz + 0.02), scale=(0.95, 0.95, 1.0), sub=1)
+    sphere('belly', g * 0.6, mat('matte', belly), bm, at=(0, 0.0, cz - g * 0.45), scale=(0.9, 1.9, 0.5), sub=1)
+    nk, hd = B['neck'], B['head']
+    tube('neckBody', g * 0.5, g * 0.42, g * 1.0, mat('matte', coat), nk, at=(0, -L * 0.42, cz + g * 0.1), rot=(1.1, 0, 0), segs=12, sub=1)
+    hz = cz + g * 0.7
+    hy = -L * 0.6
+    sphere('skull', g * 0.55, mat('matte', coat), hd, at=(0, hy, hz), scale=(1.05, 1.0, 0.9), sub=1)
+    sphere('muzzle', g * 0.3, mat('matte', coat), hd, at=(0, hy - g * 0.42, hz - g * 0.15), scale=(1.1, 0.9, 0.75), sub=1)
+    sphere('nose', g * 0.07, mat('matte', '#1a1214'), hd, at=(0, hy - g * 0.66, hz - g * 0.08), scale=(1.2, 0.7, 0.7))
+    for sx in (-1, 1):
+        lathe(f'ear{sx}', [(g * 0.16, 0.0), (g * 0.1, g * 0.15), (0.0, g * 0.24)], mat('matte', coat), hd, at=(sx * g * 0.3, hy + g * 0.08, hz + g * 0.38), rot=(-0.2, sx * 0.35, 0), segs=8)
+        sphere(f'earIn{sx}', g * 0.07, mat('matte', ear_in), hd, at=(sx * g * 0.3, hy + 0.0, hz + g * 0.44), scale=(1, 0.4, 1))
+        sphere(f'eye{sx}', g * 0.075, mat('glow', eye), hd, at=(sx * g * 0.22, hy - g * 0.43, hz + g * 0.1), scale=(1.2, 0.6, 0.8))
+        box(f'whisker{sx}', (g * 0.5, 0.004, 0.004), mat('matte', '#d8d0c0'), hd, at=(sx * g * 0.3, hy - g * 0.6, hz - g * 0.15), rot=(0, sx * 0.15, sx * 0.2))
+    # The long tail curls up at the tip.
+    t0 = (0, L * 0.5, cz + g * 0.2)
+    curve_tube('tail', [t0, (0, L * 0.75, cz - g * 0.2), (0, L * 1.0, cz - g * 0.1), (0, L * 1.12, cz + g * 0.35)], g * 0.16, mat('matte', coat), B['tail'], taper=[1.0, 0.85, 0.7, 0.5])
+    B.legs(coat, coat, '#1a1214', paws=True)

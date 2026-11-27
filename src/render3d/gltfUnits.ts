@@ -42,6 +42,17 @@ export const GLTF_UNITS: Partial<Record<UnitType, number>> = {
   chief: 2.0,
   brute: 2.1,
   wolf: 1.5,
+  musketeer: 1.72,
+  warbear: 2.05,
+  sentinel: 1.8,
+  bearwarden: 1.78,
+  bearrider: 1.95,
+  naturewolf: 1.75,
+  barksentinel: 1.75,
+  wolfkeeper: 1.72,
+  wolfrider: 1.62,
+  shifter: 1.78,
+  panther: 1.85,
 };
 
 interface Loaded {
@@ -187,7 +198,7 @@ function isPartGroup(o: THREE.Object3D): boolean {
 
 export interface GltfUnitParts extends UnitParts {
   mixer: THREE.AnimationMixer;
-  actions: Partial<Record<'idle' | 'walk' | 'attack' | 'work' | 'cast', THREE.AnimationAction>>;
+  actions: Partial<Record<'idle' | 'walk' | 'attack' | 'work' | 'cast' | 'reload', THREE.AnimationAction>>;
   current?: THREE.AnimationAction;
   /** When the last blow landed (seconds), to play the follow-through. */
   struckAt: number;
@@ -240,7 +251,7 @@ export function makeGltfUnit(type: UnitType, team: string): GltfUnitParts {
  * `swing` is the wind-up progress (0-1) while a blow is coming; the blow lands
  * at 70% of the attack clip.
  */
-export function poseGltfUnit(v: GltfUnitParts, state: 'idle' | 'walk' | 'attack' | 'work' | 'cast', now: number, swing: number | null, walkRate: number): void {
+export function poseGltfUnit(v: GltfUnitParts, state: 'idle' | 'walk' | 'attack' | 'work' | 'cast' | 'reload', now: number, swing: number | null, walkRate: number): void {
   const a = v.actions[state] ?? v.actions.idle;
   if (!a) return;
   if (v.current !== a) {

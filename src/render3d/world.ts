@@ -1145,10 +1145,18 @@ export class World3D {
   private syncUnit(u: Unit, alpha: number, now: number): void {
     if (!this.unitModelsReady) return;
     let v = this.units.get(u.id);
+    // A unit that changed type (specialized, mounted, dismounted, shifted form) gets its new model.
+    if (v && v.root.userData.unitType !== u.type) {
+      if (v.root.userData.unitType !== undefined) this.burst(u.x, 0.6, u.y, 16, u.type === 'panther' || u.type === 'shifter' ? '#7dff5a' : '#f0d27a', 1.2, now);
+      this.drop(v.root);
+      this.units.delete(u.id);
+      v = undefined;
+    }
     if (!v) {
       const team = teamColor(this.game, u.owner);
       v = makeUnit(u.type, team);
       v.root.userData.entityId = u.id;
+      v.root.userData.unitType = u.type;
       if (!this.game.state.players[u.owner]?.neutral) {
         let m = this.discMats.get(team);
         if (!m) {
@@ -1184,8 +1192,13 @@ export class World3D {
       const g = v as GltfUnitParts;
       const swing = u.swing > 0 ? Math.max(0, Math.min(1, 1 - (u.swing - alpha) / windup)) : null;
       const fighting = swing !== null || (u.cooldown > 0 && attacking(u));
-      const state = o?.type === 'cast' && g.actions.cast ? 'cast' : fighting ? 'attack' : moving ? 'walk' : working ? (g.actions.work ? 'work' : 'attack') : 'idle';
-      poseGltfUnit(g, state, now, swing, CONFIG.units[u.type].speed / 3);
+      // Holding still to do something: casting, Take Aim, mounting, changing form.
+      const preparing = o?.type === 'cast' || (o?.type === 'skill' && o.phase === 'prepare') || (o?.type === 'mount' && o.phase === 'mounting');
+      // Musketeers reload after the shot's recoil has played.
+      const reloadTicks = secondsToTicks(CONFIG.units[u.type].attack.cooldown) - windup;
+      const reloading = !!g.actions.reload && swing === null && u.cooldown > 0 && u.cooldown < reloadTicks - 10 && !moving;
+      const state = preparing && g.actions.cast ? 'cast' : reloading ? 'reload' : fighting ? 'attack' : moving || u.dash ? 'walk' : working ? (g.actions.work ? 'work' : 'attack') : 'idle';
+      poseGltfUnit(g, state, now, swing, (u.dash ? u.dash.speed : CONFIG.units[u.type].speed) / 3);
       const hitAt = this.flinches.get(u.id);
       if (hitAt !== undefined && now - hitAt < 0.18) g.body.rotation.x = -0.18 * (1 - (now - hitAt) / 0.18);
       else {

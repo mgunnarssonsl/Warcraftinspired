@@ -68,8 +68,10 @@ def armoured_arm(F, s, plate=STEEL, under=MAIL, glove=STEEL_D):
     sphere(f'fist.{s}', 0.045, mat('metal', glove), hd, at=(x * 1.06, -0.015, SHOULDER - WRIST_DROP - 0.035), scale=(0.9, 1.05, 1.1), sub=1)
 
 
-def guard():
-    F = Figure(bulk=1.18)
+def guard(kind='guard', F=None, animate=True):
+    """The Guard, or a specialist built on it: 'sentinel' (tower shield, crested helm) or
+    'bearwarden' (open helm, beard, long cape, war hammer)."""
+    F = F or Figure(bulk=1.18)
     team, team_d = mat('team'), mat('team_dark')
     steel, gold = mat('metal', STEEL), mat('gold', GOLD)
     armoured_legs(F)
@@ -94,6 +96,30 @@ def guard():
     # Arms.
     armoured_arm(F, 'R')
     armoured_arm(F, 'L')
+    if kind == 'bearwarden':
+        # An open bascinet over a bearded face, and a long team cape.
+        from common import face, cape
+        face(F, hair='#4a2c18', beard='#4a2c18', brows='#3a2010')
+        lathe('helm', [(0.0, 0.02), (0.095, 0.02), (0.1, 0.05), (0.09, 0.09), (0.05, 0.115), (0.0, 0.12)], steel, head, at=(0, 0.005, HEAD), segs=20, sub=1)
+        torus('helmBand', 0.098, 0.008, gold, head, at=(0, 0.005, HEAD + 0.035), segs=20, rsegs=4)
+        box('nasal', (0.018, 0.012, 0.07), steel, head, at=(0, -0.093, HEAD + 0.01), bevel=0.004)
+        sphere('helmSpike', 0.018, gold, head, at=(0, 0.005, HEAD + 0.135), scale=(1, 1, 1.6))
+        cape(F, 'team', w=0.32, h=0.5, trim=GOLD)
+        for sx in (-1, 1):
+            lathe(f'pauldron{sx}', [(0.0, 0.0), (0.07, 0.0), (0.075, 0.03), (0.0, 0.06)], steel, F['upperarm.R' if sx < 0 else 'upperarm.L'], at=(sx * SH_X * F.bulk * 1.05, 0, SHOULDER - 0.02), scale=(1, 1, 0.8), segs=14, sub=1)
+            torus(f'pauldronTrim{sx}', 0.072, 0.007, gold, F['upperarm.R' if sx < 0 else 'upperarm.L'], at=(sx * SH_X * F.bulk * 1.05, 0, SHOULDER - 0.02), segs=14, rsegs=4)
+    if kind != 'bearwarden':
+        great_helm(F, steel, gold, team, team_d, crest=(kind == 'sentinel'))
+    shield_style = 'tower' if kind == 'sentinel' else 'kite'
+    weapon = 'hammer' if kind == 'bearwarden' else 'sword'
+    _guard_gear(F, shield_style, weapon, steel, gold, team)
+    if animate:
+        F.animate(attack='slash')
+    return F
+
+
+def great_helm(F, steel, gold, team, team_d, crest=False):
+    head = F['head']
     # Great helm: rounded top, flat face, visor slit, gold cross, team plume.
     helm = lathe('helm', [(0.0, -0.105), (0.09, -0.105), (0.098, -0.06), (0.1, 0.0), (0.098, 0.05), (0.085, 0.085), (0.05, 0.108), (0.0, 0.115)], steel, head,
                  at=(0, 0, HEAD), scale=(1, 1.02, 1), segs=20, sub=1)
@@ -106,12 +132,29 @@ def guard():
     for i in range(3):
         sphere(f'breath{i}', 0.006, mat('matte', '#16120e'), head, at=(0.035 + i * 0.016, -0.1, HEAD - 0.045))
         sphere(f'breathL{i}', 0.006, mat('matte', '#16120e'), head, at=(-0.035 - i * 0.016, -0.1, HEAD - 0.045))
-    # Plume: a sweep of team feathers from the crown of the helm.
-    for i in range(6):
-        t = i / 5
-        sphere(f'plume{i}', 0.04 - t * 0.012, team if i % 2 == 0 else team_d, head,
-               at=(0, 0.015 + t * 0.13, HEAD + 0.14 - t * t * 0.13), scale=(0.65, 1.7, 1), rot=(0.4 + t * 0.6, 0, 0), sub=1)
-    # Kite shield on the left forearm: gold rim, team face, crown, boss.
+    # Plume: a sweep of team feathers from the crown of the helm (a tall gold-rooted crest for a Sentinel).
+    n = 8 if crest else 6
+    for i in range(n):
+        t = i / (n - 1)
+        sz = 1.3 if crest else 1.0
+        sphere(f'plume{i}', (0.04 - t * 0.012) * sz, team if i % 2 == 0 else team_d, head,
+               at=(0, 0.015 + t * 0.13 * sz, HEAD + 0.14 * sz - t * t * 0.13), scale=(0.65, 1.7, 1), rot=(0.4 + t * 0.6, 0, 0), sub=1)
+    if crest:
+        extrude('helmCrown', crown_outline(0.09, 0.07), 0.016, gold, head, at=(0, -0.09, HEAD + 0.09), bevel=0.003)
+
+
+def tower_outline(w, h):
+    """A tall shield, straight sides and a round top, flat bottom with cut corners."""
+    pts = [(-w / 2 + 0.03, 0.0), (w / 2 - 0.03, 0.0), (w / 2, 0.04)]
+    for i in range(9):
+        a = math.pi * i / 8
+        pts.append((math.cos(a) * w / 2, h - w / 2 + math.sin(a) * w / 2))
+    pts.append((-w / 2, 0.04))
+    return pts
+
+
+def _guard_gear(F, shield_style, weapon, steel, gold, team):
+    # Shield on the left forearm: gold rim, team face, crown, boss.
     fa = F['forearm.L']
     sx = SH_X * F.bulk * 1.05 + 0.03
     sz = SHOULDER - WRIST_DROP + 0.07
@@ -120,12 +163,22 @@ def guard():
         # A point on the shield (dx across, dy out from its face, dz up) in world space.
         c, sn = math.cos(yaw), math.sin(yaw)
         return (sx + dx * c - dy * sn, -0.075 + dx * sn + dy * c, sz + dz)
-    extrude('shieldRim', kite_outline(0.34, 0.48), 0.035, gold, fa, at=on(0, 0, 0), rot=(0, 0, yaw), bevel=0.01)
-    extrude('shieldFace', kite_outline(0.3, 0.43), 0.04, team, fa, at=on(0, -0.006, 0.004), rot=(0, 0, yaw), bevel=0.006)
-    extrude('shieldCrown', crown_outline(0.11, 0.08), 0.02, gold, fa, at=on(0, -0.03, 0.03), rot=(0, 0, yaw), bevel=0.004)
-    sphere('shieldGem', 0.012, mat('glow', '#6aa8ff'), fa, at=on(0, -0.04, 0.05))
-    extrude('shieldChevron', [(-0.1, 0.0), (0.0, -0.09), (0.1, 0.0), (0.1, 0.025), (0.0, -0.065), (-0.1, 0.025)], 0.02, gold, fa, at=on(0, -0.03, -0.04), rot=(0, 0, yaw), bevel=0.003)
-    # Arming sword in the right fist, pointing forward and up.
+    if shield_style == 'tower':
+        # A tall tower shield, banded in steel, that covers the Sentinel from shin to chin.
+        base = on(0, 0, -0.2)
+        extrude('shieldRim', tower_outline(0.34, 0.66), 0.035, gold, fa, at=base, rot=(0, 0, yaw), bevel=0.01)
+        extrude('shieldFace', tower_outline(0.3, 0.61), 0.04, team, fa, at=on(0, -0.006, -0.18), rot=(0, 0, yaw), bevel=0.006)
+        for i, dz in enumerate((-0.08, 0.18)):
+            extrude(f'shieldBand{i}', [(-0.15, 0.0), (0.15, 0.0), (0.15, 0.025), (-0.15, 0.025)], 0.02, steel, fa, at=on(0, -0.03, dz), rot=(0, 0, yaw), bevel=0.003)
+        extrude('shieldCrown', crown_outline(0.14, 0.1), 0.02, gold, fa, at=on(0, -0.035, 0.03), rot=(0, 0, yaw), bevel=0.004)
+        sphere('shieldGem', 0.015, mat('glow', '#6aa8ff'), fa, at=on(0, -0.045, 0.06))
+    else:
+        extrude('shieldRim', kite_outline(0.34, 0.48), 0.035, gold, fa, at=on(0, 0, 0), rot=(0, 0, yaw), bevel=0.01)
+        extrude('shieldFace', kite_outline(0.3, 0.43), 0.04, team, fa, at=on(0, -0.006, 0.004), rot=(0, 0, yaw), bevel=0.006)
+        extrude('shieldCrown', crown_outline(0.11, 0.08), 0.02, gold, fa, at=on(0, -0.03, 0.03), rot=(0, 0, yaw), bevel=0.004)
+        sphere('shieldGem', 0.012, mat('glow', '#6aa8ff'), fa, at=on(0, -0.04, 0.05))
+        extrude('shieldChevron', [(-0.1, 0.0), (0.0, -0.09), (0.1, 0.0), (0.1, 0.025), (0.0, -0.065), (-0.1, 0.025)], 0.02, gold, fa, at=on(0, -0.03, -0.04), rot=(0, 0, yaw), bevel=0.003)
+    # Arming sword (or a war hammer) in the right fist, pointing forward and up.
     hd = F['hand.R']
     hx = -SH_X * F.bulk * 1.06
     hz = SHOULDER - WRIST_DROP - 0.035
@@ -136,10 +189,18 @@ def guard():
     tube('grip', 0.014, 0.014, 0.09, mat('matte', LEATHER_D), hd, at=along(-0.045), rot=(-(math.pi / 2 - tilt), 0, 0), segs=6)
     sphere('pommel', 0.022, gold, hd, at=along(-0.06), sub=0)
     box('crossguard', (0.15, 0.022, 0.022), gold, hd, at=along(0.045), rot=(tilt, 0, 0), bevel=0.006)
+    if weapon == 'hammer':
+        tube('haft', 0.016, 0.016, 0.5, mat('matte', LEATHER_D), hd, at=along(-0.08), rot=(-(math.pi / 2 - tilt), 0, 0), segs=8)
+        for i in range(3):
+            tube(f'haftBand{i}', 0.018, 0.018, 0.025, gold, hd, at=along(0.08 + i * 0.12), rot=(-(math.pi / 2 - tilt), 0, 0), segs=8, caps=False)
+        top = along(0.42)
+        box('hammerHead', (0.075, 0.075, 0.2), steel, hd, at=top, rot=(tilt + math.pi / 2, 0, math.pi / 2), bevel=0.012, sub=1)
+        for sx in (-1, 1):
+            box(f'hammerFace{sx}', (0.09, 0.09, 0.02), mat('gold', '#c99a3a'), hd, at=(top[0] + sx * 0.1, top[1], top[2]), rot=(0, math.pi / 2, 0), bevel=0.006)
+        lathe('hammerSpike', [(0.025, 0.0), (0.0, 0.09)], steel, hd, at=along(0.47), rot=(math.pi / 2 + tilt, 0, 0) if False else (-(math.pi / 2 - tilt), 0, 0), segs=6)
+        return
     blade = [(0.0, 0.0), (0.028, 0.0), (0.024, 0.32), (0.0, 0.38), (-0.024, 0.32), (-0.028, 0.0)]
     b = extrude('blade', [(x, z) for x, z in blade], 0.012, mat('metal', '#e4e9f0'), hd, at=along(0.055), rot=(-(math.pi / 2 - tilt) - math.pi / 2 + math.pi, 0, 0), bevel=0.004)
-    F.animate(attack='slash')
-    return F
 
 
 # ---- the rest of the Crown --------------------------------------------------------------

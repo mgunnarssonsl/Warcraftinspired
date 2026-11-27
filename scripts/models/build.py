@@ -12,6 +12,7 @@ import blib  # noqa: E402
 import crown  # noqa: E402
 import wild  # noqa: E402
 import neutral  # noqa: E402
+import elite  # noqa: E402
 import crown_buildings as CBL  # noqa: E402
 import wild_buildings as WBL  # noqa: E402
 
@@ -43,6 +44,18 @@ MODELS = {
     'chief': neutral.chief,
     'brute': neutral.brute,
     'wolf': neutral.wolf,
+    # Elite units (sheet 16).
+    'musketeer': elite.musketeer,
+    'warbear': elite.warbear,
+    'sentinel': elite.sentinel,
+    'bearwarden': elite.bearwarden,
+    'bearrider': elite.bearrider,
+    'naturewolf': elite.naturewolf,
+    'barksentinel': elite.barksentinel,
+    'wolfkeeper': elite.wolfkeeper,
+    'wolfrider': elite.wolfrider,
+    'shifter': elite.shifter,
+    'panther': elite.panther,
     # Buildings: b_<type>, with tiers as b_<type>_<tier>.
     'b_hq': CBL.keep,
     'b_hq_2': lambda: CBL.keep(2),

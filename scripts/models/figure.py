@@ -47,7 +47,7 @@ class Figure:
 
     # ---- animations ----------------------------------------------------------------
 
-    def animate(self, attack='slash', work=False, cast=False, mounted=False):
+    def animate(self, attack='slash', work=False, cast=False, mounted=False, reload=False, kneel=False):
         P = self.p
         moving = list(P.values())
         rest = {n: tuple(o.rotation_euler) for n, o in P.items()}
@@ -147,7 +147,43 @@ class Figure:
                 r('upperarm.R', f, dx=-2.6 * up - 1.2 * down, dy=-0.6 * up)
                 r('forearm.R', f, dx=-0.6 * up)
                 r('chest', f, dz=0.3 * up - 0.3 * down)
-        clip('attack', moving, 30, {'slash': strike, 'bow': bowshot, 'staff': staff, 'throw': throw}[attack])
+        def aim_pose(f, k, kick=0.0):
+            # Musket to the shoulder: right arm raised forward, left hand under the barrel.
+            r('upperarm.R', f, dx=-1.45 * k + 0.25 * kick, dz=0.25 * k)
+            r('forearm.R', f, dx=-0.35 * k)
+            r('upperarm.L', f, dx=-1.35 * k + 0.2 * kick, dz=-0.55 * k)
+            r('forearm.L', f, dx=-0.25 * k)
+            r('chest', f, dz=-0.25 * k, dx=0.12 * kick)
+            r('head', f, dz=0.18 * k, dx=0.08 * k)
+        def musket():
+            # Shoulder (to frame 14), steady aim, fire at frame 21 (70%): the recoil kicks, settle.
+            for f, k, kick in ((1, 0.0, 0.0), (10, 1.0, 0.0), (20, 1.0, 0.0), (22, 1.0, 1.0), (25, 1.0, 0.4), (30, 0.6, 0.0)):
+                aim_pose(f, k, kick)
+        clip('attack', moving, 30, {'slash': strike, 'bow': bowshot, 'staff': staff, 'throw': throw, 'musket': musket}[attack])
+        if reload:
+            def reloading():
+                # Butt down, ramrod: the right arm pumps up and down twice.
+                for f, k in ((1, 0.0), (8, 1.0), (14, 0.2), (20, 1.0), (26, 0.2), (34, 0.0), (40, 0.0)):
+                    r('upperarm.L', f, dx=-0.7, dz=-0.35)
+                    r('forearm.L', f, dx=-0.9)
+                    r('upperarm.R', f, dx=-1.9 * k - 0.4, dz=0.2)
+                    r('forearm.R', f, dx=-0.6 * k - 0.4)
+                    r('head', f, dx=0.25)
+                    r('chest', f, dx=0.08)
+            clip('reload', moving, 40, reloading)
+        if kneel:
+            def kneeling():
+                # Down on one knee, musket aimed: the Take Aim pose (held while aiming).
+                for f, k in ((1, 0.0), (10, 1.0), (40, 1.0)):
+                    bob(f, -0.17 * k)
+                    r('thigh.R', f, dx=-1.45 * k)
+                    r('shin.R', f, dx=1.45 * k)
+                    r('foot.R', f, dx=0.05 * k)
+                    r('thigh.L', f, dx=0.35 * k)
+                    r('shin.L', f, dx=1.75 * k)
+                    r('foot.L', f, dx=-0.5 * k)
+                    aim_pose(f, k)
+            clip('cast', moving, 40, kneeling)
 
         if work:
             def labour():
