@@ -516,12 +516,12 @@ export class ComputerPlayer {
     if (count('barracks') === 0 && workers.length >= this.profile.barracksAtWorkers) return 'barracks';
     if (count('barracks') > 0 && count('lumbermill') === 0) return 'lumbermill';
     if (count('barracks') > 0 && count('altar') === 0) return 'altar';
-    // An expansion-first style saves for its second Keep before any tower,
-    // unless it is under threat.
+    // An expansion-first style saves for its second Keep before towers, a
+    // Blacksmith or more Barracks, unless it is under threat.
     const expandNow = () => this.wantsExpansion(game, buildings) && this.expansionMine(game, buildings);
-    const towersWait = this.profile.expandsFirst && this.posture !== 'threatened' && count('hq') < 2;
+    if (this.profile.expandsFirst && this.posture !== 'threatened' && count('hq') < 2) return expandNow() ? 'hq' : null;
     const towers = this.profile.towers + (this.posture === 'threatened' ? 1 : 0);
-    if (!towersWait && count('tower') < towers && hasCompleted(game, P, F.buildings.barracks)) return 'tower';
+    if (count('tower') < towers && hasCompleted(game, P, F.buildings.barracks)) return 'tower';
     if (this.profile.upgrades && count('smithy') === 0 && hasCompleted(game, P, F.buildings.lumbermill)) return 'smithy';
     // Tier II production, for the units its mix calls for.
     if (researched(game, P, F.tiers[0])) {

@@ -34,7 +34,7 @@ export type StyleAdjust = {
   raids?: boolean;
   /** Builds its Hall of Valor before the Barracks and raises heroes first. */
   heroesEarly?: boolean;
-  /** Puts an expansion that is due ahead of its towers. */
+  /** Saves for its second Keep before towers, a Blacksmith or more Barracks. */
   expandsFirst?: boolean;
 };
 
@@ -1735,8 +1735,12 @@ export const CONFIG = {
     focusKeepSwing: 0,
     /** Focus fire: how far past its range a soldier looks for a target, in tiles. */
     focusSlack: 0.8,
-    /** Focus fire: switches to an enemy hero below this share of its health (1 = any hero). */
-    focusHeroShare: 1,
+    /**
+     * Focus fire: switches to an enemy hero below this share of its health
+     * (1 = any hero). Chasing healthy heroes, which back off to heal, cost
+     * Hard more than focus fire gained (172-120 against Normal; 181-111 at 0.5).
+     */
+    focusHeroShare: 0.5,
     /** Against an enemy known to have more bases, the first attack comes at this share of the usual time. */
     greedAttackTiming: 1,
     /** Expanding when safe: not before this time (seconds), and with this many soldiers home. */
