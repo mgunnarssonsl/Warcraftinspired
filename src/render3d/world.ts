@@ -15,6 +15,7 @@ import { TERRAIN } from '../sim/types';
 import { CameraRig } from './cameraRig';
 import { FogTexture, withFog } from './fog';
 import { isKitMaterial, kitMaterial } from './kit';
+import { beamTexture, crossTexture, moveArrowGeometry, ringTexture } from './fx';
 import { TREE_KINDS, decorGeometry, mineLook, mineModel, rockGeometry, saplingGeometry, stumpGeometry, treeGeometry, type MineModel, type TreeKind } from './envModels';
 import { paintGround } from './groundTexture';
 import {
@@ -32,8 +33,14 @@ import {
 } from './models';
 
 interface Marker {
-  mesh: THREE.Mesh;
+  mesh: THREE.Object3D;
   t0: number;
+  /** move: an arrow and a ring; attack: a crosshair; ring: a pulse; wave: an expanding ring; column: a light column. */
+  kind: 'move' | 'attack' | 'ring' | 'wave' | 'column';
+  dur: number;
+  /** Final radius for a wave. */
+  r?: number;
+  mats: THREE.MeshBasicMaterial[];
 }
 interface Particle {
   x: number;
@@ -92,7 +99,10 @@ export class World3D {
   private felledAt: number[] = [];
   private shakes = new Map<number, number>();
   private ripples: THREE.Mesh | null = null;
-  private ringGeo = new THREE.RingGeometry(0.86, 1, 40).rotateX(-Math.PI / 2);
+  /** A soft ring of radius 1 (the texture glows either side of the rim). */
+  private ringGeo = new THREE.PlaneGeometry(2.6, 2.6).rotateX(-Math.PI / 2);
+  private arrowGeo = moveArrowGeometry();
+  private beamGeo = new THREE.CylinderGeometry(0.5, 0.5, 3, 16, 1, true).translate(0, 1.5, 0);
   /** Soft team-colour disc under every player unit, so sides read at a glance. */
   private discGeo = (() => {
     const g = new THREE.CircleGeometry(1, 24).rotateX(-Math.PI / 2);
@@ -184,7 +194,7 @@ export class World3D {
     this.buildTrees();
 
     this.particleMesh = new THREE.InstancedMesh(
-      new THREE.BoxGeometry(0.06, 0.06, 0.06),
+      new THREE.OctahedronGeometry(0.06, 0),
       new THREE.MeshBasicMaterial({ color: '#ffffff' }),
       MAX_PARTICLES,
     );
@@ -203,13 +213,13 @@ export class World3D {
     this.smokeMesh.renderOrder = -1;
     this.scene.add(this.smokeMesh);
 
-    this.arrows = new THREE.InstancedMesh(makeArrowGeometry(), new THREE.MeshStandardMaterial({ color: '#5b4126' }), 200);
+    this.arrows = new THREE.InstancedMesh(makeArrowGeometry(), kitMaterial('matte'), 200);
     this.arrows.frustumCulled = false;
     this.arrows.count = 0;
     this.scene.add(this.arrows);
     this.hammers = new THREE.InstancedMesh(
       makeHammerGeometry(),
-      new THREE.MeshStandardMaterial({ color: '#d9e4ff', emissive: '#4a6aff', emissiveIntensity: 0.8 }),
+      kitMaterial('glow'),
       20,
     );
     this.hammers.frustumCulled = false;
@@ -217,10 +227,10 @@ export class World3D {
     this.scene.add(this.hammers);
     this.bolts = new THREE.InstancedMesh(
       makeBoltGeometry(),
-      new THREE.MeshStandardMaterial({ color: '#d8ffe4', emissive: '#3aff7a', emissiveIntensity: 0.9 }),
+      kitMaterial('glow'),
       60,
     );
-    this.boulders = new THREE.InstancedMesh(makeBoulderGeometry(), new THREE.MeshStandardMaterial({ color: '#7a7468', flatShading: true }), 60);
+    this.boulders = new THREE.InstancedMesh(makeBoulderGeometry(), kitMaterial('matte'), 60);
     for (const m of [this.bolts, this.boulders]) {
       m.frustumCulled = false;
       m.count = 0;
@@ -612,21 +622,28 @@ export class World3D {
       } else if (e.type === 'buildingDestroyed') {
         this.burst(e.x, 1.0, e.y, 40, '#8d8272', 3.5, now);
         this.burst(e.x, 1.4, e.y, 16, '#3a3028', 2.5, now);
-        this.addRubble(e.x, e.y, CONFIG.buildings[e.building].size, now);
+        this.addRubble(e.x, e.y, CONFIG.buildings[e.building].size, now, buildingFaction(e.building) === 'wild');
       } else if (e.type === 'levelUp') {
         this.burst(e.x, 1.2, e.y, 30, '#ffd84a', 2.4, now);
+        this.addColumn(e.x, e.y, now, '#ffcf4a');
       } else if (e.type === 'cast') {
         // By what the ability does, so every hero's spells show.
         const def = CONFIG.hero.abilities[e.ability];
         const fx = def.effect;
-        if (fx === 'rally') this.burst(e.x, 0.6, e.y, 36, '#ff9a3a', 4.5, now);
+        if (fx === 'rally') {
+          this.burst(e.x, 0.6, e.y, 36, '#ff9a3a', 4.5, now);
+          this.addWave(e.x, e.y, now, '#ffb43a', def.radius ?? 4, 0.8);
+        }
         else if (fx === 'area' || fx === 'burn') {
           const color = fx === 'burn' ? '#ff7a2a' : '#c8a070';
           for (let i = 0; i < 6; i++) this.burst(e.x + Math.cos(i) * def.radius * 0.6, 0.3, e.y + Math.sin(i) * def.radius * 0.6, 6, color, 1.8, now);
-          this.addMarker(e.x, e.y, now, color);
-        } else if (fx === 'reveal') this.addMarker(e.x, e.y, now, '#ffe9a8');
+          this.addWave(e.x, e.y, now, color, def.radius ?? 2, 0.6);
+        } else if (fx === 'reveal') this.addWave(e.x, e.y, now, '#ffe9a8', def.radius ?? 6, 1.0);
         else if (fx === 'slow' || fx === 'mark' || fx === 'ward') this.burst(e.x, 0.8, e.y, 12, BUFF_COLORS[fx], 1.4, now);
-        else if (fx === 'heal') this.burst(e.x, 0.8, e.y, 20, '#7dff8a', 1.6, now);
+        else if (fx === 'heal') {
+          this.burst(e.x, 0.8, e.y, 20, '#7dff8a', 1.6, now);
+          this.addWave(e.x, e.y, now, '#7dff8a', 1.2, 0.6);
+        }
         else if (fx === 'bolt' && !def.projectileSpeed) this.burst(e.x, 0.5, e.y, 16, '#6ab04a', 1.4, now); // roots burst up at once
       } else if (e.type === 'flare') {
         // A flare is seen by whoever lit it (and anyone already watching that spot).
@@ -637,10 +654,13 @@ export class World3D {
       } else if (e.type === 'teleport') {
         this.burst(e.fromX, 0.6, e.fromY, 20, '#b8d8ff', 2.4, now);
         this.burst(e.x, 0.6, e.y, 20, '#b8d8ff', 2.4, now);
+        this.addColumn(e.fromX, e.fromY, now, '#6ab0ff', 0.8);
+        this.addColumn(e.x, e.y, now, '#6ab0ff', 0.9);
       } else if (e.type === 'itemPicked' || e.type === 'itemUsed') {
         this.burst(e.x, 0.6, e.y, 10, '#7dffb0', 1.4, now);
       } else if (e.type === 'campCleared') {
         this.burst(e.x, 1.0, e.y, 24, '#ffd84a', 2.6, now);
+        this.addColumn(e.x, e.y, now, '#ffd84a', 1.0);
       } else if (e.type === 'heal') {
         this.burst(e.x, 0.9, e.y, 6, '#7dff8a', 0.8, now);
       } else if (e.type === 'impact') {
@@ -648,6 +668,7 @@ export class World3D {
         this.burst(e.x, 0.3, e.y, 6, '#ffb060', 1.6, now);
       } else if (e.type === 'buildingComplete') {
         this.burst(e.x, 1.2, e.y, 14, '#ffe9a8', 2.5, now);
+        this.addWave(e.x, e.y, now, '#ffe9a8', 2.6, 0.8);
       } else if (e.type === 'deliver') {
         this.burst(e.x, 0.6, e.y + 1, 3, e.res === 'gold' ? '#ffd84a' : '#d9b07a', 1.2, now);
       }
@@ -666,10 +687,48 @@ export class World3D {
   }
 
   addMarker(x: number, y: number, now: number, color: string = RING_COLORS.own): void {
-    const m = new THREE.Mesh(this.ringGeo, this.ringMat(color, 0.9).clone());
-    m.position.set(x, 0.04, y);
-    this.scene.add(m);
-    this.markers.push({ mesh: m, t0: now });
+    const kind = color === RING_COLORS.own ? 'move' : color === RING_COLORS.enemy ? 'attack' : 'ring';
+    const g = new THREE.Group();
+    g.position.set(x, 0.04, y);
+    const mats: THREE.MeshBasicMaterial[] = [];
+    if (kind === 'attack') {
+      const m = new THREE.MeshBasicMaterial({ color, map: crossTexture(), transparent: true, depthWrite: false });
+      mats.push(m);
+      g.add(new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.3).rotateX(-Math.PI / 2), m));
+    } else {
+      const m = this.ringMat(color, 0.95).clone();
+      mats.push(m);
+      g.add(new THREE.Mesh(this.ringGeo, m));
+      if (kind === 'move') {
+        const arrow = new THREE.Mesh(this.arrowGeo, kitMaterial('glow'));
+        arrow.name = 'arrow';
+        g.add(arrow);
+      }
+    }
+    this.scene.add(g);
+    this.markers.push({ mesh: g, t0: now, kind, dur: kind === 'ring' ? 0.6 : 0.8, mats });
+  }
+
+  /** An expanding glow ring: a spell's area, a rally, a completed building. */
+  addWave(x: number, y: number, now: number, color: string, radius: number, dur = 0.7): void {
+    if (!this.tileVisible(x, y)) return;
+    const m = this.ringMat(color, 0.9).clone();
+    const g = new THREE.Group();
+    g.position.set(x, 0.06, y);
+    g.add(new THREE.Mesh(this.ringGeo, m));
+    this.scene.add(g);
+    this.markers.push({ mesh: g, t0: now, kind: 'wave', dur, r: radius, mats: [m] });
+  }
+
+  /** A column of light: a level-up, a teleport, a camp cleared. */
+  addColumn(x: number, y: number, now: number, color: string, dur = 1.1): void {
+    if (!this.tileVisible(x, y)) return;
+    const m = new THREE.MeshBasicMaterial({ color, map: beamTexture(), transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+    const g = new THREE.Group();
+    g.position.set(x, 0, y);
+    g.add(new THREE.Mesh(this.beamGeo, m));
+    this.scene.add(g);
+    this.markers.push({ mesh: g, t0: now, kind: 'column', dur, mats: [m] });
   }
 
   flashEntity(id: number, now: number): void {
@@ -680,7 +739,7 @@ export class World3D {
     const key = `${color}|${opacity}`;
     let m = this.ringMats.get(key);
     if (!m) {
-      m = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
+      m = new THREE.MeshBasicMaterial({ color, map: ringTexture(), transparent: true, opacity, depthWrite: false });
       this.ringMats.set(key, m);
     }
     return m;
@@ -1219,10 +1278,10 @@ export class World3D {
   }
 
   /** A low heap of stones where a building fell; it fades over half a minute. */
-  private addRubble(x: number, y: number, size: number, now: number): void {
+  private addRubble(x: number, y: number, size: number, now: number, wild = false): void {
     if (!this.tileVisible(x, y)) return;
     const g = new THREE.Group();
-    const stone = new THREE.MeshStandardMaterial({ color: '#7a7064', flatShading: true, roughness: 1, transparent: true, opacity: 1 });
+    const stone = new THREE.MeshStandardMaterial({ color: wild ? '#7a5a36' : '#8f8676', flatShading: true, roughness: 1, transparent: true, opacity: 1 });
     const n = Math.round(size * 4);
     for (let i = 0; i < n; i++) {
       const r = 0.12 + Math.random() * 0.22;
@@ -1321,14 +1380,31 @@ export class World3D {
 
   private updateMarkers(now: number): void {
     this.markers = this.markers.filter((m) => {
-      const t = (now - m.t0) / 0.6;
+      const t = (now - m.t0) / m.dur;
       if (t >= 1) {
         this.scene.remove(m.mesh);
-        (m.mesh.material as THREE.Material).dispose();
+        for (const mt of m.mats) mt.dispose();
+        m.mesh.traverse((o) => {
+          const mesh = o as THREE.Mesh;
+          if (mesh.isMesh && mesh.geometry !== this.ringGeo && mesh.geometry !== this.arrowGeo && mesh.geometry !== this.beamGeo) mesh.geometry.dispose();
+        });
         return false;
       }
-      m.mesh.scale.setScalar(0.6 * (1 - t * 0.6));
-      (m.mesh.material as THREE.MeshBasicMaterial).opacity = 1 - t;
+      const fade = 1 - t;
+      for (const mt of m.mats) mt.opacity = fade * (m.kind === 'column' ? 0.85 : 1);
+      if (m.kind === 'wave') m.mesh.scale.setScalar(0.3 + (m.r ?? 2) * Math.sqrt(t));
+      else if (m.kind === 'column') m.mesh.scale.set(1 + t * 0.4, 0.6 + t * 0.6, 1 + t * 0.4);
+      else if (m.kind === 'attack') {
+        m.mesh.scale.setScalar(1.2 - t * 0.5);
+        m.mesh.rotation.y = t * 1.2;
+      } else {
+        m.mesh.scale.setScalar(0.65 * (1 - t * 0.5));
+        const arrow = m.mesh.getObjectByName('arrow');
+        if (arrow) {
+          arrow.position.y = 0.35 * (1 - Math.min(1, t * 2.5)) + Math.sin(t * 12) * 0.03;
+          arrow.scale.setScalar(t > 0.75 ? (1 - t) * 4 : 1);
+        }
+      }
       return true;
     });
   }

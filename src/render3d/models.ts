@@ -3,6 +3,7 @@
 // ground at y = 0 and the front (entrance) facing +Z, toward the camera.
 
 import * as CB from './crownBuildings';
+import * as FX from './fx';
 import * as WB from './wildBuildings';
 import { buildingFaction } from '../sim/factions';
 import { Sculpt, blob, cachedModel, capsule, lathe, leafFan, rand, rbox } from './kit';
@@ -10,7 +11,6 @@ import * as CU from './crownUnits';
 import * as WU from './wildUnits';
 import { cachedUnit, type UnitParts } from './rig';
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { BuildingType, UnitType } from '../sim/config';
 import { withFog } from './fog';
 
@@ -96,27 +96,11 @@ export function makeUnit(type: UnitType, team: string): WorkerParts {
   return cachedUnit(`${type}|${team}`, () => UNIT_BUILDERS[type](team));
 }
 
-/** Hammer projectile for Stormhammer, pointing along +Z. */
-export function makeHammerGeometry(): THREE.BufferGeometry {
-  return mergeGeometries([new THREE.BoxGeometry(0.06, 0.06, 0.4), new THREE.BoxGeometry(0.22, 0.16, 0.16).translate(0, 0, 0.2)])!;
-}
-
-/** Siege boulder and a Cleric's glowing bolt. */
-export function makeBoulderGeometry(): THREE.BufferGeometry {
-  return new THREE.IcosahedronGeometry(0.17, 0);
-}
-
-export function makeBoltGeometry(): THREE.BufferGeometry {
-  return new THREE.OctahedronGeometry(0.1, 0);
-}
-
-/** Arrow mesh for projectiles, pointing along +Z. */
-export function makeArrowGeometry(): THREE.BufferGeometry {
-  return mergeGeometries([
-    new THREE.CylinderGeometry(0.015, 0.015, 0.55, 4).rotateX(Math.PI / 2),
-    new THREE.ConeGeometry(0.04, 0.12, 4).rotateX(Math.PI / 2).translate(0, 0, 0.32),
-  ])!;
-}
+/** Projectiles (pointing along +Z), painted: see fx.ts. */
+export const makeHammerGeometry = FX.hammerGeometry;
+export const makeBoulderGeometry = FX.boulderGeometry;
+export const makeBoltGeometry = FX.boltGeometry;
+export const makeArrowGeometry = FX.arrowGeometry;
 
 // ---- buildings -----------------------------------------------------------------
 
@@ -194,14 +178,8 @@ function damageModel(size: number, wild: boolean): THREE.Object3D {
   return o;
 }
 
-/** An item on the ground: a small chest with a glowing gem, colored by tier. */
-export function makeGroundItem(tier: number): THREE.Group {
-  const g = new THREE.Group();
-  g.add(mesh(box(0.34, 0.22, 0.24), mat('#7a5733'), 0, 0.11, 0));
-  g.add(mesh(box(0.36, 0.06, 0.26), mat('#d9b44a', { emissive: 0x2a1e00 }), 0, 0.24, 0));
-  g.add(mesh(new THREE.OctahedronGeometry(0.1, 0), mat(tier > 1 ? '#c49aff' : '#7dffb0', { emissive: tier > 1 ? 0x5a2aa0 : 0x1a8a4a }), 0, 0.46, 0));
-  return g;
-}
+/** An item on the ground: a loot chest, its gem coloured by tier. */
+export const makeGroundItem = FX.chestModel;
 
 export function makeBuilding(type: BuildingType, team: string, size: number, tier = 1): BuildingParts {
   const wild = buildingFaction(type) === 'wild';
