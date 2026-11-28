@@ -93,7 +93,7 @@ export class World3D {
   private units = new Map<number, WorkerParts>();
   private items = new Map<number, THREE.Group>();
   private memoryGhosts = new Map<number, { root: THREE.Group; tier: number; done: boolean }>();
-  private buildings = new Map<number, BuildingParts & { type: BuildingType; tier: number }>();
+  private buildings = new Map<number, BuildingParts & { type: BuildingType; tier: number; rise?: Rise }>();
   private mines = new Map<number, MineModel>();
   /** One instanced mesh per tree species; trees[i] is drawn by treeMesh[i] at treeSlot[i]. */
   private treeMeshes: THREE.InstancedMesh[] = [];
@@ -187,6 +187,8 @@ export class World3D {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
+    // Buildings under construction are cut off at the height built so far.
+    this.renderer.localClippingEnabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.12;
@@ -1383,12 +1385,20 @@ export class World3D {
     v.root.visible = this.perceived(b);
     const done = b.progress >= 1;
     v.scaffold.visible = !done;
-    if (buildingFaction(b.type) === 'wild') {
-      // Thornwild buildings grow from the planting in every direction.
-      v.model.scale.setScalar(done ? 1 : 0.18 + 0.82 * b.progress);
-    } else {
-      // Crown buildings rise inside the scaffolding.
-      v.model.scale.y = done ? 1 : 0.08 + 0.92 * b.progress;
+    const wild = buildingFaction(b.type) === 'wild';
+    if (!done) {
+      // The building takes shape from the ground up: everything above the height built so far is
+      // cut away. Thornwild buildings also swell as they grow, so a sprout shows from the start.
+      v.rise ??= startRise(v.model);
+      const p = b.progress;
+      const s = wild ? 0.35 + 0.65 * p : 1;
+      v.model.scale.setScalar(s);
+      const f = wild ? 0.3 + 0.7 * p : 0.06 + 0.94 * p;
+      v.rise.plane.constant = (v.rise.y0 + (v.rise.y1 - v.rise.y0) * f) * s;
+    } else if (v.rise) {
+      endRise(v.rise);
+      v.rise = undefined;
+      v.model.scale.setScalar(1);
     }
     v.damage.visible = done && b.hp < b.maxHp * 0.5;
   }
@@ -1660,4 +1670,47 @@ const BUFF_COLORS: Record<'cry' | 'mark' | 'slow' | 'ward' | 'root' | 'shield', 
 function attacking(u: Unit): boolean {
   const t = u.order?.type;
   return t === 'attack' || t === 'attackMove' || t === 'hold';
+}
+
+/** A building rising under construction: its clip plane and the shared materials it replaced. */
+interface Rise {
+  plane: THREE.Plane;
+  y0: number;
+  y1: number;
+  originals: Map<THREE.Mesh, THREE.Material | THREE.Material[]>;
+}
+
+/** Give a building's model its own materials, clipped at the height built so far. */
+function startRise(model: THREE.Object3D): Rise {
+  model.scale.setScalar(1);
+  model.updateWorldMatrix(true, true);
+  const box = new THREE.Box3().setFromObject(model);
+  // Parts dug into the ground (a burrow, a cellar) do not count: the rise starts at ground level.
+  const y0 = Math.max(0, box.min.y);
+  const plane = new THREE.Plane(new THREE.Vector3(0, -1, 0), y0);
+  const originals = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
+  model.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    originals.set(m, m.material);
+    const clip = (mt: THREE.Material) => {
+      const c = mt.clone();
+      c.clippingPlanes = [plane];
+      c.clipShadows = true;
+      // The cut-open inside shows instead of vanishing.
+      c.side = THREE.DoubleSide;
+      return c;
+    };
+    m.material = Array.isArray(m.material) ? m.material.map(clip) : clip(m.material);
+  });
+  return { plane, y0, y1: box.max.y, originals };
+}
+
+/** Construction done: put the shared materials back. */
+function endRise(r: Rise): void {
+  for (const [m, orig] of r.originals) {
+    const cur = m.material;
+    for (const c of Array.isArray(cur) ? cur : [cur]) c.dispose();
+    m.material = orig;
+  }
 }
