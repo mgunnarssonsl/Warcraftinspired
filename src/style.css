@@ -1592,3 +1592,17 @@ details.more summary {
   border-style: dashed;
   border-color: rgba(214, 180, 110, 0.35);
 }
+
+/* Long detail lists (buildings, heroes) flow into a second column on a wide panel
+   instead of running off the bottom of it. */
+.detail-card .detail {
+  columns: 2 300px;
+  column-gap: 28px;
+}
+.detail-card .detail > * {
+  break-inside: avoid;
+}
+.detail-card .detail > .sel-title,
+.detail-card .detail > :not(.row) {
+  column-span: all;
+}

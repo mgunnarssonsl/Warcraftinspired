@@ -126,6 +126,12 @@ export class World3D {
     g.userData.shared = true;
     return g;
   })();
+  /** A crisp rim around the disc: green troops still read on green grass. */
+  private rimGeo = (() => {
+    const g = new THREE.RingGeometry(0.84, 1, 32).rotateX(-Math.PI / 2);
+    g.userData.shared = true;
+    return g;
+  })();
   private discMats = new Map<string, THREE.MeshBasicMaterial>();
   private ringMats = new Map<string, THREE.MeshBasicMaterial>();
   private rings: THREE.Mesh[] = [];
@@ -1239,6 +1245,16 @@ export class World3D {
         disc.position.y = 0.012;
         disc.renderOrder = -2;
         v.root.add(disc);
+        let rm = this.discMats.get(team + '|rim');
+        if (!rm) {
+          rm = withFog(new THREE.MeshBasicMaterial({ color: team, transparent: true, opacity: 0.85, depthWrite: false }));
+          this.discMats.set(team + '|rim', rm);
+        }
+        const rim = new THREE.Mesh(this.rimGeo, rm);
+        rim.scale.set(r, 1, r);
+        rim.position.y = 0.014;
+        rim.renderOrder = -2;
+        v.root.add(rim);
       }
       this.units.set(u.id, v);
       this.scene.add(v.root);
