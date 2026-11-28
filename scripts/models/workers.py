@@ -154,9 +154,7 @@ def tender():
         sphere(f'hand.{s}', 0.036, mat('matte', SKIN), hd, at=(hx, hy, hz), scale=(0.9, 1.0, 1.15), sub=1)
     # Head: auburn braids under a leafy green hood; a leaf cloak.
     face(F, hair='#b5562a', brows='#8a3a1a', size=1.02)
-    for sx in (-1, 1):
-        curve_tube(f'braid{sx}', [(sx * 0.07, -0.02, HEAD - 0.02), (sx * 0.09, -0.04, HEAD - 0.1), (sx * 0.09, -0.06, HEAD - 0.2)], 0.02, mat('matte', '#b5562a'), h, taper=[1.0, 0.9, 0.6])
-    WD.leaf_hood(F, color='#6f8f2e', tall=0.04)
+    __import__('thornfolk').leaf_hood(F)
     WD.leaf_mantle(F, 0.9)
     SY.leaf_cloak(F, length=0.34, flare=0.1, rows=3, seed=31)
     tool(F, haft='#8a5a2c', living=True)
