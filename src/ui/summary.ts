@@ -63,7 +63,10 @@ export function summaryHtml(game: Game, viewer: number, names: Record<number, st
     ['Bounty from kills', (id) => String(game.player(id).stats.bounty)],
     ['Most workers / largest army', (id) => `${peak(id, 'workers')} / ${peak(id, 'army')}`],
     ['Units trained', (id) => `${game.player(id).stats.unitsTrained}`],
-    ['Units lost', (id) => `${game.player(id).stats.unitsLost}: ${byType(game.player(id).stats.lost)}`],
+    ['Units lost', (id) => {
+      const st = game.player(id).stats;
+      return st.unitsLost ? `${st.unitsLost}: ${byType(st.lost)}` : '0';
+    }],
     ['Enemies destroyed', (id) => String(game.player(id).stats.kills)],
     ['Buildings built / lost', (id) => `${game.player(id).stats.buildingsBuilt} / ${game.player(id).stats.buildingsLost}`],
     ['Camps cleared', (id) => String(game.player(id).stats.campsCleared)],
