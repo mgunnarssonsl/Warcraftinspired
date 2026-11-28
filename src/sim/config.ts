@@ -1815,6 +1815,8 @@ export const CONFIG = {
         repairs: false,
         /** Holds its army below the next upkeep threshold unless threatened or rich (CONFIG.ai.upkeepBank). */
         upkeepAware: false,
+        /** Aims waves and raids at enemy halls it has seen unfinished or freshly finished. */
+        targetsFragile: false,
         /** Saves gold to rebuild when its last Keep is going down. */
         saveForKeep: false,
         /** When (seconds) a Laborer walks over to look at the enemy base; null = never. */
@@ -1865,6 +1867,7 @@ export const CONFIG = {
         heroRetreat: true,
         repairs: true,
         upkeepAware: true,
+        targetsFragile: true,
         saveForKeep: true,
         scoutWorkerSeconds: 120 as number | null,
         readsIntel: true,
@@ -1908,6 +1911,7 @@ export const CONFIG = {
         heroRetreat: true,
         repairs: true,
         upkeepAware: true,
+        targetsFragile: true,
         saveForKeep: true,
         scoutWorkerSeconds: 75 as number | null,
         readsIntel: true,
@@ -2030,6 +2034,8 @@ export const CONFIG = {
     attackAdvantage: 1.15,
     /** Choosing a target: an outlying base counts as this many tiles nearer (it is defended less). */
     outlyingBonus: 10,
+    /** Extra pull (in tiles) of an enemy hall seen unfinished or freshly finished, as a wave target. */
+    fragileBonus: 20,
     /** Focus fire: leaves a soldier's swing alone (1) or retargets mid-swing (0). */
     focusKeepSwing: 0,
     /** Focus fire: how far past its range a soldier looks for a target, in tiles. */

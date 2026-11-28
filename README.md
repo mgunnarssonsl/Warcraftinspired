@@ -382,6 +382,19 @@ punish a greedy expansion. Every number lives in `CONFIG.upkeep`,
   the next upkeep threshold while it is safe, and crosses it once it is
   threatened or has 700 gold banked. Its journal says so. A style may opt
   out with `ignoresUpkeep`. Easy ignores upkeep.
+  - Its waves and raids aim first at enemy halls it has seen unfinished, or
+    sees freshly finished (`targetsFragile`, Normal and Hard).
+  - Tried and dropped: sending part of the army early at such an expansion.
+    Over 120 computer matches it lost units to the defender and made the
+    Raider weaker (35% to 23%).
+- **Measured effect** (120 computer-vs-computer matches, before → after):
+  - factions: Thornwild 57% → 48%, Crown 43% → 52%;
+  - seats: even before and after.
+  - Styles do not yet move the intended way:
+    - Warden 53% → 67%, Expander 57% → 60%;
+    - Raider 34% → 35%, Warlord 53% → 31%.
+  - Defenders still win most even fights. Weaker static defence or better
+    attack judgement is the next lever.
 - **Saves and online.** Save format 5 fills the new fields (no hall in an
   older save is fresh). Protocol 3 keeps older clients out of a match.
 

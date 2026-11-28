@@ -1382,8 +1382,23 @@ export class ComputerPlayer {
     return this.knownEnemyBuildings(game).filter((m) => isRole(m.type, 'hq')).length;
   }
 
+  /**
+   * Enemy halls it knows to be fragile, from what it has seen only: last seen
+   * unfinished, or in view right now and freshly finished.
+   */
+  private fragileHalls(game: Game): Array<{ x: number; y: number; id: number }> {
+    const now = game.state.tick;
+    return this.knownEnemyBuildings(game).filter((m) => {
+      if (!isRole(m.type, 'hq')) return false;
+      if (!m.done) return true;
+      const b = game.building(m.id);
+      return !!b && b.freshUntil > now && game.vision.canSee(this.player, b);
+    });
+  }
+
   private raidTarget(game: Game): { x: number; y: number } | null {
-    const keeps = this.knownEnemyBuildings(game).filter((m) => isRole(m.type, 'hq'));
+    const fragile = this.fragileHalls(game);
+    const keeps = fragile.length ? fragile : this.knownEnemyBuildings(game).filter((m) => isRole(m.type, 'hq'));
     const anchors = keeps.length ? keeps : game.state.starts.filter((_, p) => p !== this.player && !game.player(p).neutral && !game.player(p).defeated);
     // The newest base is usually the least defended.
     const anchor = anchors[anchors.length - 1];
@@ -1499,8 +1514,11 @@ export class ComputerPlayer {
       const towersNear = (p: { x: number; y: number }) => known.filter((m) => isRole(m.type, 'tower') && dist(m, p) < 9).length;
       const starts = game.state.starts;
       const outlying = (m: { x: number; y: number; type: BuildingType }) => isRole(m.type, 'hq') && starts.every((s) => dist(s, m) > 6);
+      const fragile = new Set(this.profile.targetsFragile ? this.fragileHalls(game).map((m) => m.id) : []);
       const score = (m: (typeof known)[number]) =>
-        dist(m, from) + (this.profile.readsIntel ? 12 * towersNear(m) - (outlying(m) ? CONFIG.ai.outlyingBonus : 0) : 0);
+        dist(m, from) +
+        (this.profile.readsIntel ? 12 * towersNear(m) - (outlying(m) ? CONFIG.ai.outlyingBonus : 0) : 0) -
+        (fragile.has(m.id) ? CONFIG.ai.fragileBonus : 0);
       return known.reduce((a, b) => (score(b) < score(a) ? b : a));
     }
     const waveUnits = this.wave.map((id) => game.unit(id)).filter((u): u is Unit => !!u);
