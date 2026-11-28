@@ -41,7 +41,7 @@ export const GLTF_UNITS: Partial<Record<UnitType, number>> = {
   poacher: 1.66,
   chief: 2.0,
   brute: 2.1,
-  wolf: 1.5,
+  wolf: 1.05,
   musketeer: 1.72,
   warbear: 2.05,
   sentinel: 1.8,

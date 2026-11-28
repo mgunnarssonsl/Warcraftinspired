@@ -19,7 +19,8 @@ EMERALD = '#62ff9e'
 AMBER = '#ffb02a'
 
 
-def nature_wolf(saddle=False):
+def nature_wolf(saddle=False, forest=True, coat=COAT, coat_d=COAT_D, coat_l=COAT_L):
+    COAT, COAT_D, COAT_L = coat, coat_d, coat_l
     L, leg, g = 0.96, 0.44, 0.17
     B = BS.Beast(length=L, leg=leg, girth=g)
     cz = B.cz
@@ -84,22 +85,22 @@ def nature_wolf(saddle=False):
         f = seg - k
         p = tuple(path[k][j] * (1 - f) + path[k + 1][j] * f for j in range(3))
         fur(f'tail{i}', g * (0.3 + 0.1 * math.sin(t * math.pi)), tl, p, scale=(0.85, 1.0, 1.15), seed=40 + i, color=COAT if i < 8 else COAT_L, rough=0.12)
-    # ---- the forest on its back: moss, leaves, thorny vines, emerald swirls ----
-    for i in range(6):
-        t = i / 5
-        lump(f'moss{i}', g * (0.38 - 0.08 * t), mat('matte', MOSS if i % 2 == 0 else MOSS_D), bm, at=(((i % 2) - 0.5) * g * 0.35, -L * 0.36 + t * L * 0.66, cz + g * 0.98 - t * 0.04), scale=(1.5, 1.3, 0.5), seed=50 + i, rough=0.3)
-    leaf_ring('ruffLeaves', nk, (0, -L * 0.46, cz + g * 1.05), g * 0.7, 10, 0.07, 0.14, WD.LEAVES, tilt=2.0)
-    leaf_ring('backLeaves', bm, (0, -L * 0.05, cz + g * 0.95), g * 0.7, 9, 0.06, 0.12, WD.LEAVES, tilt=1.8)
-    for sx in (-1, 1):
-        curve_tube(f'vine{sx}', [(sx * g * 0.3, -L * 0.42, cz + g * 0.9), (sx * g * 0.85, -L * 0.25, cz + g * 0.4), (sx * g * 0.95, -L * 0.02, cz + g * 0.0), (sx * g * 0.8, L * 0.22, cz + g * 0.55), (sx * g * 0.3, L * 0.36, cz + g * 0.85)], 0.011, mat('matte', VINE), bm)
-        for i in range(5):
-            t = 0.15 + i * 0.18
-            lathe(f'thorn{sx}{i}', [(0.008, 0.0), (0.0, 0.03)], mat('matte', '#c8b48a'), bm, at=(sx * g * (0.8 + 0.1 * math.sin(t * 6)), -L * 0.3 + t * L * 0.55, cz + g * (0.5 - 0.4 * math.sin(t * 3))), rot=(0, sx * 1.2, 0), segs=4)
-        # Emerald swirls on the flanks and shoulders.
-        curve_tube(f'swirl{sx}', [(sx * g * 1.0, -L * 0.1, cz - g * 0.1), (sx * g * 1.02, -L * 0.02, cz + g * 0.2), (sx * g * 1.0, L * 0.08, cz + g * 0.05), (sx * g * 0.98, L * 0.04, cz - g * 0.15), (sx * g * 0.99, L * 0.0, cz - g * 0.02)], 0.009, mat('glow', EMERALD), bm, taper=[0.3, 1.0, 1.0, 0.8, 0.3])
-        curve_tube(f'swirlShoulder{sx}', [(sx * g * 1.0, -L * 0.32, cz - g * 0.3), (sx * g * 1.05, -L * 0.25, cz + g * 0.0), (sx * g * 1.0, -L * 0.18, cz - g * 0.2)], 0.008, mat('glow', EMERALD), bm, taper=[0.3, 1.0, 0.3])
-        curve_tube(f'swirlHaunch{sx}', [(sx * g * 0.9, L * 0.22, cz + g * 0.35), (sx * g * 0.96, L * 0.32, cz + g * 0.1), (sx * g * 0.9, L * 0.4, cz + g * 0.3)], 0.008, mat('glow', EMERALD), bm, taper=[0.3, 1.0, 0.3])
-    torus('collar', g * 0.75, 0.016, mat('team'), nk, at=(0, -L * 0.48, cz + g * 0.45), rot=(1.25, 0, 0), segs=18, rsegs=4)
+    if forest:
+        for i in range(6):
+            t = i / 5
+            lump(f'moss{i}', g * (0.38 - 0.08 * t), mat('matte', MOSS if i % 2 == 0 else MOSS_D), bm, at=(((i % 2) - 0.5) * g * 0.35, -L * 0.36 + t * L * 0.66, cz + g * 0.98 - t * 0.04), scale=(1.5, 1.3, 0.5), seed=50 + i, rough=0.3)
+        leaf_ring('ruffLeaves', nk, (0, -L * 0.46, cz + g * 1.05), g * 0.7, 10, 0.07, 0.14, WD.LEAVES, tilt=2.0)
+        leaf_ring('backLeaves', bm, (0, -L * 0.05, cz + g * 0.95), g * 0.7, 9, 0.06, 0.12, WD.LEAVES, tilt=1.8)
+        for sx in (-1, 1):
+            curve_tube(f'vine{sx}', [(sx * g * 0.3, -L * 0.42, cz + g * 0.9), (sx * g * 0.85, -L * 0.25, cz + g * 0.4), (sx * g * 0.95, -L * 0.02, cz + g * 0.0), (sx * g * 0.8, L * 0.22, cz + g * 0.55), (sx * g * 0.3, L * 0.36, cz + g * 0.85)], 0.011, mat('matte', VINE), bm)
+            for i in range(5):
+                t = 0.15 + i * 0.18
+                lathe(f'thorn{sx}{i}', [(0.008, 0.0), (0.0, 0.03)], mat('matte', '#c8b48a'), bm, at=(sx * g * (0.8 + 0.1 * math.sin(t * 6)), -L * 0.3 + t * L * 0.55, cz + g * (0.5 - 0.4 * math.sin(t * 3))), rot=(0, sx * 1.2, 0), segs=4)
+            # Emerald swirls on the flanks and shoulders.
+            curve_tube(f'swirl{sx}', [(sx * g * 1.0, -L * 0.1, cz - g * 0.1), (sx * g * 1.02, -L * 0.02, cz + g * 0.2), (sx * g * 1.0, L * 0.08, cz + g * 0.05), (sx * g * 0.98, L * 0.04, cz - g * 0.15), (sx * g * 0.99, L * 0.0, cz - g * 0.02)], 0.009, mat('glow', EMERALD), bm, taper=[0.3, 1.0, 1.0, 0.8, 0.3])
+            curve_tube(f'swirlShoulder{sx}', [(sx * g * 1.0, -L * 0.32, cz - g * 0.3), (sx * g * 1.05, -L * 0.25, cz + g * 0.0), (sx * g * 1.0, -L * 0.18, cz - g * 0.2)], 0.008, mat('glow', EMERALD), bm, taper=[0.3, 1.0, 0.3])
+            curve_tube(f'swirlHaunch{sx}', [(sx * g * 0.9, L * 0.22, cz + g * 0.35), (sx * g * 0.96, L * 0.32, cz + g * 0.1), (sx * g * 0.9, L * 0.4, cz + g * 0.3)], 0.008, mat('glow', EMERALD), bm, taper=[0.3, 1.0, 0.3])
+        torus('collar', g * 0.75, 0.016, mat('team'), nk, at=(0, -L * 0.48, cz + g * 0.45), rot=(1.25, 0, 0), segs=18, rsegs=4)
     if saddle:
         lathe('saddleCloth', [(g * 1.05, 0.0), (g * 1.1, g * 0.55)], mat('team'), bm, at=(0, 0.0, cz + g * 0.42), scale=(1, 1.5, 1), segs=18, sub=1)
         box('saddle', (g * 1.0, g * 1.2, 0.045), mat('matte', LEATHER_D), B['saddle'], at=(0, 0.0, cz + g * 1.02), bevel=0.018, sub=1)
