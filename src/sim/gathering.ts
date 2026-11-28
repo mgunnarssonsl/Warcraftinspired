@@ -107,7 +107,11 @@ export function nearestDropoff(game: Game, u: Unit, res: ResourceKind): Building
 }
 
 /** Nearest reachable tree around (x, y), preferring trees with fewer choppers. */
-export function findTree(game: Game, u: Unit, x: number, y: number, excludeId = -1): ResourceNode | undefined {
+/**
+ * The best tree near (x, y) for `u`: close, and not crowded. With `freeOnly`, trees that already
+ * have their full share of choppers (counting workers on their way) are skipped altogether.
+ */
+export function findTree(game: Game, u: Unit, x: number, y: number, excludeId = -1, freeOnly = false): ResourceNode | undefined {
   const nav = game.nav;
   const R = CONFIG.resources.treeSearchRadius;
   const comp = nav.component(Math.floor(u.x), Math.floor(u.y));
@@ -130,7 +134,10 @@ export function findTree(game: Game, u: Unit, x: number, y: number, excludeId = 
       if (!node || node.type !== 'tree') continue;
       const d = len(tx + 0.5 - x, ty + 0.5 - y);
       if (d > R) continue;
-      const score = d + 1.5 * (busy.get(id) ?? 0);
+      const b = busy.get(id) ?? 0;
+      const full = b >= CONFIG.resources.tree.maxChoppers;
+      if (freeOnly && full) continue;
+      const score = d + 1.5 * b + (full ? 6 : 0);
       if (score >= bestScore) continue;
       if (!nav.footprintReachableFrom(node, comp)) continue;
       best = node;
@@ -214,7 +221,10 @@ function tryStartWork(game: Game, u: Unit, o: GatherOrder, node: ResourceNode): 
     u.facing = datan2(node.y - u.y, node.x - u.x);
     return;
   }
-  const alt = findTree(game, u, node.x, node.y, node.id);
+  // The tree is taken: move over to one with room, or wait here for a turn. (Picking any
+  // other tree could pick a full one, and two full neighbours made workers flip between
+  // them forever without chopping.)
+  const alt = findTree(game, u, node.x, node.y, node.id, true);
   if (alt) {
     o.nodeId = alt.id;
     o.lastX = alt.x;
