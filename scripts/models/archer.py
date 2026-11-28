@@ -13,8 +13,10 @@ BREECHES = '#5d6650'
 VEST = '#7a4a26'
 
 
-def hooded_body(F, tunic=CREAM, breeches=BREECHES, vest=VEST, cape_len=0.62, hair='#5a3a22', skin='#eab58a', crown_hem=True):
+def hooded_body(F, tunic=CREAM, breeches=BREECHES, vest=VEST, cape_len=0.62, hair='#5a3a22', skin='#eab58a', crown_hem=True, hood=None, beard=None, ragged=0.0):
     team, team_d, gold = mat('team'), mat('team_dark'), mat('gold', GOLD)
+    hood_m = mat('matte', hood) if hood else team
+    hood_d = mat('matte', hood) if hood else team_d
     b = F.bulk
     hips, spine, ch, h = F['hips'], F['spine'], F['chest'], F['head']
     # Breeches, tall boots with a folded cuff and a knee guard.
@@ -52,16 +54,16 @@ def hooded_body(F, tunic=CREAM, breeches=BREECHES, vest=VEST, cape_len=0.62, hai
         hx, hy, hz = hand_at(F, s)
         sphere(f'glove.{s}', 0.039 * b, mat('matte', LEATHER_D), hd, at=(hx, hy, hz), scale=(0.9, 1.05, 1.15), sub=1)
     # Head and hood: a young face, the hood deep around it, a mantle over the shoulders.
-    face(F, skin=skin, hair=hair, brows='#4a2a18', size=1.04)
-    lathe('hood', [(0.0, -0.085), (0.11, -0.08), (0.118, -0.02), (0.113, 0.05), (0.08, 0.105), (0.0, 0.125)], team, h,
+    face(F, skin=skin, hair=hair, beard=beard, brows='#4a2a18', size=1.04)
+    lathe('hood', [(0.0, -0.085), (0.11, -0.08), (0.118, -0.02), (0.113, 0.05), (0.08, 0.105), (0.0, 0.125)], hood_m, h,
           at=(0, 0.014, HEAD), scale=(1.05, 1.1, 1.05), segs=22, sub=1, angle=math.pi * 1.5, rot=(0, 0, -math.pi * 0.25))
-    lathe('hoodPoint', [(0.05, 0.0), (0.03, 0.06), (0.0, 0.1)], team, h, at=(0, 0.08, HEAD + 0.07), rot=(1.0, 0, 0), segs=12, sub=1)
-    lathe('mantle', [(0.07, 0.03), (0.135 * b, 0.0), (0.185 * b, -0.055), (0.195 * b, -0.08)], team, ch, at=(0, 0, NECK), scale=(1, 0.88, 1), segs=22, sub=1)
+    lathe('hoodPoint', [(0.05, 0.0), (0.03, 0.06), (0.0, 0.1)], hood_m, h, at=(0, 0.08, HEAD + 0.07), rot=(1.0, 0, 0), segs=12, sub=1)
+    lathe('mantle', [(0.07, 0.03), (0.135 * b, 0.0), (0.185 * b, -0.055), (0.195 * b, -0.08)], hood_m, ch, at=(0, 0, NECK), scale=(1, 0.88, 1), segs=22, sub=1)
     torus('mantleTrim', 0.193 * b, 0.008, gold, ch, at=(0, 0, NECK - 0.078), scale=(1, 0.88, 1), segs=24, rsegs=4)
     sphere('clasp', 0.018, gold, ch, at=(0, -0.12, NECK - 0.03), scale=(1, 0.6, 1), sub=1)
     # The long cape, sweeping out behind, gold hem with crowns.
-    sheet('cape', 0.32 * b, cape_len, team, ch, at=(0, 0.11 * b, NECK - 0.04), bend=0.08, flare=0.45, cols=10, rows=12, thick=0.012)
-    sheet('capeLining', 0.3 * b, cape_len - 0.02, team_d, ch, at=(0, 0.105 * b, NECK - 0.045), bend=0.08, flare=0.45, cols=10, rows=12, thick=0.006)
+    sheet('cape', 0.32 * b, cape_len, hood_m, ch, at=(0, 0.11 * b, NECK - 0.04), bend=0.08, flare=0.45, cols=10, rows=12, thick=0.012, ragged=ragged, seed=6)
+    sheet('capeLining', 0.3 * b, cape_len - 0.02, hood_d, ch, at=(0, 0.105 * b, NECK - 0.045), bend=0.08, flare=0.45, cols=10, rows=12, thick=0.006)
 
 
 def quiver(F, color=LEATHER, arrows=7):

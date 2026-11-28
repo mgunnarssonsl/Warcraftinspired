@@ -73,20 +73,20 @@ def body(F):
     leaf_ring('helmLeaves', h, (0, 0.03, HEAD + 0.1), 0.08, 7, 0.06, 0.12, WD.LEAVES, tilt=1.3)
 
 
-def mace(F):
+def mace(F, size=1.0):
     hd = F['hand.R']
     hx, hy, hz = hand_at(F, 'R')
     w = pivot('weapon', hd, (hx, hy, hz))
     w.rotation_euler = (0.6, 0, 0)
     F.p['weapon'] = w
-    tube('haft', 0.022, 0.026, 0.42, mat('matte', WOOD_D), w, at=(hx, hy, hz - 0.1), segs=8)
-    top = (hx, hy, hz + 0.35)
-    lump('maceHead', 0.085, mat('matte', WOOD), w, at=top, seed=7, rough=0.08)
+    tube('haft', 0.022 * size, 0.026 * size, 0.42 * size, mat('matte', WOOD_D), w, at=(hx, hy, hz - 0.1), segs=8)
+    top = (hx, hy, hz + 0.35 * size)
+    lump('maceHead', 0.085 * size, mat('matte', WOOD), w, at=top, seed=7, rough=0.08)
     for i in range(10):
         a = 2 * math.pi * i / 10
         e = 0.5 if i % 2 else -0.5
         d = (math.cos(a) * math.cos(e), math.sin(a) * math.cos(e), math.sin(e))
-        lathe(f'spike{i}', [(0.02, 0.0), (0.0, 0.07)], mat('matte', '#efe0c0'), w, at=(top[0] + d[0] * 0.075, top[1] + d[1] * 0.075, top[2] + d[2] * 0.075), rot=(math.acos(max(-1, min(1, d[2]))), 0, math.atan2(d[1], d[0]) + math.pi / 2) if False else (math.pi / 2 - e, 0, a - math.pi / 2), segs=5)
+        lathe(f'spike{i}', [(0.02 * size, 0.0), (0.0, 0.07 * size)], mat('matte', '#efe0c0'), w, at=(top[0] + d[0] * 0.075 * size, top[1] + d[1] * 0.075 * size, top[2] + d[2] * 0.075 * size), rot=(math.acos(max(-1, min(1, d[2]))), 0, math.atan2(d[1], d[0]) + math.pi / 2) if False else (math.pi / 2 - e, 0, a - math.pi / 2), segs=5)
 
 
 def round_shield(F):

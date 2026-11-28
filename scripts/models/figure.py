@@ -47,7 +47,7 @@ class Figure:
 
     # ---- animations ----------------------------------------------------------------
 
-    def animate(self, attack='slash', work=False, cast=False, mounted=False, reload=False, kneel=False):
+    def animate(self, attack='slash', work=False, cast=False, mounted=False, reload=False, kneel=False, base=True):
         P = self.p
         moving = list(P.values())
         rest = {n: tuple(o.rotation_euler) for n, o in P.items()}
@@ -67,7 +67,8 @@ class Figure:
                     r(f'upperarm.{s}', f, dx=-0.03 * k, dy=(0.04 if s == 'L' else -0.04) * k)
                     r(f'forearm.{s}', f, dx=-0.05 * k)
                 bob(f, -0.004 * k)
-        clip('idle', moving, 61, idle)
+        if base:
+            clip('idle', moving, 61, idle)
 
         def walk():
             if mounted:
@@ -99,7 +100,8 @@ class Figure:
                 r('chest', f, dz=0.08 * s, dx=0.06)
                 r('hips', f, dz=-0.06 * s)
                 bob(f, 0.018 * abs(c))
-        clip('walk', moving, 19 if mounted else 25, walk)
+        if base:
+            clip('walk', moving, 19 if mounted else 25, walk)
 
         def strike():
             # Wind up overhead (frames 1-20), the blow lands at frame 21 (70%), recover to 30.
