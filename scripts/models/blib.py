@@ -307,9 +307,35 @@ def consolidate():
         o.parent = parent
 
 
-def export(path):
+def tri_count(o):
+    return sum(len(p.vertices) - 2 for p in o.data.polygons)
+
+
+def thin(budget):
+    """Keep a model under `budget` triangles: decimate the dense meshes (smooth subdivided
+    shapes) and leave small parts (buttons, studs, leaves) as they are. Returns (before, after)."""
+    meshes = [o for o in bpy.data.objects if o.type == 'MESH' and not o.get('cutter')]
+    total = sum(tri_count(o) for o in meshes)
+    if not budget or total <= budget:
+        return total, total
+    dense = [o for o in meshes if tri_count(o) > 400]
+    small = total - sum(tri_count(o) for o in dense)
+    room = max(budget - small, budget * 0.3)
+    ratio = max(0.18, min(1.0, room / max(1, total - small)))
+    for o in dense:
+        m = o.modifiers.new('thin', 'DECIMATE')
+        m.decimate_type = 'COLLAPSE'
+        m.ratio = ratio
+        m.use_collapse_triangulate = True
+    dg = bpy.context.evaluated_depsgraph_get()
+    after = sum(len(o.evaluated_get(dg).data.polygons) for o in dense) + small
+    return total, after
+
+
+def export(path, budget=0):
     # Cutters and helper objects stay out of the file.
     consolidate()
+    thinned = thin(budget)
     for o in list(bpy.data.objects):
         if o.get('cutter'):
             o.hide_viewport = True
@@ -331,6 +357,7 @@ def export(path):
         export_normals=True,
         export_materials='EXPORT',
     )
+    return thinned
 
 
 def curve_tube(name, points, radius, material, parent, taper=None, segs=8):

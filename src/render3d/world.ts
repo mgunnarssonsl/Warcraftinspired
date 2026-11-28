@@ -126,12 +126,6 @@ export class World3D {
     g.userData.shared = true;
     return g;
   })();
-  /** A crisp rim around the disc: green troops still read on green grass. */
-  private rimGeo = (() => {
-    const g = new THREE.RingGeometry(0.84, 1, 32).rotateX(-Math.PI / 2);
-    g.userData.shared = true;
-    return g;
-  })();
   private discMats = new Map<string, THREE.MeshBasicMaterial>();
   private ringMats = new Map<string, THREE.MeshBasicMaterial>();
   private rings: THREE.Mesh[] = [];
@@ -1236,7 +1230,7 @@ export class World3D {
       if (!this.game.state.players[u.owner]?.neutral) {
         let m = this.discMats.get(team);
         if (!m) {
-          m = withFog(new THREE.MeshBasicMaterial({ color: team, transparent: true, opacity: 0.32, depthWrite: false }));
+          m = withFog(new THREE.MeshBasicMaterial({ color: team, transparent: true, map: discTexture(), depthWrite: false }));
           this.discMats.set(team, m);
         }
         const disc = new THREE.Mesh(this.discGeo, m);
@@ -1245,16 +1239,6 @@ export class World3D {
         disc.position.y = 0.012;
         disc.renderOrder = -2;
         v.root.add(disc);
-        let rm = this.discMats.get(team + '|rim');
-        if (!rm) {
-          rm = withFog(new THREE.MeshBasicMaterial({ color: team, transparent: true, opacity: 0.85, depthWrite: false }));
-          this.discMats.set(team + '|rim', rm);
-        }
-        const rim = new THREE.Mesh(this.rimGeo, rm);
-        rim.scale.set(r, 1, r);
-        rim.position.y = 0.014;
-        rim.renderOrder = -2;
-        v.root.add(rim);
       }
       this.units.set(u.id, v);
       this.scene.add(v.root);
@@ -1729,4 +1713,26 @@ function endRise(r: Rise): void {
     for (const c of Array.isArray(cur) ? cur : [cur]) c.dispose();
     m.material = orig;
   }
+}
+
+let discTex: THREE.Texture | null = null;
+/** The team disc under units: a faint fill inside a crisp rim, so green troops still read on
+ * green grass (one draw for both). */
+function discTexture(): THREE.Texture {
+  if (discTex) return discTex;
+  const n = 128;
+  const c = document.createElement('canvas');
+  c.width = c.height = n;
+  const ctx = c.getContext('2d')!;
+  const g = ctx.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2);
+  g.addColorStop(0, 'rgba(255,255,255,0.24)');
+  g.addColorStop(0.8, 'rgba(255,255,255,0.32)');
+  g.addColorStop(0.84, 'rgba(255,255,255,0.88)');
+  g.addColorStop(0.96, 'rgba(255,255,255,0.88)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, n, n);
+  discTex = new THREE.CanvasTexture(c);
+  discTex.colorSpace = THREE.SRGBColorSpace;
+  return discTex;
 }

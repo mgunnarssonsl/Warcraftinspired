@@ -98,5 +98,7 @@ if __name__ == '__main__':
         blib._mats.clear()
         MODELS[n]()
         path = os.path.join(OUT, f'{n}.glb')
-        blib.export(path)
-        print(n, os.path.getsize(path), 'bytes')
+        # Triangle budgets: armies of a hundred units must stay light; buildings are few.
+        budget = int(os.environ.get('BUDGET', 0)) or (45000 if n.startswith('b_') else 16000)
+        before, after = blib.export(path, budget)
+        print(n, os.path.getsize(path), 'bytes', f'{before} -> {after} tris')
