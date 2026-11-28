@@ -21,7 +21,7 @@ OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 MODELS = {
     'guard': crown.guard,
-    'worker': crown.laborer,
+    'worker': lambda: __import__('workers').laborer(),
     'archer': lambda: __import__('archer').archer(),
     'cleric': crown.cleric,
     'lancer': lambda: __import__('cavalry').lancer(),
@@ -30,7 +30,7 @@ MODELS = {
     'hero': lambda: __import__('heroes').marshal(),
     'ranger': lambda: __import__('heroes').pathfinder(),
     'sage': lambda: __import__('heroes').sage(),
-    'tender': wild.tender,
+    'tender': lambda: __import__('workers').tender(),
     'thornguard': lambda: __import__('woodguard').build('thornguard'),
     'slinger': wild.slinger,
     'fox': wild.fox,
