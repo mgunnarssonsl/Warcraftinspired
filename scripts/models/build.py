@@ -22,7 +22,7 @@ OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 MODELS = {
     'guard': crown.guard,
     'worker': crown.laborer,
-    'archer': crown.archer,
+    'archer': lambda: __import__('archer').archer(),
     'cleric': crown.cleric,
     'lancer': crown.lancer,
     'outrider': crown.outrider,

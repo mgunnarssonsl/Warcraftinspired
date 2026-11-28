@@ -237,7 +237,10 @@ def boolean_cut(target, cutter):
 # ---- animation -------------------------------------------------------------------
 
 
-def key(o, frame, rot=None, loc=None):
+def key(o, frame, rot=None, loc=None, scale=None):
+    if scale is not None:
+        o.scale = Vector(scale)
+        o.keyframe_insert('scale', frame=frame)
     if rot is not None:
         o.rotation_euler = Euler(rot)
         o.keyframe_insert('rotation_euler', frame=frame)
@@ -248,7 +251,7 @@ def key(o, frame, rot=None, loc=None):
 
 def clip(name, objects, frames, build):
     """Record one animation: `build(frame_fn)` sets keys; each object's keys go to an NLA track named `name`."""
-    base = {o.name: (o.location.copy(), o.rotation_euler.copy()) for o in objects}
+    base = {o.name: (o.location.copy(), o.rotation_euler.copy(), o.scale.copy()) for o in objects}
     for o in objects:
         o.animation_data_create()
         o.animation_data.action = None
@@ -265,7 +268,7 @@ def clip(name, objects, frames, build):
         st.action_frame_start = 1
         st.action_frame_end = frames
         ad.action = None
-        o.location, o.rotation_euler = base[o.name]
+        o.location, o.rotation_euler, o.scale = base[o.name]
 
 
 # ---- export --------------------------------------------------------------------
