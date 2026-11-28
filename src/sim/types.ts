@@ -161,10 +161,12 @@ export interface PlayerStats {
   campsCleared: number;
   /** Gold earned from bounties. */
   bounty: number;
+  /** Gold and wood withheld by upkeep. */
+  upkeepPaid: number;
 }
 
 export function emptyStats(): PlayerStats {
-  return { unitsTrained: 0, unitsLost: 0, kills: 0, buildingsBuilt: 0, buildingsLost: 0, trained: {}, built: {}, lost: {}, campsCleared: 0, bounty: 0 };
+  return { unitsTrained: 0, unitsLost: 0, kills: 0, buildingsBuilt: 0, buildingsLost: 0, trained: {}, built: {}, lost: {}, campsCleared: 0, bounty: 0, upkeepPaid: 0 };
 }
 
 /** One sample of a player's match, for the end-of-match summary. */
@@ -404,6 +406,8 @@ export interface Building extends EntityBase, Footprint {
   grows: boolean;
   /** Tick it was last damaged (regrowth waits a while after). */
   hurt: number;
+  /** A newly finished hall takes extra damage until this tick (see CONFIG.expansion). */
+  freshUntil: number;
 }
 
 export interface QueueItem {

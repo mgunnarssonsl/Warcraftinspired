@@ -395,6 +395,7 @@ export class Game {
       tier: 1,
       grows: false,
       hurt: -1e9,
+      freshUntil: -1,
     };
     this.state.entities[b.id] = b;
     this.lists = null;

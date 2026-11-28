@@ -20,6 +20,7 @@ import { CONFIG, secondsToTicks, TICK_SECONDS, type AttackType, type UnitType } 
 import type { Game } from './game';
 import { distToRect } from './movement';
 import { buffAmount, onHeroDeath, onKill } from './hero';
+import { isWorker } from './factions';
 import { onCampGuardDeath } from './items';
 import { destroyBuilding } from './production';
 import { armorTypeOf, armorValue, attackDamage, attackRange, typeMultiplier } from './tech';
@@ -251,6 +252,13 @@ export function dealDamage(game: Game, attackerId: number, attackerOwner: number
     const a = game.unit(attackerId);
     if (!a || attackDef(a).projectileSpeed > 0) scale *= CONFIG.skills.stance.rangedTaken;
   }
+  // Raiders hit workers harder.
+  if (t.kind === 'unit' && isWorker(t.type)) {
+    const a = game.unit(attackerId);
+    if (a && CONFIG.raid.units.includes(a.type)) scale *= CONFIG.raid.vsWorkers;
+  }
+  // A newly finished hall has not settled yet.
+  if (t.kind === 'building' && t.freshUntil > game.state.tick) scale *= CONFIG.expansion.freshTaken;
   // Musket balls punch through half of the armor.
   const armor = armorValue(game, t) * (type === 'shot' ? 0.5 : 1);
   let dmg = damageAfterArmor(raw * typeMultiplier(type, armorTypeOf(t)) * scale, armor);

@@ -22,6 +22,7 @@
 // It keeps a journal of its main decisions; the end screen shows it, so a
 // player can see what the computer was doing and why.
 
+import { nextUpkeepThreshold } from '../sim/upkeep';
 import { CONFIG, isHeroType, secondsToTicks, type AbilityId, type ArmyMix, type BuildingType, type ItemId, type ResearchId, type SkillId, type UnitType } from '../sim/config';
 import { isEnemy } from '../sim/combat';
 import type { Game } from '../sim/game';
@@ -777,12 +778,32 @@ export class ComputerPlayer {
       }
       // The Barracks always keeps training; specialist buildings only fill their share.
       if (role !== 'barracks' && deficit(armyKey(unit)!) <= 0) continue;
+      if (this.holdsForUpkeep(game, unit)) continue;
       const c = CONFIG.units[unit].cost;
       if (me.gold - reserve.gold >= c.gold && me.wood - reserve.wood >= c.wood) {
         game.issue({ type: 'train', player: P, buildingId: b.id, unit });
         tally(unit);
       }
     }
+  }
+
+  private upkeepNoted = -1;
+
+  /**
+   * Upkeep: an aware computer stops short of the next upkeep threshold while
+   * it is safe and not rich, and says so once per threshold.
+   */
+  private holdsForUpkeep(game: Game, unit: UnitType): boolean {
+    if (!this.profile.upkeepAware || this.posture === 'threatened') return false;
+    const used = game.popUsed(this.player);
+    const next = nextUpkeepThreshold(used);
+    if (next === null || used + CONFIG.units[unit].pop <= next) return false;
+    if (game.player(this.player).gold >= CONFIG.ai.upkeepBank) return false;
+    if (this.upkeepNoted !== next) {
+      this.upkeepNoted = next;
+      this.note(game, `Holding the army at ${next} population to stay clear of upkeep.`);
+    }
+    return true;
   }
 
   private adaptedNoted = false;

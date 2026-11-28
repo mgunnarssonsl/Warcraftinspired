@@ -2,6 +2,7 @@
 // button, notifications and the controls overlay. Reads state; issues actions
 // through the InputController.
 
+import { nextUpkeepThreshold, upkeepTierFor } from '../sim/upkeep';
 import { rulesOf } from '../sim/rules';
 import { buildableFor, buildingFaction, buildingRole, FACTION, isHall, isHealer, isWorker } from '../sim/factions';
 import { hpColor, teamColor } from './view';
@@ -292,6 +293,8 @@ export class Hud {
   private gold = document.getElementById('gold')!;
   private wood = document.getElementById('wood')!;
   private pop = document.getElementById('pop')!;
+  private upkeep = document.getElementById('upkeep')!;
+  private upkeepShown: string | null = null;
   private clock = document.getElementById('clock')!;
   private idleBtn = document.getElementById('idle-btn') as HTMLButtonElement;
   private idleCount = document.getElementById('idle-count')!;
@@ -582,6 +585,28 @@ export class Hud {
     }
   }
 
+  /** The upkeep chip beside population: the tier now, and where the next begins. */
+  private showUpkeep(used: number): void {
+    const tier = upkeepTierFor(used);
+    const tiers = CONFIG.upkeep.tiers;
+    const level = tier ? (tier === tiers[tiers.length - 1] ? 'high' : 'low') : 'none';
+    const text = tier ? `${tier.name} ${Math.round(tier.rate * 100)}%` : 'No upkeep';
+    if (text === this.upkeepShown) return;
+    this.upkeepShown = text;
+    setText(this.upkeep, text);
+    this.upkeep.classList.toggle('low', level === 'low');
+    this.upkeep.classList.toggle('high', level === 'high');
+    const steps = tiers.map((t) => `above ${t.above} population you keep ${Math.round(t.rate * 100)}%`).join('; ');
+    const next = nextUpkeepThreshold(used);
+    const now = tier ? `You keep ${Math.round(tier.rate * 100)}% of every delivery.` : 'You keep all you gather.';
+    setTip(
+      this.upkeep.parentElement!,
+      `A large army costs income. Gold and wood delivered are cut once your population is high: ${steps}. ${now}${next !== null ? ` Next step above ${next}.` : ''}`,
+      null,
+      'Upkeep',
+    );
+  }
+
   update(nowMs: number): void {
     const p = this.game.player(this.client.player);
     if (!p.defeated) this.checkSightings(nowMs);
@@ -603,6 +628,7 @@ export class Hud {
         'Population',
       );
     }
+    this.showUpkeep(used);
     const secs = Math.floor(this.game.state.tick / TICK_RATE);
     setText(this.clock, `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`);
     this.pausedBanner.classList.toggle('hidden', !this.client.paused);

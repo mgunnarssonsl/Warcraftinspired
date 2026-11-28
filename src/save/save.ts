@@ -18,7 +18,7 @@ import type { GameState } from '../sim/types';
 import type { ReplayLog } from '../replay/replay';
 
 export const SAVE_FORMAT = 'ironvale-save';
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 /** The match settings a save was started with (same shape as the start screen's). */
 export interface SavedMatch {
@@ -85,6 +85,14 @@ const MIGRATIONS: Record<number, (save: Record<string, unknown>) => Record<strin
       e.stance ??= false;
       e.dash ??= null;
     }
+    return save;
+  },
+  // 4 -> 5: upkeep and fragile expansions. No hall in an older save is
+  // fresh; upkeep needs no saved state.
+  4: (save) => {
+    const state = save.state as { players?: Array<{ stats?: Record<string, unknown> }>; entities?: Record<string, Record<string, unknown>> } | undefined;
+    for (const p of state?.players ?? []) if (p.stats) p.stats.upkeepPaid ??= 0;
+    for (const e of Object.values(state?.entities ?? {})) if (e.kind === 'building') e.freshUntil ??= -1;
     return save;
   },
 };

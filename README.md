@@ -350,6 +350,41 @@ every number in `CONFIG.veterancy`, `specialize`, `mounts`, `mounting` and
     of a match.
   - A replay recorded with another version says so when played.
 
+## Pressure: upkeep, fragile expansions, raiding (1.2)
+
+Three rules that make a large army cost something and let early pressure
+punish a greedy expansion. Every number lives in `CONFIG.upkeep`,
+`CONFIG.expansion` and `CONFIG.raid` (`src/sim/config.ts`); tests in
+`tests/pressure.test.ts`.
+
+- **Upkeep.** Gold and wood delivered are cut once your population used
+  (living units plus units in training, workers included) is high:
+
+  | Population used | You keep |
+  | --- | --- |
+  | up to 50 | 100% |
+  | 51–80 (*Low upkeep*) | 70% |
+  | 81 and more (*High upkeep*) | 40% |
+
+  - The thresholds are absolute, whatever the match's population ceiling.
+  - Fractions carry over to the next delivery, so nothing is lost to
+    rounding. A labelled income advantage multiplies on top.
+  - The top bar shows the tier beside population, with a tooltip. The end
+    screen counts what each side lost to upkeep.
+- **Fragile expansions.** A Keep or Heartwood under construction (or
+  growing) holds only 40% of the health it would normally have at that
+  point; it gets the rest when it completes. Damage taken meanwhile stays
+  taken. For 60 s after it completes, it takes 30% more damage. The halls a
+  match starts with are never fresh; no other building changes.
+- **Raiding.** Lancers and Stag Riders deal 50% more damage to workers
+  (Laborers and Tenders).
+- **Computer opponent.** On Normal and Hard it holds its army just below
+  the next upkeep threshold while it is safe, and crosses it once it is
+  threatened or has 700 gold banked. Its journal says so. A style may opt
+  out with `ignoresUpkeep`. Easy ignores upkeep.
+- **Saves and online.** Save format 5 fills the new fields (no hall in an
+  older save is fresh). Protocol 3 keeps older clients out of a match.
+
 ## Art: style A, classic RTS
 
 The look follows the style A design sheets in `warcraft-style-a 2/`
@@ -537,6 +572,8 @@ These are the rules as implemented. All numbers live in `src/sim/config.ts`.
   The cap is a deliberate maximum: past it, more Farms add nothing. The top
   bar then reads "100/100 max", and a blocked queue says the maximum is
   reached rather than asking for Farms.
+- **Upkeep:** see [Pressure](#pressure-upkeep-fragile-expansions-raiding-12).
+  Above 50 population every delivery is cut to 70%, above 80 to 40%.
 
 ## Match rules
 

@@ -45,6 +45,7 @@ export function composeProfile(difficulty: Difficulty, style: StyleId = 'balance
     creepParty: Math.max(3, CONFIG.ai.creepParty + (a.creepParty ?? 0)),
     raids: !!a.raids,
     heroesEarly: !!a.heroesEarly,
+    upkeepAware: base.upkeepAware && !a.ignoresUpkeep,
   };
   p.firstAttackSeconds = time(base.firstAttackSeconds, a.attackTiming)!;
   p.expandSeconds = time(base.expandSeconds, a.expandTiming)!;

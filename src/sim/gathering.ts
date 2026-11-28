@@ -3,6 +3,7 @@
 // Resources exist only as node reserves, explicit worker cargo, or player
 // stockpiles; they move between them only at well-defined moments.
 
+import { upkeepRate } from './upkeep';
 import { CONFIG, secondsToTicks } from './config';
 import type { Game } from './game';
 import { goldCarry, woodCarry } from './tech';
@@ -309,11 +310,14 @@ export function updateGatherer(game: Game, u: Unit, o: GatherOrder): void {
       }
       if (atRect(u, drop)) {
         const p = game.player(u.owner);
-        // An income advantage (a labelled cheat) adds its share, whole units only.
-        const owed = u.carry.amount * p.incomeBonus + p.incomeOwed;
-        const bonus = Math.floor(owed + 1e-9);
-        p.incomeOwed = owed - bonus;
-        const amount = u.carry.amount + bonus;
+        // Upkeep cuts the delivery; an income advantage (a labelled cheat)
+        // adds its share. Whole units only: the fraction carries over.
+        const rate = upkeepRate(game, u.owner);
+        const owed = u.carry.amount * (rate * (1 + p.incomeBonus) - 1) + p.incomeOwed;
+        const delta = Math.floor(owed + 1e-9);
+        p.incomeOwed = owed - delta;
+        const amount = u.carry.amount + delta;
+        p.stats.upkeepPaid += u.carry.amount - Math.min(u.carry.amount, amount);
         if (res === 'gold') {
           p.gold += amount;
           p.goldGathered += amount;

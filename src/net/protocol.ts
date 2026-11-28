@@ -16,7 +16,7 @@ import { FACTIONS, type FactionId } from '../sim/factions';
 import { MAPS, type MapDef } from '../sim/maps';
 import type { MatchRules } from '../sim/rules';
 
-export const PROTOCOL_VERSION = 2; // 2: elite units (skills, mounting, specialization)
+export const PROTOCOL_VERSION = 3; // 2: elite units (skills, mounting, specialization); 3: upkeep, fragile expansions, raiding
 /** Simulation ticks per lockstep turn (2 ticks = 100 ms). */
 export const TURN_TICKS = 2;
 export const TURN_MS = (TURN_TICKS * 1000) / 20;

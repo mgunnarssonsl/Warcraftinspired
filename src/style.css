@@ -90,6 +90,18 @@ body {
 #pop.full {
   color: var(--alert);
 }
+#upkeep {
+  font-weight: 500;
+  opacity: 0.75;
+}
+#upkeep.low {
+  color: #e0b040;
+  opacity: 1;
+}
+#upkeep.high {
+  color: var(--alert);
+  opacity: 1;
+}
 .icon {
   width: 14px;
   height: 14px;

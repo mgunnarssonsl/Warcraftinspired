@@ -34,6 +34,8 @@ export type StyleAdjust = {
   raids?: boolean;
   /** Builds its Hall of Valor before the Barracks and raises heroes first. */
   heroesEarly?: boolean;
+  /** Pays upkeep for a bigger army rather than holding below the thresholds. */
+  ignoresUpkeep?: boolean;
 };
 
 export const CONFIG = {
@@ -1749,6 +1751,8 @@ export const CONFIG = {
    * rules and receives no extra resources or information.
    */
   ai: {
+    /** Gold banked above which an upkeep-aware computer accepts the next upkeep tier anyway. */
+    upkeepBank: 700,
     profiles: {
       easy: {
         thinkSeconds: 2.0,
@@ -1809,6 +1813,8 @@ export const CONFIG = {
         heroRetreat: false,
         /** Sends a worker to repair damaged buildings once no enemy is near. */
         repairs: false,
+        /** Holds its army below the next upkeep threshold unless threatened or rich (CONFIG.ai.upkeepBank). */
+        upkeepAware: false,
         /** Saves gold to rebuild when its last Keep is going down. */
         saveForKeep: false,
         /** When (seconds) a Laborer walks over to look at the enemy base; null = never. */
@@ -1858,6 +1864,7 @@ export const CONFIG = {
         pullWorkers: true,
         heroRetreat: true,
         repairs: true,
+        upkeepAware: true,
         saveForKeep: true,
         scoutWorkerSeconds: 120 as number | null,
         readsIntel: true,
@@ -1900,6 +1907,7 @@ export const CONFIG = {
         pullWorkers: true,
         heroRetreat: true,
         repairs: true,
+        upkeepAware: true,
         saveForKeep: true,
         scoutWorkerSeconds: 75 as number | null,
         readsIntel: true,
@@ -2047,6 +2055,38 @@ export const CONFIG = {
     creepParty: 6,
     /** Gold it keeps for the army before spending on research. */
     researchBuffer: 150,
+  },
+
+  /**
+   * Upkeep: a large army costs income. Every delivery of gold or wood is cut
+   * to `rate` once the player's population used (living units plus units in
+   * training) is above `above`. The highest tier reached applies. Thresholds
+   * are absolute, whatever the match's population ceiling.
+   */
+  upkeep: {
+    tiers: [
+      { above: 50, rate: 0.7, name: 'Low upkeep' },
+      { above: 80, rate: 0.4, name: 'High upkeep' },
+    ],
+  },
+
+  /**
+   * Expansions are fragile until they settle: an unfinished hall (Keep or
+   * Heartwood) holds only `unfinishedHp` of the health it would normally
+   * have at that point of construction, and gets the rest on completion.
+   * For `freshSeconds` after it completes it takes `freshTaken` x damage.
+   * The halls a match starts with are never fresh.
+   */
+  expansion: {
+    unfinishedHp: 0.4,
+    freshSeconds: 60,
+    freshTaken: 1.3,
+  },
+
+  /** Raiding: these units deal `vsWorkers` x damage to workers (Laborers, Tenders). */
+  raid: {
+    units: ['lancer', 'stagrider'] as string[],
+    vsWorkers: 1.5,
   },
 
   construction: {

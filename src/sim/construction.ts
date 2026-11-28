@@ -9,7 +9,7 @@
 //      price as the health comes back (see CONFIG.construction.repairCost).
 // Unfinished buildings provide no population and accept no deliveries.
 
-import { FACTION } from './factions';
+import { FACTION, isHall } from './factions';
 import { CONFIG, secondsToTicks, type BuildingType, type ResearchId } from './config';
 import { researched } from './tech';
 import type { Game } from './game';
@@ -207,10 +207,18 @@ export function updateBuilder(game: Game, u: Unit, o: BuildOrder): void {
 
 /** One tick of construction; true when it completes. */
 function advance(game: Game, site: Building, ticks: number): boolean {
+  // An unfinished hall gains only part of its health while it rises; it gets
+  // the rest when it completes (damage taken meanwhile stays taken).
+  const share = isHall(site.type) ? CONFIG.expansion.unfinishedHp : 1;
+  const gain = site.maxHp * (1 - CONFIG.construction.startHpFraction);
   site.progress = Math.min(1, site.progress + 1 / ticks);
-  site.hp = Math.min(site.maxHp, site.hp + (site.maxHp * (1 - CONFIG.construction.startHpFraction)) / ticks);
+  site.hp = Math.min(site.maxHp, site.hp + (gain * share) / ticks);
   if (site.progress < 1 - 1e-9) return false;
   site.progress = 1;
+  if (share < 1) {
+    site.hp = Math.min(site.maxHp, site.hp + gain * (1 - share));
+    site.freshUntil = game.state.tick + secondsToTicks(CONFIG.expansion.freshSeconds);
+  }
   site.hp = Math.min(site.maxHp, Math.round(site.hp));
   game.emit({ type: 'buildingComplete', player: site.owner, id: site.id, x: site.x, y: site.y });
   const stats = game.player(site.owner).stats;

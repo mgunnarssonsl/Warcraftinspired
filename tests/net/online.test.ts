@@ -154,7 +154,9 @@ describe('online match over the network', () => {
 
 describe('elite units online', () => {
   it('skills, specialization and mounting go through lockstep and both machines stay identical', () => {
-    const w = new NetWorld(11);
+    // A seed whose match uses all three (with upkeep, armies are smaller and
+    // not every match gets as far as mounting).
+    const w = new NetWorld(19);
     const a = w.add('Crown', { latency: 30, jitter: 15 }, 'hard');
     const b = w.add('Wild', { latency: 40, jitter: 20 }, 'hard');
     w.startMatch('vales', ['crown', 'wild']);

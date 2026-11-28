@@ -61,6 +61,7 @@ export function summaryHtml(game: Game, viewer: number, names: Record<number, st
     ['Gold gathered (per minute)', (id) => `${game.player(id).goldGathered} (${Math.round(game.player(id).goldGathered / minutes)})`],
     ['Wood gathered', (id) => String(game.player(id).woodGathered)],
     ['Bounty from kills', (id) => String(game.player(id).stats.bounty)],
+    ['Lost to upkeep', (id) => String(game.player(id).stats.upkeepPaid ?? 0)],
     ['Most workers / largest army', (id) => `${peak(id, 'workers')} / ${peak(id, 'army')}`],
     ['Units trained', (id) => `${game.player(id).stats.unitsTrained}`],
     ['Units lost', (id) => `${game.player(id).stats.unitsLost}: ${byType(game.player(id).stats.lost)}`],
