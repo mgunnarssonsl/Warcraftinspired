@@ -59,6 +59,9 @@ export class Overlay {
     }
   }
 
+  /** Screen boxes of the bar labels drawn this frame, so labels of neighbours do not overprint. */
+  private labelRects: { x0: number; x1: number; y0: number; y1: number }[] = [];
+
   private bar(x: number, y: number, h: number, w: number, frac: number, color: string, label?: string, team?: string): void {
     const p = this.rig.project(x, y, h);
     if (!p.visible) return;
@@ -78,11 +81,20 @@ export class Overlay {
     if (label) {
       ctx.font = '600 11px system-ui, sans-serif';
       ctx.textAlign = 'center';
+      // Lift the label above any label it would overprint (two buildings, one behind the other).
+      const half = ctx.measureText(label).width / 2 + 2;
+      let ly = py - 4;
+      for (let tries = 0; tries < 4; tries++) {
+        const hit = this.labelRects.find((r) => p.x - half < r.x1 && p.x + half > r.x0 && ly - 11 < r.y1 && ly + 2 > r.y0);
+        if (!hit) break;
+        ly = hit.y0 - 3;
+      }
+      this.labelRects.push({ x0: p.x - half, x1: p.x + half, y0: ly - 11, y1: ly + 2 });
       ctx.lineWidth = 3;
       ctx.strokeStyle = 'rgba(0,0,0,0.85)';
-      ctx.strokeText(label, p.x, py - 4);
+      ctx.strokeText(label, p.x, ly);
       ctx.fillStyle = '#fff';
-      ctx.fillText(label, p.x, py - 4);
+      ctx.fillText(label, p.x, ly);
     }
   }
 
@@ -235,6 +247,7 @@ export class Overlay {
   draw(client: ClientState, alpha: number, now: number): void {
     const { ctx, canvas, game } = this;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    this.labelRects.length = 0;
     const selected = new Set(client.selected);
     this.drawPlans(client, alpha);
     // Items on the ground are labelled so they read at a glance.

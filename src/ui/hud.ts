@@ -18,6 +18,10 @@ import { buyProblem } from '../sim/items';
 import { flareProblem } from '../sim/commands';
 import { heroProblem, missingRequirement, trainableAt, trainCost } from '../sim/production';
 import { armorValue, attackDamage, attackRange, healAmount, researchAt, researched, researchPending, researchProblem } from '../sim/tech';
+
+/** 'a Guard', 'an Archer'. */
+const an = (name: string): string => `${/^[aeiou]/i.test(name) ? 'an' : 'a'} ${name}`;
+const cap = (t: string): string => t.charAt(0).toUpperCase() + t.slice(1);
 import type { Building, Entity, GameEvent, Unit } from '../sim/types';
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
@@ -435,6 +439,7 @@ export class Hud {
   /** Called when scouting spots something worth knowing (a softer ping). */
   onSighting: (x: number, y: number) => void = () => {};
   private sightedBuildings = new Set<number>();
+  private sightedTypes = new Set<string>();
   private popAtMax: boolean | null = null;
   private armyInView = false;
   private lastArmySighting = -1e9;
@@ -451,14 +456,35 @@ export class Hud {
     const me = this.client.player;
     const vision = this.game.vision;
     const firstLook = this.sightedBuildings.size === 0 && this.game.state.tick < 20;
+    // One banner per scouting pass: halls always (a base or an expansion), other buildings
+    // only the first time their kind is seen.
+    const halls: string[] = [];
+    const others: string[] = [];
+    let ping: { x: number; y: number } | null = null;
     for (const m of vision.remembered(me)) {
       if (this.sightedBuildings.has(m.id)) continue;
       this.sightedBuildings.add(m.id);
-      if (firstLook) continue;
+      if (firstLook) {
+        this.sightedTypes.add(m.type);
+        continue;
+      }
       const name = CONFIG.buildings[m.type].name;
-      this.notify(isHall(m.type) ? `Enemy ${name} spotted: a base or an expansion. (Space: jump there)` : `Enemy ${name} spotted.`, isHall(m.type) ? 'alert' : '');
-      this.onSighting(m.x, m.y);
+      if (isHall(m.type)) {
+        halls.push(name);
+        ping = { x: m.x, y: m.y };
+      } else if (!this.sightedTypes.has(m.type)) {
+        others.push(name);
+        ping ??= { x: m.x, y: m.y };
+      }
+      this.sightedTypes.add(m.type);
     }
+    if (halls.length) {
+      const also = others.length ? ` Also seen: ${others.join(', ')}.` : '';
+      this.notify(`Enemy ${halls[0]} spotted: a base or an expansion. (Space: jump there)${also}`, 'alert');
+    } else if (others.length) {
+      this.notify(`Enemy ${others.length > 1 ? `buildings spotted: ${others.join(', ')}` : `${others[0]} spotted`}.`);
+    }
+    if (ping) this.onSighting(ping.x, ping.y);
     const soldiers = this.game
       .units()
       .filter((u) => u.owner !== me && !this.game.player(u.owner).neutral && !isWorker(u.type) && vision.canSee(me, u));
@@ -531,13 +557,13 @@ export class Hud {
         this.notify(e.reason, 'alert');
       } else if (e.type === 'rankUp' && e.player === this.client.player) {
         const u = this.game.unit(e.id);
-        const name = u ? CONFIG.units[u.type].name : 'A soldier';
+        const name = u ? CONFIG.units[u.type].name : 'soldier';
         const opts = u ? specOptions(u.type) : [];
         if (e.rank >= 2 && opts.length)
-          this.notify(`A ${name} is a seasoned veteran: it can now become a ${opts.map((o) => CONFIG.units[o].name).join(' or ')}.`, 'good');
-        else if (e.rank === 1) this.notify(`A ${name} has become a Veteran.`, 'good');
+          this.notify(`${cap(an(name))} is a seasoned veteran: it can now become ${opts.map((o) => an(CONFIG.units[o].name)).join(' or ')}.`, 'good');
+        else if (e.rank === 1) this.notify(`${cap(an(name))} has become a Veteran.`, 'good');
       } else if (e.type === 'specialized' && e.player === this.client.player) {
-        this.notify(`A veteran has become a ${CONFIG.units[e.into].name}.`, 'good');
+        this.notify(`A veteran has become ${an(CONFIG.units[e.into].name)}.`, 'good');
       } else if (e.type === 'mounted' && e.player === this.client.player) {
         const u = this.game.unit(e.id);
         this.notify(`${u ? CONFIG.units[u.type].name : 'A rider'} ready.`, 'good');
@@ -660,7 +686,8 @@ export class Hud {
       if (a.slot !== undefined) {
         btn.classList.toggle('hidden', !hero);
         const it = hero?.hero!.items[a.slot] ?? null;
-        setText(btn.querySelector('.cmd-label')!, it ? CONFIG.items[it].name : '(empty)');
+        setText(btn.querySelector('.cmd-label')!, it ? CONFIG.items[it].name : '');
+        btn.classList.toggle('empty-slot', !it);
         btn.disabled = !it || !CONFIG.items[it].consumable;
         btn.classList.toggle('has-item', !!it);
         btn.classList.toggle('has-art', !!it);
