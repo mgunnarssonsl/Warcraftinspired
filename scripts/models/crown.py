@@ -210,7 +210,7 @@ def _guard_gear(F, shield_style, weapon, steel, gold, team):
 # ---- the rest of the Crown --------------------------------------------------------------
 from common import (cloth_legs, torso, cloth_arms, face, hood, cape, tabard, crown_emblem, sword as c_sword, staff, make_bow, quiver,
                     hand_at, arm_x, held, WOOD, WOOD_D)
-from blib import pivot, key, clip
+from blib import pivot, key, clip, lump
 import beasts as BS
 
 CREAM = '#efe2c2'
@@ -478,10 +478,18 @@ def mangonel():
     for i in range(5):
         torus(f'rope{i}', 0.072, 0.008, mat('matte', '#a8844c'), fr, at=(-0.1 + i * 0.05, 0.3, 0.4), rot=(0, math.pi / 2, 0), segs=12, rsegs=3)
     from crown import kite_outline as ko
-    extrude('frontShield', ko(0.22, 0.28), 0.04, mat('team'), fr, at=(0, -0.47, 0.42), bevel=0.006)
-    crown_emblem(fr, (0, -0.495, 0.42), 0.08)
-    for i, (x, y) in enumerate(((0.15, -0.28), (0.07, -0.3), (0.11, -0.22))):
-        sphere(f'ammo{i}', 0.07, mat('matte', '#8a8478'), fr, at=(x, y, 0.36), sub=1)
+    extrude('frontShieldRim', ko(0.3, 0.36), 0.035, mat('gold', GOLD), fr, at=(0, -0.47, 0.44), bevel=0.006)
+    extrude('frontShield', ko(0.26, 0.32), 0.04, mat('team'), fr, at=(0, -0.48, 0.445), bevel=0.006)
+    crown_emblem(fr, (0, -0.505, 0.45), 0.12)
+    # Iron plates and bolts at every joint, rope lashing the uprights to the beam.
+    for x in (-1, 1):
+        for z in (0.32, 0.72):
+            box(f'uprightPlate{x}{z}', (0.095, 0.095, 0.07), iron, fr, at=(x * 0.2, 0.06 - (z - 0.52) * 0.255, z), rot=(0.25, 0, 0), bevel=0.008)
+        for i in range(4):
+            torus(f'lash{x}{i}', 0.06, 0.009, mat('matte', '#c8a46a'), fr, at=(x * 0.2, 0.06 - (0.62 + i * 0.025 - 0.52) * 0.255, 0.62 + i * 0.025), rot=(0.25, 0, 0), segs=10, rsegs=3)
+    # A pile of rough stones on the front deck and a spare beside the rear wheel.
+    for i, (x, y, z) in enumerate(((0.15, -0.28, 0.36), (0.04, -0.3, 0.36), (0.1, -0.2, 0.37), (0.1, -0.26, 0.45), (-0.14, -0.26, 0.37))):
+        lump(f'ammo{i}', 0.075, mat('matte', '#8a8478'), fr, at=(x, y, z), seed=70 + i, rough=0.3, sub=0)
     for wn in ('wheel.F', 'wheel.B'):
         w = P[wn]
         wy = -0.34 if wn == 'wheel.F' else 0.34
@@ -494,7 +502,11 @@ def mangonel():
     am = P['arm']
     box('throwArm', (0.07, 0.95, 0.07), wood, am, at=(0, 0.12 + 0.32, 0.8), bevel=0.015, sub=1)
     lathe('bucket', [(0.02, 0.0), (0.12, 0.03), (0.13, 0.09)], woodD, am, at=(0, 0.12 + 0.78, 0.82), segs=12, sub=1)
-    sphere('boulder', 0.1, mat('matte', '#8a8478'), am, at=(0, 0.12 + 0.78, 0.9), sub=1)
+    lump('boulder', 0.095, mat('matte', '#8a8478'), am, at=(0, 0.12 + 0.78, 0.92), seed=77, rough=0.35, sub=0)
+    for i in range(6):
+        torus(f'armRope{i}', 0.05, 0.011, mat('matte', '#c8a46a'), am, at=(0, 0.12 + 0.5 + i * 0.03, 0.8), rot=(math.pi / 2, 0, 0), segs=10, rsegs=3)
+    for y in (0.15, 0.7):
+        box(f'armPlate{y}', (0.085, 0.06, 0.085), iron, am, at=(0, 0.12 + y, 0.8), bevel=0.008)
     objs = list(P.values())
     rest = {n: tuple(o.rotation_euler) for n, o in P.items()}
     am.rotation_euler = (0.25, 0, 0)
