@@ -36,7 +36,7 @@ MODELS = {
     'fox': lambda: __import__('forest').fox(),
     'stagrider': lambda: __import__('forest').stagrider(),
     'mender': lambda: __import__('thornfolk').mender(),
-    'rootcrusher': wild.rootcrusher,
+    'rootcrusher': lambda: __import__('treant').rootcrusher(),
     'warden': lambda: __import__('heroes').warden(),
     'huntress': lambda: __import__('heroes').huntress(),
     'speaker': lambda: __import__('heroes').speaker(),
