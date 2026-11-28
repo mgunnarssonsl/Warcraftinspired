@@ -169,7 +169,34 @@ def warhammer(F):
     lathe('hammerSpike', [(0.022, 0.0), (0.0, 0.08)], steel, w, at=(hx, hy, top + 0.055), segs=8)
 
 
+def lance(F):
+    """A long jousting lance on its own pivot, striped in the team colour, a steel vamplate."""
+    hd, trim, steel = F['hand.R'], mat('gold', TRIM), mat('metal', STEEL)
+    hx, hy, hz = hand_at(F, 'R')
+    w = pivot('weapon', hd, (hx, hy, hz))
+    w.rotation_euler = (math.pi / 2 + 0.25, 0, 0)  # couched: forward, a little down
+    F.p['weapon'] = w
+    tube('lanceButt', 0.026, 0.03, 0.3, mat('matte', '#e9dcc0'), w, at=(hx, hy, hz - 0.3), segs=10)
+    lathe('lanceShaft', [(0.032, 0.0), (0.026, 0.4), (0.016, 0.95)], mat('matte', '#e9dcc0'), w, at=(hx, hy, hz), segs=12, sub=1)
+    for i in range(6):
+        z = 0.12 + i * 0.13
+        r = 0.032 - 0.016 * (z / 0.95) + 0.002
+        tube(f'lanceStripe{i}', r, r, 0.06, mat('team'), w, at=(hx, hy, hz + z), segs=12, caps=False)
+    lathe('vamplate', [(0.0, 0.0), (0.09, 0.05), (0.035, 0.13), (0.0, 0.14)], steel, w, at=(hx, hy, hz + 0.03), segs=16, sub=1)
+    torus('vamplateTrim', 0.088, 0.008, trim, w, at=(hx, hy, hz + 0.05), segs=18, rsegs=4)
+    lathe('lanceTip', [(0.02, 0.0), (0.026, 0.03), (0.0, 0.2)], mat('metal', '#e1e6ee'), w, at=(hx, hy, hz + 0.95), segs=10)
+
+
 def build(kind='guard', F=None, animate=True):
+    if kind == 'lancer':
+        F = F or Figure(bulk=1.12)
+        legs(F)
+        torso(F)
+        arms(F)
+        great_helm(F)
+        CR_cape(F, w=0.34, h=0.42)
+        lance(F)
+        return F
     F = F or Figure(bulk=1.22)
     legs(F)
     torso(F)

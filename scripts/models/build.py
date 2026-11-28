@@ -24,7 +24,7 @@ MODELS = {
     'worker': crown.laborer,
     'archer': lambda: __import__('archer').archer(),
     'cleric': crown.cleric,
-    'lancer': crown.lancer,
+    'lancer': lambda: __import__('cavalry').lancer(),
     'outrider': crown.outrider,
     'mangonel': crown.mangonel,
     'hero': crown.marshal,
