@@ -68,7 +68,7 @@ def fox():
         lump(f'paw.{k}', g * 0.18, mat('matte', SOCK), lo, at=(x, y - 0.02, 0.02), scale=(1.0, 1.4, 0.6), seed=30 + ord(k[1]), rough=0.08)
     # The great plumed tail, sweeping back and up, white at the tip.
     t0 = (0, L * 0.45, cz + g * 0.3)
-    _tail('tail', [t0, (0, L * 0.62, cz - g * 0.05), (0, L * 0.8, cz + g * 0.45), (0, L * 0.86, cz + g * 1.3)], tl, g * 0.62, (COAT, WHITE), 40, n=11, tip=3)
+    _tail('tail', [t0, (0, L * 0.6, cz - g * 0.3), (0, L * 0.82, cz - g * 0.05), (0.03, L * 0.92, cz + g * 0.8)], tl, g * 0.72, (COAT, WHITE), 40, n=11, tip=3)
     # A collar of leaves with a gold diamond amulet; a team band under it.
     torus('collar', g * 0.6, 0.012, mat('team'), nk, at=(0, -L * 0.45, cz + g * 0.62), rot=(1.15, 0, 0), segs=16, rsegs=4)
     leaf_ring('collarLeaves', nk, (0, -L * 0.45, cz + g * 0.6), g * 0.66, 10, 0.06, 0.12, WD.LEAVES, tilt=2.1)

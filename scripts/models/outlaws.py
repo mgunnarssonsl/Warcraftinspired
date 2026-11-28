@@ -262,7 +262,7 @@ def brute():
     lathe('clubEnd', [(0.0, 0.0), (0.072, 0.0), (0.0, 0.006)], mat('matte', '#c8a46a'), w, at=(hx + 0.01, hy, hz + 0.55), segs=12)
     for i in range(3):
         lump(f'clubMoss{i}', 0.045, moss if i % 2 else moss_d, w, at=(hx + 0.03 * (i - 1), hy - 0.03, hz + 0.3 + i * 0.08), scale=(1.2, 1.0, 0.6), seed=60 + i, rough=0.3)
-    F.animate(attack='slash')
+    F.animate(attack='smash', style='heavy')
     return F
 
 

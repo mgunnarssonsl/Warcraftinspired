@@ -75,7 +75,7 @@ def cleric():
         a = 2 * math.pi * i / 4 + math.pi / 4
         curve_tube(f'prong{i}', [(hx + math.cos(a) * 0.045, hy + math.sin(a) * 0.045, hz + 0.75), (hx + math.cos(a) * 0.07, hy + math.sin(a) * 0.07, hz + 0.82), (hx + math.cos(a) * 0.03, hy + math.sin(a) * 0.03, hz + 0.9)], 0.008, gold, w, taper=[1.0, 0.8, 0.3])
     lathe('crystal', [(0.0, 0.0), (0.04, 0.05), (0.032, 0.11), (0.0, 0.17)], mat('glow', '#8aff5a'), w, at=(top[0], top[1], top[2] - 0.04), segs=8, sub=1)
-    F.animate(attack=None, cast=True)
+    F.animate(attack=None, cast=True, style='robed')
     SY.spear_thrust(F)
     return F
 

@@ -85,7 +85,7 @@ def slinger():
         a = i * math.pi / 3
         lathe(f'podSpike{i}', [(0.006, 0.0), (0.0, 0.02)], mat('matte', '#5a3a1c'), sl, at=(hx - 0.01 + math.cos(a) * 0.03, hy - 0.03 + math.sin(a) * 0.03, hz - 0.265), rot=(math.sin(a) * -1.57, math.cos(a) * 1.57, 0), segs=5)
     F.p['sling'] = sl
-    F.animate(attack='throw')
+    F.animate(attack='sling', style='light')
     return F
 
 
@@ -145,6 +145,6 @@ def mender():
         a = 2 * math.pi * i / 5
         leaf(f'petal{i}', w, (hx + math.cos(a) * 0.045, hy + math.sin(a) * 0.045, top[2] - 0.02), 0.06, 0.13, '#b8dc5c', rot=(0.5, 0, a - math.pi / 2))
     lathe('bud', [(0.0, 0.0), (0.05, 0.045), (0.045, 0.1), (0.0, 0.16)], mat('glow', '#ffd25a'), w, at=(top[0], top[1], top[2] - 0.03), segs=10, sub=1)
-    F.animate(attack=None, cast=True)
+    F.animate(attack=None, cast=True, style='robed')
     SY.spear_thrust(F)
     return F

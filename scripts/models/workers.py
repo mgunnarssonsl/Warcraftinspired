@@ -118,7 +118,7 @@ def laborer():
     F.p['hat'] = hp
     tool(F)
     carry(F)
-    F.animate(attack='slash', work=True)
+    F.animate(attack='slash', work=True, style='stout')
     return F
 
 

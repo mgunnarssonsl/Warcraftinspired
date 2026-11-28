@@ -52,14 +52,24 @@ def rootcrusher():
     box('mouth', (0.12, 0.03, 0.025), mat('matte', '#1e140c'), ch, at=(0, -0.25, fz - 0.11), rot=(0, 0, 0), bevel=0.01)
     # A broad, flat canopy: layered leaf clumps spreading wide, vines hanging from the rim.
     cz = SHOULDER + 0.32
+    def clump(name, r, color, at, scale, seed):
+        # A knobbly clump of foliage shingled with leaves pointing out from its surface.
+        lump(name, r, mat('matte', color), ch, at=at, scale=scale, seed=seed, rough=0.5, freq=(5, 10), waves_n=9)
+        k = seed * 7
+        for j in range(9):
+            az = 2 * math.pi * j / 9 + seed
+            el = 0.35 + 0.5 * ((j * 5 + k) % 9) / 9
+            dx, dy, dz = math.cos(az) * math.cos(el), math.sin(az) * math.cos(el), math.sin(el)
+            p = (at[0] + dx * r * scale[0] * 0.92, at[1] + dy * r * scale[1] * 0.92, at[2] + dz * r * scale[2] * 0.92)
+            leaf(f'{name}Leaf{j}', ch, p, 0.075, 0.13, WD.LEAVES[(j + seed) % 3], rot=(math.pi / 2 - el, 0, az - math.pi / 2))
     for i in range(10):
         a = 2 * math.pi * i / 10
         r = 0.36 if i % 2 else 0.3
-        lump(f'canopy{i}', 0.16, mat('matte', WD.LEAVES[i % 3]), ch, at=(math.cos(a) * r * 1.3, math.sin(a) * r + 0.04, cz + (0.02 if i % 2 else -0.03)), scale=(1.3, 1.2, 0.65), seed=30 + i, rough=0.35)
+        clump(f'canopy{i}', 0.16, WD.LEAVES[i % 3], (math.cos(a) * r * 1.3, math.sin(a) * r + 0.04, cz + (0.02 if i % 2 else -0.03)), (1.3, 1.2, 0.65), 30 + i)
     for i in range(5):
         a = 2 * math.pi * i / 5 + 0.3
-        lump(f'canopyTop{i}', 0.16, mat('matte', WD.LEAVES[(i + 1) % 3]), ch, at=(math.cos(a) * 0.16, math.sin(a) * 0.14 + 0.04, cz + 0.1), scale=(1.3, 1.2, 0.7), seed=45 + i, rough=0.35)
-    lump('canopyCrown', 0.18, mat('matte', WD.LEAF_L), ch, at=(0, 0.04, cz + 0.18), scale=(1.3, 1.2, 0.6), seed=50, rough=0.18)
+        clump(f'canopyTop{i}', 0.16, WD.LEAVES[(i + 1) % 3], (math.cos(a) * 0.16, math.sin(a) * 0.14 + 0.04, cz + 0.1), (1.3, 1.2, 0.7), 45 + i)
+    clump('canopyCrown', 0.18, WD.LEAF_L, (0, 0.04, cz + 0.18), (1.3, 1.2, 0.6), 50)
     for i in range(14):
         a = 2 * math.pi * i / 14
         leaf(f'rimLeaf{i}', ch, (math.cos(a) * 0.55, math.sin(a) * 0.44 + 0.04, cz - 0.02), 0.09, 0.16, WD.LEAVES[i % 3], rot=(1.2, 0, a - math.pi / 2))
@@ -102,5 +112,5 @@ def rootcrusher():
     # Team: a woven band of vines around the waist with a team sash knot.
     torus('band', 0.21 * 1.1, 0.025, mat('team'), spine, at=(0, 0, 0.5), scale=(1.1, 0.9, 1), segs=20, rsegs=5)
     leaf_ring('bandLeaves', spine, (0, 0, 0.5), 0.24, 8, 0.06, 0.12, WD.LEAVES, tilt=2.4)
-    F.animate(attack='slash')
+    F.animate(attack='smash', style='heavy')
     return F

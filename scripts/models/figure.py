@@ -47,7 +47,17 @@ class Figure:
 
     # ---- animations ----------------------------------------------------------------
 
-    def animate(self, attack='slash', work=False, cast=False, mounted=False, reload=False, kneel=False, base=True):
+    # Gait styles: stride, knee lift, arm swing, twist, bob, forward lean, side roll, breath.
+    STYLES = {
+        'normal': (0.5, 0.55, 0.35, 0.08, 0.018, 0.06, 0.0, 1.0),
+        'heavy': (0.3, 0.35, 0.16, 0.12, 0.045, 0.2, 0.07, 2.2),   # lumbering giants: short stomps, rocking, hunched
+        'stout': (0.38, 0.45, 0.3, 0.06, 0.026, 0.03, 0.09, 1.3),  # a waddle
+        'robed': (0.34, 0.35, 0.1, 0.04, 0.01, 0.03, 0.0, 0.8),    # small steps, arms quiet
+        'light': (0.56, 0.7, 0.42, 0.1, 0.026, 0.18, 0.0, 1.0),    # quick and crouched
+    }
+
+    def animate(self, attack='slash', work=False, cast=False, mounted=False, reload=False, kneel=False, base=True, style='normal'):
+        stride, knee, swing, twist, lift, lean, roll, breath = self.STYLES[style]
         P = self.p
         moving = list(P.values())
         rest = {n: tuple(o.rotation_euler) for n, o in P.items()}
@@ -61,8 +71,8 @@ class Figure:
 
         def idle():
             for f, k in ((1, 0), (31, 1), (61, 0)):
-                r('chest', f, dx=-0.025 * k)
-                r('head', f, dx=0.03 * k)
+                r('chest', f, dx=-0.025 * k * breath + lean * 0.5)
+                r('head', f, dx=0.03 * k * breath - lean * 0.4)
                 for s in 'RL':
                     r(f'upperarm.{s}', f, dx=-0.03 * k, dy=(0.04 if s == 'L' else -0.04) * k)
                     r(f'forearm.{s}', f, dx=-0.05 * k)
@@ -86,20 +96,22 @@ class Figure:
                 ph = 2 * math.pi * i / n
                 s = math.sin(ph)
                 c = math.cos(ph)
-                r('thigh.L', f, dx=-0.5 * s)
-                r('thigh.R', f, dx=0.5 * s)
+                r('thigh.L', f, dx=-stride * s - lean * 0.3)
+                r('thigh.R', f, dx=stride * s - lean * 0.3)
                 # The knee bends as the leg swings through.
-                r('shin.L', f, dx=0.55 * max(0.0, c) ** 1.5 + 0.05)
-                r('shin.R', f, dx=0.55 * max(0.0, -c) ** 1.5 + 0.05)
-                r('foot.L', f, dx=0.2 * s)
-                r('foot.R', f, dx=-0.2 * s)
-                r('upperarm.L', f, dx=0.35 * s)
-                r('upperarm.R', f, dx=-0.35 * s)
+                r('shin.L', f, dx=knee * max(0.0, c) ** 1.5 + 0.05 + lean * 0.4)
+                r('shin.R', f, dx=knee * max(0.0, -c) ** 1.5 + 0.05 + lean * 0.4)
+                r('foot.L', f, dx=0.4 * stride * s)
+                r('foot.R', f, dx=-0.4 * stride * s)
+                r('upperarm.L', f, dx=swing * s, dz=1.4 * roll * abs(s))
+                r('upperarm.R', f, dx=-swing * s, dz=-1.4 * roll * abs(s))
                 r('forearm.L', f, dx=-0.15 - 0.15 * max(0, -s))
                 r('forearm.R', f, dx=-0.15 - 0.15 * max(0, s))
-                r('chest', f, dz=0.08 * s, dx=0.06)
-                r('hips', f, dz=-0.06 * s)
-                bob(f, 0.018 * abs(c))
+                r('chest', f, dz=twist * s, dx=lean, dy=-roll * s)
+                r('hips', f, dz=-0.75 * twist * s, dy=roll * s)
+                r('head', f, dx=-lean * 0.6, dy=roll * 0.7 * s)
+                # Heavy feet land hard: the body drops on each footfall.
+                bob(f, lift * (abs(c) if style != 'heavy' else abs(c) ** 0.4) - (0.03 if style == 'heavy' else 0.0) - lean * 0.05)
         if base:
             clip('walk', moving, 19 if mounted else 25, walk)
 
@@ -120,6 +132,37 @@ class Figure:
                     r('thigh.L', f, dx=-0.25 * down)
                     r('shin.L', f, dx=0.2 * down)
                     bob(f, -0.02 * down)
+        def smash():
+            # Both fists (or the club) heaved overhead, then slammed down in front at frame 21.
+            for f, k in ((1, 0.0), (10, 0.7), (18, 1.0), (21, -1.0), (25, -1.0), (30, 0.0)):
+                up = max(0.0, k)
+                down = max(0.0, -k)
+                for s_, sg in (('R', 1), ('L', -1)):
+                    r(f'upperarm.{s_}', f, dx=-2.7 * up - 1.0 * down, dz=sg * 0.25 * up)
+                    r(f'forearm.{s_}', f, dx=-0.5 * up - 0.3 * down)
+                r('chest', f, dx=-0.25 * up + 0.5 * down + lean * 0.5)
+                r('spine', f, dx=-0.1 * up + 0.2 * down)
+                r('head', f, dx=0.15 * up - 0.3 * down)
+                if not mounted:
+                    for s_ in 'RL':
+                        r(f'thigh.{s_}', f, dx=-0.35 * down)
+                        r(f'shin.{s_}', f, dx=0.55 * down)
+                    bob(f, 0.02 * up - 0.06 * down)
+        def sling():
+            # Whirl the sling overhead twice, step in and loose at frame 21.
+            frames = [(1, 0.0, 0.0), (4, 1.0, 0.0), (8, 1.0, 1.57), (12, 1.0, 3.14), (16, 1.0, 4.71), (19, 1.0, 6.28), (21, -0.6, 7.0), (25, -0.6, 7.0), (30, 0.0, 6.28)]
+            for f, k, spin in frames:
+                up = max(0.0, k)
+                down = max(0.0, -k)
+                r('upperarm.R', f, dx=-2.5 * up - 1.4 * down, dy=-0.3 * up)
+                r('forearm.R', f, dx=-0.3 * up)
+                r('upperarm.L', f, dx=-0.9 * (up + down), dz=-0.4 * (up + down))
+                r('chest', f, dz=0.35 * up - 0.35 * down, dx=0.12 * down)
+                if 'sling' in P:
+                    key(P['sling'], f, rot=(rest['sling'][0] + spin, rest['sling'][1], rest['sling'][2]))
+                if not mounted:
+                    r('thigh.L', f, dx=-0.4 * down)
+                    r('shin.L', f, dx=0.3 * down)
         def bowshot():
             # Raise the bow, draw (to frame 21), loose, settle.
             frames = [(1, 0.0, 0.0), (8, 1.0, 0.2), (18, 1.0, 1.0), (21, 1.0, 1.0), (23, 1.0, 0.0), (30, 0.0, 0.0)]
@@ -162,7 +205,7 @@ class Figure:
             for f, k, kick in ((1, 0.0, 0.0), (10, 1.0, 0.0), (20, 1.0, 0.0), (22, 1.0, 1.0), (25, 1.0, 0.4), (30, 0.6, 0.0)):
                 aim_pose(f, k, kick)
         if attack:
-            clip('attack', moving, 30, {'slash': strike, 'bow': bowshot, 'staff': staff, 'throw': throw, 'musket': musket}[attack])
+            clip('attack', moving, 30, {'slash': strike, 'bow': bowshot, 'staff': staff, 'throw': throw, 'musket': musket, 'smash': smash, 'sling': sling}[attack])
         if reload:
             def reloading():
                 # Butt down, ramrod: the right arm pumps up and down twice.
